@@ -45,7 +45,26 @@ export async function apiRequest<T = any>(
     let errorDetail = `Request failed with status ${response.status}`;
     try {
       const errJson = await response.json();
-      errorDetail = errJson.error || errJson.detail || JSON.stringify(errJson);
+      if (errJson.error) {
+        errorDetail = errJson.error;
+      } else if (errJson.detail) {
+        errorDetail = errJson.detail;
+      } else if (typeof errJson === 'object' && errJson !== null) {
+        const messages: string[] = [];
+        for (const [key, val] of Object.entries(errJson)) {
+          const text = Array.isArray(val) ? val.join(' ') : String(val);
+          if (key === 'non_field_errors') {
+            messages.push(text);
+          } else {
+            messages.push(`${key}: ${text}`);
+          }
+        }
+        if (messages.length > 0) {
+          errorDetail = messages.join('. ');
+        } else {
+          errorDetail = JSON.stringify(errJson);
+        }
+      }
     } catch {
       // fallback to status text
       errorDetail = response.statusText || errorDetail;
