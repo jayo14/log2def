@@ -7,6 +7,12 @@ import { useAuth } from '@/lib/auth-context';
 import { projectsApi } from '@/lib/api';
 import { MaterialIcon } from '@/components/ui/material-icon';
 import { TiptapEditor } from '@/components/TiptapEditor';
+import {
+  useProjectStore,
+  useReportStore,
+  useDefenceStore,
+  useUIStore,
+} from '@/lib/store';
 
 function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -16,9 +22,63 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
 
   // Active Workspace Tab: 'sources' | 'report' | 'export' | 'defence' | 'details'
   const [activeTab, setActiveTab] = useState<'sources' | 'report' | 'export' | 'defence' | 'details'>('sources');
-  const [project, setProject] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Project Zustand Store
+  const {
+    activeProject: project,
+    isLoadingActiveProject: projectLoading,
+    fetchActiveProject,
+    uploadDocument: storeUploadDocument,
+    updatePage: storeUpdatePage,
+    createLogbookEntry: storeCreateLogbookEntry,
+    deleteLogbookEntry: storeDeleteLogbookEntry,
+    bulkVerifyEntries: storeBulkVerifyEntries,
+    updateActiveProject: storeUpdateProject,
+  } = useProjectStore();
+
+  // Report Zustand Store
+  const {
+    report,
+    activeSectionId,
+    previewMode,
+    isGeneratingReport: generatingReport,
+    isSavingSection: savingSection,
+    regeneratingSectionId,
+    isExportingDocx: exportingDocx,
+    isExportingPdf: exportingPdf,
+    fetchReport,
+    generateReport: storeGenerateReport,
+    setActiveSectionId,
+    setSectionDraft,
+    saveSection: storeSaveSection,
+    regenerateSection: storeRegenerateSection,
+    setPreviewMode,
+    downloadDocx: storeDownloadDocx,
+    downloadPdf: storeDownloadPdf,
+  } = useReportStore();
+
+  // Defence Zustand Store
+  const {
+    questions: defenceQuestions,
+    isGeneratingQuestions: generatingDefence,
+    selectedCategory: selectedDefenceCategory,
+    revealedAnswers,
+    mockExamActive,
+    mockExamIndex,
+    fetchQuestions,
+    generateQuestions: storeGenerateDefence,
+    updateQuestion: storeUpdateDefenceQuestion,
+    setSelectedCategory: setSelectedDefenceCategory,
+    setAnswerReveal,
+    startMockExam,
+    exitMockExam,
+    setMockExamIndex,
+  } = useDefenceStore();
+
+  const { showToast } = useUIStore();
+
+  const loading = projectLoading;
 
   // Sources tab state
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -40,57 +100,20 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
     tools_used: '',
   });
 
-  // Report tab state
-  const [report, setReport] = useState<any>(null);
-  const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
+  // Report Section Content Draft
   const [sectionContentDraft, setSectionContentDraft] = useState('');
-  const [savingSection, setSavingSection] = useState(false);
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [regeneratingSectionId, setRegeneratingSectionId] = useState<number | null>(null);
-  const [previewMode, setPreviewMode] = useState(false);
-
-  // Export tab state
-  const [exportingDocx, setExportingDocx] = useState(false);
-  const [exportingPdf, setExportingPdf] = useState(false);
-
-  // Defence tab state
-  const [defenceQuestions, setDefenceQuestions] = useState<any[]>([]);
-  const [generatingDefence, setGeneratingDefence] = useState(false);
-  const [selectedDefenceCategory, setSelectedDefenceCategory] = useState<string>('all');
-  const [revealedAnswers, setRevealedAnswers] = useState<Record<number, boolean>>({});
-  const [mockExamActive, setMockExamActive] = useState(false);
-  const [mockExamIndex, setMockExamIndex] = useState(0);
 
   // Load Project Data
   const loadProject = async () => {
     try {
-      setLoading(true);
-      const data = await projectsApi.get(projectId);
-      setProject(data);
-
-      // Also check report if available
-      try {
-        const repData = await projectsApi.getReport(projectId);
-        setReport(repData);
-        if (repData.sections && repData.sections.length > 0 && !activeSectionId) {
-          setActiveSectionId(repData.sections[0].id);
-          setSectionContentDraft(repData.sections[0].content);
-        }
-      } catch {
-        setReport(null);
-      }
-
-      // Load defence questions if available
-      try {
-        const qList = await projectsApi.getDefenceQuestions(projectId);
-        setDefenceQuestions(qList);
-      } catch {
-        setDefenceQuestions([]);
-      }
+      setError('');
+      await Promise.all([
+        fetchActiveProject(projectId),
+        fetchReport(projectId).catch(() => null),
+        fetchQuestions(projectId).catch(() => []),
+      ]);
     } catch (err: any) {
       setError(err.message || 'Failed to load project.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -103,6 +126,16 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
       loadProject();
     }
   }, [user, authLoading, projectId]);
+
+  // Sync draft when active section changes
+  useEffect(() => {
+    if (report?.sections && activeSectionId) {
+      const sec = report.sections.find((s: any) => s.id === activeSectionId);
+      if (sec) {
+        setSectionContentDraft(sec.content || '');
+      }
+    }
+  }, [report, activeSectionId]);
 
   // Section selection
   const handleSelectSection = (section: any) => {
@@ -128,14 +161,15 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
         formData.append('file', uploadFile);
       }
 
-      await projectsApi.uploadDocument(projectId, formData);
+      await storeUploadDocument(projectId, formData);
       setUploadFile(null);
       setNoteText('');
       setNoteTitle('');
       setIsNoteMode(false);
-      await loadProject();
+      showToast('Document uploaded and queued for processing', 'success');
     } catch (err: any) {
       setError(err.message || 'Upload failed');
+      showToast(err.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
     }
@@ -146,15 +180,15 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
     if (!editingPage) return;
     setSavingPage(true);
     try {
-      await projectsApi.updatePage(projectId, editingPage.id, {
+      await storeUpdatePage(projectId, editingPage.id, {
         extracted_text: pageTextDraft,
         status: 'processed',
         is_reviewed: true,
       });
       setEditingPage(null);
-      await loadProject();
+      showToast('Page corrections saved', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to save page');
+      showToast(err.message || 'Failed to save page', 'error');
     } finally {
       setSavingPage(false);
     }
@@ -163,10 +197,10 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
   // Bulk Verify Entries
   const handleBulkVerify = async () => {
     try {
-      await projectsApi.bulkVerifyEntries(projectId);
-      await loadProject();
+      await storeBulkVerifyEntries(projectId);
+      showToast('All logbook entries verified', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to verify entries');
+      showToast(err.message || 'Failed to verify entries', 'error');
     }
   };
 
@@ -174,7 +208,7 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
   const handleCreateEntry = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await projectsApi.createLogbookEntry(projectId, {
+      await storeCreateLogbookEntry(projectId, {
         ...newEntryData,
         raw_text: newEntryData.verified_text,
         is_verified: true,
@@ -187,9 +221,9 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
         verified_text: '',
         tools_used: '',
       });
-      await loadProject();
+      showToast('Logbook entry created', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to create logbook entry');
+      showToast(err.message || 'Failed to create logbook entry', 'error');
     }
   };
 
@@ -197,134 +231,106 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
   const handleDeleteEntry = async (entryId: number) => {
     if (!confirm('Are you sure you want to delete this logbook entry?')) return;
     try {
-      await projectsApi.deleteLogbookEntry(projectId, entryId);
-      await loadProject();
+      await storeDeleteLogbookEntry(projectId, entryId);
+      showToast('Logbook entry deleted', 'info');
     } catch (err: any) {
-      alert(err.message || 'Failed to delete entry');
+      showToast(err.message || 'Failed to delete entry', 'error');
     }
   };
 
   // Generate Report
   const handleGenerateReport = async (forceAll: boolean = false) => {
-    setGeneratingReport(true);
     setError('');
     try {
-      const repData = await projectsApi.generateReport(projectId, forceAll);
-      setReport(repData);
+      const repData = await storeGenerateReport(projectId, forceAll);
+      await fetchActiveProject(projectId);
       if (repData.sections && repData.sections.length > 0) {
-        setActiveSectionId(repData.sections[0].id);
-        setSectionContentDraft(repData.sections[0].content);
+        setSectionContentDraft(repData.sections[0].content || '');
       }
-      await loadProject();
+      showToast('Report generated successfully', 'success');
     } catch (err: any) {
       setError(err.message || 'Report generation failed');
-    } finally {
-      setGeneratingReport(false);
+      showToast(err.message || 'Report generation failed', 'error');
     }
   };
 
   // Save Section Edit
   const handleSaveSection = async () => {
     if (!activeSectionId) return;
-    setSavingSection(true);
     try {
-      const updated = await projectsApi.updateSection(projectId, activeSectionId, {
-        content: sectionContentDraft,
-      });
-      if (report && report.sections) {
-        setReport({
-          ...report,
-          sections: report.sections.map((s: any) => (s.id === updated.id ? updated : s)),
-        });
-      }
+      await storeSaveSection(projectId, activeSectionId, sectionContentDraft);
+      showToast('Section saved', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to save section');
-    } finally {
-      setSavingSection(false);
+      showToast(err.message || 'Failed to save section', 'error');
     }
   };
 
   // Regenerate Single Section
   const handleRegenerateSection = async (sectionId: number) => {
-    setRegeneratingSectionId(sectionId);
     try {
-      const updated = await projectsApi.regenerateSection(projectId, sectionId);
+      const updated = await storeRegenerateSection(projectId, sectionId);
       if (activeSectionId === sectionId) {
         setSectionContentDraft(updated.content);
       }
-      if (report && report.sections) {
-        setReport({
-          ...report,
-          sections: report.sections.map((s: any) => (s.id === updated.id ? updated : s)),
-        });
-      }
+      showToast('Section regenerated', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to regenerate section');
-    } finally {
-      setRegeneratingSectionId(null);
+      showToast(err.message || 'Failed to regenerate section', 'error');
     }
   };
 
   // Download DOCX
   const handleDownloadDocx = async () => {
-    setExportingDocx(true);
     try {
-      const filename = `${project.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`;
-      await projectsApi.downloadDocx(projectId, filename);
+      const filename = `${(project?.title || 'siwes_report').replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`;
+      await storeDownloadDocx(projectId, filename);
+      showToast('DOCX report download started', 'success');
     } catch (err: any) {
-      alert(err.message || 'DOCX download failed');
-    } finally {
-      setExportingDocx(false);
+      showToast(err.message || 'DOCX download failed', 'error');
     }
   };
 
   // Download PDF
   const handleDownloadPdf = async () => {
-    setExportingPdf(true);
     try {
-      const filename = `${project.title.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
-      await projectsApi.downloadPdf(projectId, filename);
+      const filename = `${(project?.title || 'siwes_report').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      await storeDownloadPdf(projectId, filename);
+      showToast('PDF report download started', 'success');
     } catch (err: any) {
-      alert(err.message || 'PDF export and download failed');
-    } finally {
-      setExportingPdf(false);
+      showToast(err.message || 'PDF export failed', 'error');
     }
   };
 
   // Generate Defence Questions
   const handleGenerateDefence = async () => {
-    setGeneratingDefence(true);
     try {
-      const qList = await projectsApi.generateDefenceQuestions(projectId);
-      setDefenceQuestions(qList);
+      await storeGenerateDefence(projectId);
+      showToast('Defence questions generated', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to generate defence questions');
-    } finally {
-      setGeneratingDefence(false);
+      showToast(err.message || 'Failed to generate defence questions', 'error');
     }
   };
 
   // Update Mastery Status
   const handleUpdateMastery = async (questionId: number, status: string) => {
     try {
-      const updated = await projectsApi.updateDefenceQuestion(projectId, questionId, {
+      await storeUpdateDefenceQuestion(projectId, questionId, {
         mastery_status: status,
       });
-      setDefenceQuestions(defenceQuestions.map((q) => (q.id === questionId ? updated : q)));
+      showToast(`Mastery set to ${status.replace('_', ' ')}`, 'info');
     } catch (err: any) {
-      console.error(err);
+      showToast(err.message || 'Failed to update mastery', 'error');
     }
   };
 
   // Toggle Hard Flag
   const handleToggleHard = async (questionId: number, currentVal: boolean) => {
     try {
-      const updated = await projectsApi.updateDefenceQuestion(projectId, questionId, {
+      await storeUpdateDefenceQuestion(projectId, questionId, {
         is_flagged_hard: !currentVal,
       });
-      setDefenceQuestions(defenceQuestions.map((q) => (q.id === questionId ? updated : q)));
+      showToast(!currentVal ? 'Flagged for revision' : 'Unflagged', 'info');
     } catch (err: any) {
-      console.error(err);
+      showToast(err.message || 'Failed to toggle flag', 'error');
     }
   };
 
@@ -990,7 +996,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setMockExamActive(true)}
+                  onClick={startMockExam}
                   disabled={defenceQuestions.length === 0}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-zinc-700 focus-visible:outline-none"
                   aria-label="Launch full-screen mock defence oral examination"
@@ -1108,7 +1114,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                                 Grounded Suggested Answer:
                               </span>
                               <button
-                                onClick={() => setRevealedAnswers({ ...revealedAnswers, [q.id]: false })}
+                                onClick={() => setAnswerReveal(q.id, false)}
                                 className="text-[11px] text-emerald-800 hover:underline cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded"
                               >
                                 Hide
@@ -1118,7 +1124,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                           </div>
                         ) : (
                           <button
-                            onClick={() => setRevealedAnswers({ ...revealedAnswers, [q.id]: true })}
+                            onClick={() => setAnswerReveal(q.id, true)}
                             className="text-xs text-emerald-800 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded"
                             aria-label="Reveal model answer and examiner guidance"
                           >
@@ -1326,7 +1332,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
               </span>
             </div>
             <button
-              onClick={() => setMockExamActive(false)}
+              onClick={exitMockExam}
               className="px-3 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
             >
               Exit Mock Exam
@@ -1358,12 +1364,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 </div>
               ) : (
                 <button
-                  onClick={() =>
-                    setRevealedAnswers({
-                      ...revealedAnswers,
-                      [defenceQuestions[mockExamIndex]?.id]: true,
-                    })
-                  }
+                  onClick={() => setAnswerReveal(defenceQuestions[mockExamIndex]?.id, true)}
                   className="px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-700 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
                 >
                   Reveal Model Answer
@@ -1385,8 +1386,8 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                   if (mockExamIndex < defenceQuestions.length - 1) {
                     setMockExamIndex(mockExamIndex + 1);
                   } else {
-                    setMockExamActive(false);
-                    alert('Mock examination complete! Review your mastery scores in the defence workspace.');
+                    exitMockExam();
+                    showToast('Mock examination complete! Review your mastery scores.', 'success');
                   }
                 }}
                 className="px-5 py-2 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
