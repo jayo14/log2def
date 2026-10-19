@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { authApi } from '@/lib/api';
 import '@/app/auth.css';
 
 export default function LoginPage() {
@@ -26,6 +27,7 @@ export default function LoginPage() {
   const [resendCountdown, setResendCountdown] = useState(0);
 
   // Reset Password State
+  const [resetToken, setResetToken] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -42,20 +44,33 @@ export default function LoginPage() {
     setToastVisible(true);
     setTimeout(() => {
       setToastVisible(false);
-    }, 2600);
+    }, 2800);
   };
 
-  // Check URL hash for direct view navigation (#forgot, #reset)
+  // Check URL hash and query params for direct view navigation (#forgot, #reset, ?token=...)
   useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.replace('#/', '').replace('#', '');
-      if (hash === 'forgot') setView('forgot');
-      else if (hash === 'reset') setView('reset');
-      else setView('signin');
+    const handleUrlState = () => {
+      if (typeof window === 'undefined') return;
+      const urlParams = new URLSearchParams(window.location.search);
+      const qToken = urlParams.get('token');
+      const qView = urlParams.get('view');
+      const hash = window.location.hash.replace('#/', '').replace('#', '').split('?')[0];
+
+      if (qToken) {
+        setResetToken(qToken);
+        setView('reset');
+      } else if (qView === 'reset' || hash === 'reset') {
+        setView('reset');
+      } else if (qView === 'forgot' || hash === 'forgot') {
+        setView('forgot');
+      } else {
+        setView('signin');
+      }
     };
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+
+    handleUrlState();
+    window.addEventListener('hashchange', handleUrlState);
+    return () => window.removeEventListener('hashchange', handleUrlState);
   }, []);
 
   // Validation Helpers
@@ -86,24 +101,39 @@ export default function LoginPage() {
     }
   };
 
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const valid = isValidEmail(forgotEmail.trim());
     setForgotEmailError(!valid);
     if (!valid) return;
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await authApi.requestPasswordReset(forgotEmail.trim());
+      if (res.reset_token) {
+        setResetToken(res.reset_token);
+      }
       setForgotDone(true);
-      showToast('Reset link sent to ' + forgotEmail);
-    }, 800);
+      showToast(res.detail || 'Reset link sent to ' + forgotEmail);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to request password reset');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (resendCountdown > 0) return;
     setResendCountdown(30);
-    showToast('Reset link sent again');
+    try {
+      const res = await authApi.requestPasswordReset(forgotEmail.trim());
+      if (res.reset_token) {
+        setResetToken(res.reset_token);
+      }
+      showToast(res.detail || 'Reset link sent again');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to resend reset link');
+    }
     const timer = setInterval(() => {
       setResendCountdown((prev) => {
         if (prev <= 1) {
@@ -132,7 +162,7 @@ export default function LoginPage() {
     sym: /[^A-Za-z0-9]/.test(newPassword),
   };
 
-  const handleResetSubmit = (e: React.FormEvent) => {
+  const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const validPw = newPassword.length >= 8 && /[a-z]/i.test(newPassword) && /\d/.test(newPassword);
     const matches = newPassword === confirmPassword && confirmPassword.length > 0;
@@ -141,13 +171,25 @@ export default function LoginPage() {
     setMatchError(!matches);
 
     if (!validPw || !matches) return;
+    if (!resetToken.trim()) {
+      showToast('Reset token is required to set a new password');
+      return;
+    }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const res = await authApi.confirmPasswordReset({
+        token: resetToken.trim(),
+        password: newPassword,
+        password_confirm: confirmPassword,
+      });
       setResetDone(true);
-      showToast('Password updated successfully');
-    }, 800);
+      showToast(res.detail || 'Password updated successfully');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update password');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -363,7 +405,7 @@ export default function LoginPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           setView('reset');
-                          window.location.hash = '/reset';
+                          window.location.hash = resetToken ? `/reset?token=${encodeURIComponent(resetToken)}` : '/reset';
                         }}
                       >
                         Open the link (demo)
@@ -390,6 +432,21 @@ export default function LoginPage() {
                     <form id="resetForm" noValidate onSubmit={handleResetSubmit}>
                       <h1>Choose a new password.</h1>
                       <p className="lead">Pick something you haven’t used on Log2Def before.</p>
+
+                      <div className="f">
+                        <label htmlFor="rp-tok">Reset Token</label>
+                        <div className="in">
+                          <input
+                            id="rp-tok"
+                            type="text"
+                            required
+                            placeholder="Enter or paste token from your email"
+                            value={resetToken}
+                            onChange={(e) => setResetToken(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
                       <div className={`f ${resetError ? 'bad' : ''}`}>
                         <label htmlFor="rp-p">New password</label>
                         <div className="in">
