@@ -4,6 +4,8 @@ from django.http import FileResponse, Http404
 from rest_framework import generics, status, views
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.core.exceptions import ValidationError
+from .security import validate_file_content, sanitize_html
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -205,25 +207,17 @@ class DocumentListUploadView(views.APIView):
             return Response({"error": "Either an upload file or typed text must be provided."}, status=status.HTTP_400_BAD_REQUEST)
 
         if file_obj:
-            if file_obj.size > 15 * 1024 * 1024:
-                return Response({"error": "File size exceeds the 15MB limit."}, status=status.HTTP_400_BAD_REQUEST)
-            
-            ext = os.path.splitext(file_obj.name)[1].lower()
-            if not doc_type:
-                if ext == '.pdf':
-                    doc_type = 'pdf'
-                elif ext in ['.jpg', '.jpeg', '.png']:
-                    doc_type = 'image'
-                elif ext in ['.docx']:
-                    doc_type = 'docx'
-                else:
-                    return Response({"error": f"Unsupported file extension: {ext}. Allowed: PDF, JPG, PNG, DOCX."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                verified_type = validate_file_content(file_obj)
+            except ValidationError as ve:
+                err_msg = ve.messages[0] if hasattr(ve, 'messages') else str(ve)
+                return Response({"error": err_msg}, status=status.HTTP_400_BAD_REQUEST)
 
             doc = SourceDocument.objects.create(
                 project=project,
                 file=file_obj,
                 original_filename=file_obj.name,
-                file_type=doc_type,
+                file_type=verified_type,
                 file_size=file_obj.size,
                 status='uploaded'
             )
@@ -424,7 +418,7 @@ class SectionUpdateView(views.APIView):
         
         content = request.data.get('content')
         if content is not None:
-            section.content = content
+            section.content = sanitize_html(content)
             section.last_edited_by_student = True
         
         title = request.data.get('title')
