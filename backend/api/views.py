@@ -66,6 +66,11 @@ class RegisterView(generics.CreateAPIView):
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
+        username = attrs.get('username')
+        if username and '@' in username:
+            user = User.objects.filter(email__iexact=username).first()
+            if user:
+                attrs['username'] = user.username
         data = super().validate(attrs)
         data['user'] = UserSerializer(self.user).data
         return data

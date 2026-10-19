@@ -10,6 +10,7 @@ from .models import (
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True, required=True)
 
@@ -20,6 +21,15 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({"password": "Password fields did not match."})
+        if not attrs.get('username'):
+            email = attrs.get('email', '')
+            base_username = email.split('@')[0] if email else 'student'
+            candidate = base_username
+            idx = 1
+            while User.objects.filter(username=candidate).exists():
+                candidate = f"{base_username}_{idx}"
+                idx += 1
+            attrs['username'] = candidate
         return attrs
 
     def create(self, validated_data):
