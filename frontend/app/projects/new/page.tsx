@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { projectsApi } from '@/lib/api';
+import { useProjectStore, useUIStore } from '@/lib/store';
 import { MaterialIcon } from '@/components/ui/material-icon';
 
 export default function NewProjectWizard() {
   const { user } = useAuth();
   const router = useRouter();
+  const { createProject } = useProjectStore();
+  const { showToast } = useUIStore();
   const [currentStep, setCurrentStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -83,10 +85,12 @@ export default function NewProjectWizard() {
         training_end_date: formData.training_end_date || null,
       };
 
-      const res = await projectsApi.create(finalData);
+      const res = await createProject(finalData);
+      showToast('SIWES Project created successfully', 'success');
       router.push(`/projects/${res.id}`);
     } catch (err: any) {
       setError(err.message || 'Failed to create report project.');
+      showToast(err.message || 'Failed to create report project', 'error');
       setSaving(false);
     }
   };
