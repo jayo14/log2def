@@ -201,3 +201,40 @@ class AIStatusResponseSerializer(serializers.Serializer):
     model = serializers.CharField()
     mode = serializers.CharField()
     message = serializers.CharField()
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True, help_text="Registered student email address")
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    token = serializers.CharField(required=True, help_text="Cryptographic reset token from email")
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, attrs):
+        from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({"password": "Password fields did not match."})
+
+        token = attrs.get('token', '').strip()
+        signer = TimestampSigner(salt='password-reset-salt')
+        try:
+            raw_data = signer.unsign(token, max_age=86400)
+            user_id, pw_prefix = raw_data.split(':', 1)
+            user = User.objects.get(pk=user_id)
+            if user.password[:10] != pw_prefix:
+                raise serializers.ValidationError({"token": "This reset link has already been used."})
+            self.user = user
+        except SignatureExpired:
+            raise serializers.ValidationError({"token": "Password reset link has expired. Please request a new one."})
+        except (BadSignature, ValueError, User.DoesNotExist):
+            raise serializers.ValidationError({"token": "Invalid or tampered password reset token."})
+
+        return attrs
+
+    def save(self):
+        user = self.user
+        user.set_password(self.validated_data['password'])
+        user.save()
+        return user
