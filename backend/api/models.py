@@ -1,6 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.conf import settings
+from pathlib import Path
 import os
+import shutil
+from .security import get_safe_upload_filename
 
 class ReportProject(models.Model):
     STATUS_CHOICES = (
@@ -59,6 +63,13 @@ class ReportProject(models.Model):
     def __str__(self):
         return f"{self.title} - {self.full_name or self.user.username}"
 
+    def delete(self, *args, **kwargs):
+        # Cascade cleanup: delete all project files and directories from disk
+        project_dir = Path(settings.MEDIA_ROOT) / "projects" / str(self.id)
+        if project_dir.exists():
+            shutil.rmtree(str(project_dir), ignore_errors=True)
+        super().delete(*args, **kwargs)
+
 
 class ReportTemplate(models.Model):
     name = models.CharField(max_length=255)
@@ -73,7 +84,8 @@ class ReportTemplate(models.Model):
 
 
 def source_doc_path(instance, filename):
-    return f"projects/{instance.project.id}/sources/{filename}"
+    safe_name = get_safe_upload_filename(filename)
+    return f"projects/{instance.project.id}/sources/{safe_name}"
 
 
 class SourceDocument(models.Model):
