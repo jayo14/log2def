@@ -60,7 +60,7 @@ export default function DashboardPage() {
   // Navigation tab state: 'home' | 'logbook' | 'report' | 'defence' | 'new'
   const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'defence' | 'new'>('home');
   const [logbookTab, setLogbookTab] = useState<'entries' | 'docs'>('entries');
-  const [reportTab, setReportTab] = useState<'editor' | 'export'>('editor');
+  const [reportTab, setReportTab] = useState<'editor' | 'preview' | 'versions' | 'export'>('editor');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
 
@@ -598,6 +598,11 @@ export default function DashboardPage() {
     } catch (err: any) {
       triggerToast(err.message || 'PDF export failed');
     }
+  };
+
+  // Direct Browser Print
+  const handleDirectPrint = () => {
+    window.print();
   };
 
   // Defence questions filtering
@@ -1221,7 +1226,7 @@ export default function DashboardPage() {
                 <p>{effectiveProject?.title || 'SIWES Technical Report'}</p>
               </div>
 
-              {/* Segmented Editor vs Export */}
+              {/* Segmented Subtabs: Editor | Preview | Export */}
               <div className="seg" role="tablist" aria-label="Report view">
                 <button
                   role="tab"
@@ -1234,6 +1239,14 @@ export default function DashboardPage() {
                 <button
                   role="tab"
                   type="button"
+                  aria-selected={reportTab === 'preview'}
+                  onClick={() => setReportTab('preview')}
+                >
+                  Academic Preview
+                </button>
+                <button
+                  role="tab"
+                  type="button"
                   aria-selected={reportTab === 'export'}
                   onClick={() => setReportTab('export')}
                 >
@@ -1241,7 +1254,8 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              {reportTab === 'editor' ? (
+              {/* 1. EDITOR VIEW */}
+              {reportTab === 'editor' && (
                 !hasReport ? (
                   <div className="card empty">
                     <div className="ico">
@@ -1251,8 +1265,8 @@ export default function DashboardPage() {
                     </div>
                     <h2>Generate your report</h2>
                     <p>
-                      Your verified entries and placement details become the five standard
-                      chapters. Nothing is invented.
+                      Your verified entries and placement details become the standard
+                      academic chapters. Everything is grounded in your actual training.
                     </p>
                     <button
                       className="btn w"
@@ -1352,14 +1366,150 @@ export default function DashboardPage() {
                     <p className="hint">Chapters you edit stay locked when others regenerate.</p>
                   </>
                 )
-              ) : (
+              )}
+
+              {/* 2. ACADEMIC PRINT PREVIEW VIEW */}
+              {reportTab === 'preview' && (
+                <div className="academic-container">
+                  <div className="row sb" style={{ gap: '10px' }}>
+                    <button
+                      className="btn s"
+                      type="button"
+                      onClick={handleDirectPrint}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        print
+                      </span>
+                      Print / Save PDF
+                    </button>
+                    <div className="row" style={{ gap: '8px' }}>
+                      <button
+                        className="btn o s"
+                        type="button"
+                        onClick={handleDownloadWord}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          download
+                        </span>
+                        Word (.docx)
+                      </button>
+                      <button
+                        className="btn o s"
+                        type="button"
+                        onClick={() => setReportTab('editor')}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          edit
+                        </span>
+                        Edit chapters
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="academic-paper">
+                    {/* Cover Page */}
+                    <div className="academic-cover page-break">
+                      <h1>{effectiveProject?.university_name || 'LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY'}</h1>
+                      <h2>{effectiveProject?.faculty_school || 'COLLEGE OF APPLIED SCIENCES AND TECHNOLOGY'}</h2>
+                      <p style={{ fontWeight: 600, fontSize: '15px' }}>DEPARTMENT OF {effectiveProject?.department?.toUpperCase() || 'COMPUTER SCIENCE'}</p>
+                      
+                      <div style={{ margin: '36px 0' }}>
+                        <h2 style={{ fontSize: '18px', lineHeight: 1.5 }}>
+                          TECHNICAL REPORT ON STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)
+                        </h2>
+                        <p style={{ fontStyle: 'italic', margin: '8px 0' }}>HELD AT</p>
+                        <h3 style={{ fontSize: '17px', fontWeight: 800 }}>
+                          {effectiveProject?.organization_name?.toUpperCase() || 'HOST INDUSTRIAL ATTACHMENT ORGANIZATION'}
+                        </h3>
+                        <p style={{ fontSize: '14px', color: '#444' }}>
+                          {effectiveProject?.organization_address || 'Lagos, Nigeria'}
+                        </p>
+                      </div>
+
+                      <div style={{ marginTop: '30px' }}>
+                        <p style={{ margin: '4px 0' }}>BY</p>
+                        <p style={{ fontSize: '17px', fontWeight: 700, margin: '4px 0' }}>
+                          {effectiveProject?.full_name?.toUpperCase() || effectiveUser?.first_name?.toUpperCase() || 'STUDENT INTERN'}
+                        </p>
+                        <p style={{ fontSize: '15px', fontWeight: 600, letterSpacing: '0.05em' }}>
+                          MATRIC NO: {effectiveProject?.matric_number || 'STE/2021/0000'}
+                        </p>
+                      </div>
+
+                      <div style={{ marginTop: '40px', fontSize: '14px', fontStyle: 'italic' }}>
+                        SUBMITTED IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF BACHELOR OF SCIENCE / TECHNOLOGY DEGREE
+                      </div>
+                      
+                      <p style={{ marginTop: '24px', fontWeight: 600 }}>
+                        {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </p>
+                    </div>
+
+                    {/* Certification Page */}
+                    <div className="academic-prelim page-break">
+                      <h2>Certification & Approval</h2>
+                      <p style={{ textIndent: '2em', textAlign: 'justify' }}>
+                        This is to certify that this technical report is a true and accurate record of the Students Industrial Work Experience Scheme (SIWES) undertaken by <b>{effectiveProject?.full_name || 'the student'}</b> (Matriculation Number: <b>{effectiveProject?.matric_number || 'N/A'}</b>) in the Department of <b>{effectiveProject?.department || 'Engineering'}</b>, at <b>{effectiveProject?.organization_name || 'the host organization'}</b>, during the {new Date().getFullYear()} industrial training session.
+                      </p>
+
+                      <div className="academic-sig-block">
+                        <div className="sig-line">
+                          <b>{effectiveProject?.full_name || 'Student'}</b><br />
+                          <span>Student Signature & Date</span>
+                        </div>
+                        <div className="sig-line">
+                          <b>{effectiveProject?.industry_supervisor_name || 'Industry Supervisor'}</b><br />
+                          <span>Industry-Based Supervisor Signature & Date</span>
+                        </div>
+                        <div className="sig-line">
+                          <b>{effectiveProject?.academic_supervisor_name || 'Institutional Supervisor'}</b><br />
+                          <span>Departmental SIWES Coordinator Signature & Date</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Table of Contents */}
+                    <div className="academic-prelim page-break">
+                      <h2>Table of Contents</h2>
+                      <ul className="toc-list">
+                        <li className="toc-item"><span>Title Page</span> <span>i</span></li>
+                        <li className="toc-item"><span>Certification and Approval</span> <span>ii</span></li>
+                        <li className="toc-item"><span>Dedication & Acknowledgements</span> <span>iii</span></li>
+                        <li className="toc-item"><span>Abstract / Executive Summary</span> <span>iv</span></li>
+                        <li className="toc-item"><span>Table of Contents</span> <span>v</span></li>
+                        <li className="toc-item"><span><b>CHAPTER ONE: INTRODUCTION & OBJECTIVES</b></span> <span>1</span></li>
+                        <li className="toc-item"><span><b>CHAPTER TWO: HOST ORGANISATION PROFILE</b></span> <span>4</span></li>
+                        <li className="toc-item"><span><b>CHAPTER THREE: TECHNICAL ACTIVITIES & LOGBOOK</b></span> <span>8</span></li>
+                        <li className="toc-item"><span><b>CHAPTER FOUR: SKILLS ACQUIRED & TROUBLESHOOTING</b></span> <span>18</span></li>
+                        <li className="toc-item"><span><b>CHAPTER FIVE: CONCLUSIONS & RECOMMENDATIONS</b></span> <span>23</span></li>
+                      </ul>
+                    </div>
+
+                    {/* Chapters Body */}
+                    {CHAPTER_NAMES.map((name, i) => (
+                      <div className="academic-chapter page-break" key={name} style={{ marginTop: '28px' }}>
+                        <h2>{i === 0 ? 'Preliminary Notes' : `CHAPTER ${i === 1 ? 'ONE' : i === 2 ? 'TWO' : i === 3 ? 'THREE' : i === 4 ? 'FOUR' : 'FIVE'}: ${name.toUpperCase()}`}</h2>
+                        <div
+                          style={{ textAlign: 'justify', lineHeight: 1.7 }}
+                          dangerouslySetInnerHTML={{
+                            __html: getSectionContent(i),
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. EXPORT VIEW */}
+              {reportTab === 'export' && (
                 <>
                   {/* Export Options */}
                   <div className="card">
                     <span className="tag">WORD</span>
-                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Editable report</h3>
+                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Editable report (.docx)</h3>
                     <p className="mut" style={{ fontSize: '14px', marginBottom: '16px' }}>
-                      A4, 1.5 inch left margin, Times New Roman 12pt, 1.5 spacing.
+                      A4, 1.5 inch binding margin, Times New Roman 12pt, 1.5 line spacing.
                     </p>
                     <button
                       className="btn w"
@@ -1370,15 +1520,15 @@ export default function DashboardPage() {
                       <span className="ms" aria-hidden="true">
                         download
                       </span>
-                      Download Word
+                      Download Word (.docx)
                     </button>
                   </div>
 
                   <div className="card">
                     <span className="tag p">PDF</span>
-                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Print-ready PDF</h3>
+                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Print-ready PDF (.pdf)</h3>
                     <p className="mut" style={{ fontSize: '14px', marginBottom: '16px' }}>
-                      Matching pagination, headers, footers and signature blocks.
+                      Strict academic formatting, running headers, preliminary Roman numerals and certification sign-offs.
                     </p>
                     <button
                       className="btn w"
@@ -1389,7 +1539,26 @@ export default function DashboardPage() {
                       <span className="ms" aria-hidden="true">
                         download
                       </span>
-                      Download PDF
+                      Download PDF (.pdf)
+                    </button>
+                  </div>
+
+                  <div className="card">
+                    <span className="tag" style={{ background: '#e0f2fe', color: '#0369a1' }}>PRINT</span>
+                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Direct Browser Print</h3>
+                    <p className="mut" style={{ fontSize: '14px', marginBottom: '16px' }}>
+                      Prints or saves to PDF directly from your browser with clean print formatting.
+                    </p>
+                    <button
+                      className="btn w o"
+                      type="button"
+                      disabled={!hasReport}
+                      onClick={handleDirectPrint}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        print
+                      </span>
+                      Print Document
                     </button>
                   </div>
 
@@ -1400,31 +1569,37 @@ export default function DashboardPage() {
                   )}
 
                   <div className="card">
-                    <h3 style={{ fontSize: '17px', marginBottom: '6px' }}>Before you submit</h3>
+                    <h3 style={{ fontSize: '17px', marginBottom: '6px' }}>Academic Submission Checklist</h3>
                     <ul className="cl">
                       <li>
                         <span className="ms" aria-hidden="true">
                           check_circle
                         </span>
-                        A4 with 1.5 inch binding margin
+                        A4 format with 1.5-inch left binding margin
                       </li>
                       <li>
                         <span className="ms" aria-hidden="true">
                           check_circle
                         </span>
-                        Certification page with sign-off lines
+                        Certification and approval page with signature lines
                       </li>
                       <li>
                         <span className="ms" aria-hidden="true">
                           check_circle
                         </span>
-                        Roman numerals on preliminary pages
+                        Roman numerals for preliminary pages (i, ii, iii...)
                       </li>
                       <li>
                         <span className="ms" aria-hidden="true">
                           check_circle
                         </span>
-                        Activities taken from your logbook
+                        Arabic numbering for technical chapters (1, 2, 3...)
+                      </li>
+                      <li>
+                        <span className="ms" aria-hidden="true">
+                          check_circle
+                        </span>
+                        Weekly technical procedures derived from verified logbook
                       </li>
                     </ul>
                   </div>
