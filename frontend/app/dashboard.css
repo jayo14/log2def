@@ -1249,3 +1249,147 @@
   padding: 20px;
 }
 
+
+/* Academic Report Print & Preview Paper Styles */
+.dashboard-root .academic-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-top: 16px;
+}
+.dashboard-root .academic-paper {
+  background: #ffffff;
+  color: #111111;
+  font-family: 'Times New Roman', Times, Georgia, serif;
+  font-size: 15px;
+  line-height: 1.6;
+  border: 1px solid #dcdad3;
+  border-radius: 8px;
+  padding: 40px 48px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+  position: relative;
+}
+.dashboard-root .academic-cover {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 480px;
+  padding: 40px 20px;
+}
+.dashboard-root .academic-cover h1 {
+  font-size: 20px;
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin-bottom: 24px;
+  color: #000;
+}
+.dashboard-root .academic-cover h2 {
+  font-size: 16px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 18px 0;
+  color: #222;
+}
+.dashboard-root .academic-prelim {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px dashed #ccc;
+}
+.dashboard-root .academic-prelim h2,
+.dashboard-root .academic-chapter h2 {
+  font-size: 17px;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.dashboard-root .academic-sig-block {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 40px;
+  gap: 20px;
+}
+.dashboard-root .sig-line {
+  border-top: 1px solid #000;
+  padding-top: 6px;
+  font-size: 13px;
+  text-align: center;
+  flex: 1;
+}
+.dashboard-root .toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.dashboard-root .toc-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px dotted #ccc;
+  font-size: 14.5px;
+}
+.dashboard-root .page-break {
+  page-break-after: always;
+  break-after: page;
+}
+
+/* Upload dropzone active states & progress */
+.dashboard-root .upload-loading-banner {
+  background: #edf6f1;
+  border: 1px solid #b8e1cd;
+  border-radius: 18px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #175438;
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dashboard-root .upload-loading-banner .spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(23, 84, 56, 0.2);
+  border-top-color: #175438;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Print Media Styles */
+@media print {
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .dashboard-root .top,
+  .dashboard-root .nv,
+  .dashboard-root .tl,
+  .dashboard-root .pills,
+  .dashboard-root .btn,
+  .dashboard-root .seg,
+  .dashboard-root .qa,
+  .dashboard-root .ib,
+  .dashboard-root #toast,
+  .dashboard-root #layer,
+  .dashboard-root .hero,
+  .dashboard-root .up,
+  .dashboard-root .wh {
+    display: none !important;
+  }
+  .dashboard-root .academic-paper {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+  .dashboard-root .page-break {
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+}
