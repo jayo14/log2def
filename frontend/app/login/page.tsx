@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -30,7 +30,7 @@ export default function LoginPage() {
     <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md bg-white p-8 rounded-xl border border-border shadow-xs">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-800 text-white font-bold text-sm mb-3">
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-800 text-white font-bold text-sm mb-3 shadow-xs">
             L2D
           </div>
           <h1 className="text-2xl font-bold font-serif text-foreground">Sign in to Log2Def</h1>
@@ -38,57 +38,65 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="mb-6 p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mb-6 p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5"
+          >
+            <MaterialIcon name="error" size={18} className="text-red-600 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate={false}>
           <div>
-            <label className="block text-xs font-semibold text-foreground mb-1.5 uppercase tracking-wider">
+            <label htmlFor="login-username" className="block text-xs font-semibold text-foreground mb-1.5 uppercase tracking-wider">
               Username or Student ID
             </label>
             <input
+              id="login-username"
               type="text"
               required
+              aria-required="true"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. adeleke21 or student ID"
-              className="w-full px-3.5 py-2.5 rounded-md border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700/30 focus:border-emerald-700 transition-colors"
+              className="w-full px-3.5 py-2.5 rounded-md border border-border bg-white text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:border-emerald-700 transition-colors"
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider">
+              <label htmlFor="login-password" className="block text-xs font-semibold text-foreground uppercase tracking-wider">
                 Password
               </label>
             </div>
             <input
+              id="login-password"
               type="password"
               required
+              aria-required="true"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3.5 py-2.5 rounded-md border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700/30 focus:border-emerald-700 transition-colors"
+              className="w-full px-3.5 py-2.5 rounded-md border border-border bg-white text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:border-emerald-700 transition-colors"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-700/50 disabled:opacity-50 transition-colors"
+            className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/60 disabled:opacity-50 transition-colors cursor-pointer"
           >
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Signing in...
+                <MaterialIcon name="progress_activity" size={18} spin />
+                <span>Signing in...</span>
               </>
             ) : (
               <>
-                Sign in
-                <ArrowRight className="w-4 h-4" />
+                <span>Sign in</span>
+                <MaterialIcon name="arrow_forward" size={18} />
               </>
             )}
           </button>

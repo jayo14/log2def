@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -54,7 +54,7 @@ export default function RegisterPage() {
     <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-lg bg-white p-8 rounded-xl border border-border shadow-xs">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-800 text-white font-bold text-sm mb-3">
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-800 text-white font-bold text-sm mb-3 shadow-xs">
             L2D
           </div>
           <h1 className="text-2xl font-bold font-serif text-foreground">Create Student Account</h1>
@@ -62,8 +62,12 @@ export default function RegisterPage() {
         </div>
 
         {error && (
-          <div className="mb-6 p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+          <div
+            role="alert"
+            aria-live="polite"
+            className="mb-6 p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5"
+          >
+            <MaterialIcon name="error" size={18} className="text-red-600 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
@@ -164,17 +168,17 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-700/50 disabled:opacity-50 transition-colors"
+            className="w-full mt-4 flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700/60 disabled:opacity-50 transition-colors cursor-pointer"
           >
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Creating account...
+                <MaterialIcon name="progress_activity" size={18} spin />
+                <span>Creating account...</span>
               </>
             ) : (
               <>
-                Create Account
-                <ArrowRight className="w-4 h-4" />
+                <span>Create Account</span>
+                <MaterialIcon name="arrow_forward" size={18} />
               </>
             )}
           </button>
