@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { Navbar } from "@/components/Navbar";
 import { GlobalToast } from "@/components/ui/toast";
+import { PWAManager } from "@/components/pwa-manager";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,9 +17,32 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  themeColor: "#10b981",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+};
+
 export const metadata: Metadata = {
   title: "Log2Def — SIWES Logbook-to-Defence Platform",
   description: "Turn your real SIWES logbook into a structured, editable, printable technical report and prepare to defend it. Built for LASUSTECH and Nigerian institutions.",
+  manifest: "/manifest.json",
+  applicationName: "Log2Def",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Log2Def",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -46,6 +70,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-[#FAF9F5] text-[#191919] selection:bg-emerald-100 selection:text-emerald-900">
         <AuthProvider>
           <Suspense fallback={null}>
+            <PWAManager />
             <Navbar />
           </Suspense>
           <main className="flex-1 flex flex-col">{children}</main>
