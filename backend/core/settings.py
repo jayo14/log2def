@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    'drf_spectacular',
     # Local apps
     'api',
 ]
@@ -125,6 +126,24 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.FormParser',
         'rest_framework.parsers.MultiPartParser',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Spectacular OpenAPI / Swagger Settings
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Log2Def API',
+    'DESCRIPTION': 'AI-powered SIWES Logbook-to-Defence Platform REST API for LASUSTECH and Nigerian institutions.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'ENUM_NAME_OVERRIDES': {
+        'ProjectStatusEnum': 'api.models.ReportProject.STATUS_CHOICES',
+        'DocumentTypeEnum': 'api.models.SourceDocument.TYPE_CHOICES',
+        'DocumentStatusEnum': 'api.models.SourceDocument.STATUS_CHOICES',
+        'PageStatusEnum': 'api.models.ExtractedPage.STATUS_CHOICES',
+        'DefenceCategoryEnum': 'api.models.DefenceQuestion.CATEGORY_CHOICES',
+        'MasteryStatusEnum': 'api.models.DefenceQuestion.MASTERY_CHOICES',
+    },
 }
 
 # SimpleJWT Settings
