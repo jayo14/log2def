@@ -43,6 +43,11 @@ export default function DashboardPage() {
     generateReport: storeGenerateReport,
     saveSection: storeSaveSection,
     regenerateSection: storeRegenerateSection,
+    versions: reportVersions,
+    isLoadingVersions,
+    fetchVersions: storeFetchVersions,
+    createVersion: storeCreateVersion,
+    revertVersion: storeRevertVersion,
     downloadDocx: storeDownloadDocx,
     downloadPdf: storeDownloadPdf,
     isGeneratingReport,
@@ -68,6 +73,9 @@ export default function DashboardPage() {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState('');
 
+  // Version snapshot note draft
+  const [newVersionSummary, setNewVersionSummary] = useState('');
+
   // Local UI & Scroll states
   const [isScrolled, setIsScrolled] = useState(false);
   const [animDir, setAnimDir] = useState<'fw' | 'bw'>('fw');
@@ -78,7 +86,7 @@ export default function DashboardPage() {
 
   // Interactive Bottom Sheet Modal state
   const [activeSheet, setActiveSheet] = useState<
-    'me' | 'addEntry' | 'typeNotes' | 'correctText' | null
+    'me' | 'addEntry' | 'typeNotes' | 'correctText' | 'addVersion' | null
   >(null);
   const [correctingDocIdx, setCorrectingDocIdx] = useState<number>(0);
   const [correctingText, setCorrectingText] = useState<string>('');
@@ -194,6 +202,7 @@ export default function DashboardPage() {
     if (activeProject?.id) {
       fetchReport(activeProject.id).catch(() => null);
       fetchQuestions(activeProject.id).catch(() => []);
+      storeFetchVersions(activeProject.id).catch(() => []);
     }
   }, [activeProject?.id]);
 
@@ -546,9 +555,40 @@ export default function DashboardPage() {
     try {
       triggerToast(`Regenerating Chapter ${sec.chapter_number} with AI...`);
       await storeRegenerateSection(activeProject.id, sec.id);
+      await storeFetchVersions(activeProject.id);
       triggerToast(`Chapter ${sec.chapter_number} updated with AI`);
     } catch (err: any) {
       triggerToast(err.message || 'Failed to regenerate section');
+    }
+  };
+
+  // Version Control: Create Snapshot
+  const handleCreateSnapshot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProject?.id) return;
+    try {
+      const summary = newVersionSummary.trim() || 'Manual revision snapshot';
+      await storeCreateVersion(activeProject.id, summary);
+      setNewVersionSummary('');
+      setActiveSheet(null);
+      triggerToast('Version snapshot saved');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to save version');
+    }
+  };
+
+  // Version Control: Revert Version
+  const handleRevertVersion = async (versionId: number, versionNum: number) => {
+    if (!activeProject?.id) return;
+    if (!window.confirm(`Are you sure you want to revert to Version ${versionNum}? Current unsaved edits will be replaced.`)) {
+      return;
+    }
+    try {
+      triggerToast(`Reverting to Version ${versionNum}...`);
+      await storeRevertVersion(activeProject.id, versionId);
+      triggerToast(`Report reverted to Version ${versionNum}`);
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to revert version');
     }
   };
 
@@ -1247,6 +1287,14 @@ export default function DashboardPage() {
                 <button
                   role="tab"
                   type="button"
+                  aria-selected={reportTab === 'versions'}
+                  onClick={() => setReportTab('versions')}
+                >
+                  Versions ({reportVersions.length})
+                </button>
+                <button
+                  role="tab"
+                  type="button"
                   aria-selected={reportTab === 'export'}
                   onClick={() => setReportTab('export')}
                 >
@@ -1501,7 +1549,68 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* 3. EXPORT VIEW */}
+              {/* 3. VERSION HISTORY VIEW */}
+              {reportTab === 'versions' && (
+                <div>
+                  <div className="row sb" style={{ marginBottom: '16px' }}>
+                    <div>
+                      <h2 style={{ fontSize: '18px', margin: 0 }}>Version History</h2>
+                      <p className="mut" style={{ fontSize: '13px', margin: '2px 0 0' }}>
+                        Snapshots are preserved automatically during generation and manual saves.
+                      </p>
+                    </div>
+                    <button
+                      className="btn s"
+                      type="button"
+                      onClick={() => setActiveSheet('addVersion' as any)}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        add
+                      </span>
+                      Save snapshot
+                    </button>
+                  </div>
+
+                  {reportVersions.length > 0 ? (
+                    reportVersions.map((v: any) => (
+                      <div className={`ver-card ${v.version_number === (report?.version || 1) ? 'current' : ''}`} key={v.id}>
+                        <div className="ver-header">
+                          <span className={`ver-badge ${v.version_number === (report?.version || 1) ? 'active' : ''}`}>
+                            Version {v.version_number} {v.version_number === (report?.version || 1) ? '(Current)' : ''}
+                          </span>
+                          <span className="mut" style={{ fontSize: '12px' }}>
+                            {v.created_at ? new Date(v.created_at).toLocaleString() : 'Recent'}
+                          </span>
+                        </div>
+                        <p style={{ margin: '4px 0', fontSize: '14.5px', fontWeight: 500 }}>
+                          {v.change_summary || v.title || 'Report Revision'}
+                        </p>
+                        <div className="row sb" style={{ marginTop: '8px' }}>
+                          <span className="mut" style={{ fontSize: '12.5px' }}>
+                            {v.sections_snapshot ? `${v.sections_snapshot.length} sections snapshot` : 'Full report'}
+                          </span>
+                          <button
+                            className="btn o s"
+                            type="button"
+                            onClick={() => handleRevertVersion(v.id, v.version_number)}
+                          >
+                            <span className="ms" aria-hidden="true">
+                              history
+                            </span>
+                            Revert to this version
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="card empty">
+                      <p>No snapshots yet. Click &quot;Save snapshot&quot; to record a milestone.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. EXPORT VIEW */}
               {reportTab === 'export' && (
                 <>
                   {/* Export Options */}
@@ -2073,6 +2182,29 @@ export default function DashboardPage() {
                     Log out
                   </button>
                 </>
+              )}
+
+              {/* Save Version Snapshot Sheet */}
+              {activeSheet === 'addVersion' && (
+                <form onSubmit={handleCreateSnapshot}>
+                  <h2>Save Version Snapshot</h2>
+                  <p className="mut" style={{ fontSize: '13.5px', margin: '-6px 0 16px' }}>
+                    Save a named milestone to track revisions and easily revert at any time.
+                  </p>
+                  <div className="f">
+                    <label htmlFor="vs">Snapshot Description</label>
+                    <input
+                      id="vs"
+                      type="text"
+                      placeholder="e.g. Before supervisor inspection or Chapter 3 review"
+                      value={newVersionSummary}
+                      onChange={(e) => setNewVersionSummary(e.target.value)}
+                    />
+                  </div>
+                  <button className="btn w" type="submit">
+                    Save snapshot
+                  </button>
+                </form>
               )}
 
               {/* Add Manual Entry Sheet */}
