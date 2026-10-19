@@ -408,3 +408,88 @@ class Log2DefBackendTests(TestCase):
         self.assertEqual(len(resp_w1_ver.data), 1)
         self.assertEqual(resp_w1_ver.data[0]['day_of_week'], 'Monday')
 
+    def test_registration_without_username_and_email_uniqueness(self):
+        # Student registers using full_name and email without specifying username
+        resp = self.client.post('/api/auth/register/', {
+            'full_name': 'Ayomide Adeleke',
+            'email': 'ayomide.adeleke@lasustech.edu.ng',
+            'password': 'StrongPassword2026!',
+            'password_confirm': 'StrongPassword2026!'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertIn('tokens', resp.data)
+        user_data = resp.data['user']
+        self.assertEqual(user_data['first_name'], 'Ayomide')
+        self.assertEqual(user_data['last_name'], 'Adeleke')
+        self.assertTrue(user_data['username'].startswith('ayomide_adeleke'))
+
+        # Duplicate email registration must be rejected
+        dup_resp = self.client.post('/api/auth/register/', {
+            'full_name': 'Another Ayomide',
+            'email': 'AYOMIDE.ADELEKE@lasustech.edu.ng',
+            'password': 'AnotherPassword2026!',
+            'password_confirm': 'AnotherPassword2026!'
+        })
+        self.assertEqual(dup_resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('email', dup_resp.data)
+
+    def test_login_with_email_address(self):
+        # Student logs in providing email instead of username
+        resp = self.client.post('/api/auth/login/', {
+            'username': 'student1@lasustech.edu.ng',
+            'password': 'StrongPassword123!'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn('access', resp.data)
+        self.assertIn('refresh', resp.data)
+        self.assertEqual(resp.data['user']['email'], 'student1@lasustech.edu.ng')
+
+    def test_password_reset_flow(self):
+        # 1. Request password reset
+        req_resp = self.client.post('/api/auth/password-reset/', {
+            'email': 'student2@lasustech.edu.ng'
+        })
+        self.assertEqual(req_resp.status_code, status.HTTP_200_OK)
+        self.assertIn('reset_token', req_resp.data)
+        reset_token = req_resp.data['reset_token']
+
+        # 2. Confirm reset with new password
+        confirm_resp = self.client.post('/api/auth/password-reset/confirm/', {
+            'token': reset_token,
+            'password': 'BrandNewPassword2026!',
+            'password_confirm': 'BrandNewPassword2026!'
+        })
+        self.assertEqual(confirm_resp.status_code, status.HTTP_200_OK)
+
+        # 3. Old password fails
+        old_login = self.client.post('/api/auth/login/', {
+            'username': 'student2',
+            'password': 'StrongPassword123!'
+        })
+        self.assertEqual(old_login.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 4. New password succeeds
+        new_login = self.client.post('/api/auth/login/', {
+            'username': 'student2@lasustech.edu.ng',
+            'password': 'BrandNewPassword2026!'
+        })
+        self.assertEqual(new_login.status_code, status.HTTP_200_OK)
+
+        # 5. Token reuse must fail
+        reuse_resp = self.client.post('/api/auth/password-reset/confirm/', {
+            'token': reset_token,
+            'password': 'YetAnotherPassword2026!',
+            'password_confirm': 'YetAnotherPassword2026!'
+        })
+        self.assertEqual(reuse_resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('token', reuse_resp.data)
+
+    def test_password_reset_invalid_token(self):
+        resp = self.client.post('/api/auth/password-reset/confirm/', {
+            'token': 'invalid:token:12345',
+            'password': 'BrandNewPassword2026!',
+            'password_confirm': 'BrandNewPassword2026!'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('token', resp.data)
+
