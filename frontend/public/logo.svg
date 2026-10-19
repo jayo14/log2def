@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#071712" />
+      <stop offset="100%" stop-color="#0d2c20" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="50%" cy="45%" r="40%">
+      <stop offset="0%" stop-color="#55d6a2" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#55d6a2" stop-opacity="0" />
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="110" fill="url(#bgGrad)" />
+  <rect width="508" height="508" x="2" y="2" rx="108" fill="none" stroke="#55d6a2" stroke-width="2" stroke-opacity="0.2" />
+
+  <circle cx="256" cy="230" r="180" fill="url(#glowGrad)" />
+
+  <g filter="url(#shadow)">
+    <polygon points="95,175 245,155 245,385 95,405" fill="#f0f8f4" />
+    <line x1="120" y1="215" x2="225" y2="203" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+    <line x1="120" y1="255" x2="225" y2="243" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+    <line x1="120" y1="295" x2="225" y2="283" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+    <line x1="120" y1="335" x2="225" y2="323" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+
+    <circle cx="245" cy="170" r="8" fill="#f59e0b" />
+    <circle cx="245" cy="212" r="8" fill="#f59e0b" />
+    <circle cx="245" cy="254" r="8" fill="#f59e0b" />
+    <circle cx="245" cy="296" r="8" fill="#f59e0b" />
+    <circle cx="245" cy="338" r="8" fill="#f59e0b" />
+    <circle cx="245" cy="380" r="8" fill="#f59e0b" />
+
+    <polygon points="255,155 405,175 405,405 255,385" fill="#e1f3eb" />
+    <line x1="275" y1="203" x2="380" y2="215" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+    <line x1="275" y1="243" x2="380" y2="255" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+    <line x1="275" y1="283" x2="380" y2="295" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+    <line x1="275" y1="323" x2="380" y2="335" stroke="#10b981" stroke-width="5" stroke-linecap="round" stroke-opacity="0.8" />
+  </g>
+
+  <g filter="url(#shadow)">
+    <polygon points="250,160 370,160 350,210 270,210" fill="#093621" />
+    <polygon points="310,85 435,135 310,185 185,135" fill="#0f5132" stroke="#55d6a2" stroke-width="5" />
+    <circle cx="310" cy="135" r="9" fill="#f59e0b" />
+    <path d="M 310,135 Q 380,160 408,200 T 412,235" fill="none" stroke="#f59e0b" stroke-width="5" stroke-linecap="round" />
+    <polygon points="404,232 420,232 425,258 399,258" fill="#fbbf24" />
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M 425,54 Q 425,90 461,90 Q 425,90 425,126 Q 425,90 389,90 Q 425,90 425,54 Z" fill="url(#goldGrad)" />
+    <circle cx="425" cy="90" r="5" fill="#ffffff" />
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="120" y="420" width="260" height="46" rx="12" fill="url(#emeraldGrad)" stroke="#55d6a2" stroke-width="3" />
+    <g fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="22" letter-spacing="3">
+      <text x="250" y="452" text-anchor="middle">LOG<tspan fill="#fbbf24">2</tspan>DEF</text>
+    </g>
+  </g>
+</svg>
