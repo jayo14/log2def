@@ -17,6 +17,7 @@ export interface DefenceState {
   updateQuestion: (projectId: number | string, questionId: number, data: any) => Promise<any>;
   setSelectedCategory: (category: string) => void;
   toggleAnswerReveal: (questionId: number) => void;
+  setAnswerReveal: (questionId: number, isRevealed: boolean) => void;
   revealAllAnswers: () => void;
   hideAllAnswers: () => void;
   startMockExam: () => void;
@@ -59,6 +60,14 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
       revealedAnswers: {
         ...state.revealedAnswers,
         [questionId]: !state.revealedAnswers[questionId],
+      },
+    })),
+
+  setAnswerReveal: (questionId, isRevealed) =>
+    set((state) => ({
+      revealedAnswers: {
+        ...state.revealedAnswers,
+        [questionId]: isRevealed,
       },
     })),
 
