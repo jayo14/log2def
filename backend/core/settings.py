@@ -188,3 +188,16 @@ TESSERACT_CMD = os.getenv('TESSERACT_CMD', 'tesseract')
 
 # File Upload Limits (15MB)
 MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024
+
+# Security Hardening & Headers
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+if not DEBUG:
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = os.getenv('DJANGO_SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1')
+    if 'insecure' in SECRET_KEY:
+        raise RuntimeError("DJANGO_SECRET_KEY must be configured with a secure secret in production mode.")
+
