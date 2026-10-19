@@ -27,6 +27,8 @@ export default function DashboardPage() {
     fetchActiveProject,
     createProject,
     uploadDocument: storeUploadDocument,
+    deleteDocument: storeDeleteDocument,
+    reprocessDocument: storeReprocessDocument,
     updatePage: storeUpdatePage,
     createLogbookEntry: storeCreateLogbookEntry,
     updateLogbookEntry: storeUpdateLogbookEntry,
@@ -59,6 +61,10 @@ export default function DashboardPage() {
   const [reportTab, setReportTab] = useState<'editor' | 'export'>('editor');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
+
+  // Multi-file upload progress
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
+  const [uploadStatusText, setUploadStatusText] = useState('');
 
   // Local UI & Scroll states
   const [isScrolled, setIsScrolled] = useState(false);
@@ -349,23 +355,58 @@ export default function DashboardPage() {
     }
   };
 
-  // Handle Logbook File Upload
+  // Handle Multi-file Logbook Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!activeProject?.id) {
       triggerToast('Create a report project first');
       return;
     }
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingFiles(true);
+    setUploadStatusText(`Uploading & analyzing ${files.length} logbook file${files.length > 1 ? 's' : ''}...`);
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+      formData.append('file', files[0]);
+
       await storeUploadDocument(activeProject.id, formData);
+      await fetchActiveProject(activeProject.id);
       setLogbookTab('docs');
-      triggerToast('File uploaded and text extracted');
+      triggerToast(`${files.length} file${files.length > 1 ? 's' : ''} uploaded and analyzed`);
     } catch (err: any) {
       triggerToast(err.message || 'Upload failed');
+    } finally {
+      setIsUploadingFiles(false);
+      setUploadStatusText('');
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  // Delete Document
+  const handleDeleteDoc = async (docId: number) => {
+    if (!activeProject?.id) return;
+    try {
+      await storeDeleteDocument(activeProject.id, docId);
+      triggerToast('Document deleted');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to delete document');
+    }
+  };
+
+  // Reprocess Document with AI OCR
+  const handleReprocessDoc = async (docId: number) => {
+    if (!activeProject?.id) return;
+    try {
+      triggerToast('Reprocessing document with AI OCR...');
+      await storeReprocessDocument(activeProject.id, docId);
+      triggerToast('Document reprocessed successfully');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to reprocess document');
     }
   };
 
@@ -945,18 +986,26 @@ export default function DashboardPage() {
                 <span className="ms" aria-hidden="true">
                   cloud_upload
                 </span>
-                <b>Upload pages</b>
+                <b>Upload logbook pages & photos</b>
                 <span className="mut" style={{ fontSize: '13.5px' }}>
-                  PDF, JPG, PNG or DOCX
+                  Select multiple photos cover-to-cover (JPG, PNG, PDF, DOCX)
                 </span>
                 <input
                   type="file"
                   id="fi"
+                  multiple
                   accept=".pdf,.jpg,.jpeg,.png,.docx"
                   aria-label="Upload logbook pages"
                   onChange={handleFileUpload}
                 />
               </label>
+
+              {isUploadingFiles && (
+                <div className="upload-loading-banner">
+                  <div className="spinner"></div>
+                  <span>{uploadStatusText}</span>
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="row" style={{ marginBottom: '14px' }}>
@@ -1081,20 +1130,47 @@ export default function DashboardPage() {
                           d.extracted_text ||
                           'Text extracted from this source will appear here for student review.'}
                       </div>
-                      <button
-                        className="tx"
-                        type="button"
-                        onClick={() => {
-                          setCorrectingDocIdx(idx);
-                          setCorrectingText(d.extracted_pages?.[0]?.extracted_text || '');
-                          setActiveSheet('correctText');
-                        }}
-                      >
-                        <span className="ms" aria-hidden="true">
-                          edit
-                        </span>
-                        Correct text
-                      </button>
+                      <div className="row" style={{ gap: '10px', marginTop: '10px' }}>
+                        <button
+                          className="tx"
+                          type="button"
+                          onClick={() => {
+                            setCorrectingDocIdx(idx);
+                            setCorrectingText(d.extracted_pages?.[0]?.extracted_text || '');
+                            setActiveSheet('correctText');
+                          }}
+                        >
+                          <span className="ms" aria-hidden="true">
+                            edit
+                          </span>
+                          Correct text
+                        </button>
+                        {d.id && (
+                          <>
+                            <button
+                              className="tx"
+                              type="button"
+                              onClick={() => handleReprocessDoc(d.id)}
+                            >
+                              <span className="ms" aria-hidden="true">
+                                refresh
+                              </span>
+                              Reprocess
+                            </button>
+                            <button
+                              className="tx"
+                              type="button"
+                              style={{ color: '#dc2626' }}
+                              onClick={() => handleDeleteDoc(d.id)}
+                            >
+                              <span className="ms" aria-hidden="true">
+                                delete
+                              </span>
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
