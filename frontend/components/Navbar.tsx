@@ -2,11 +2,18 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { MaterialIcon } from '@/components/ui/material-icon';
 
 export function Navbar() {
   const { user, logout } = useAuth();
+  const pathname = usePathname();
+
+  // Hide the default generic navbar on public landing and authentication screens
+  if (pathname === '/' || pathname === '/login' || pathname === '/register') {
+    return null;
+  }
 
   return (
     <header className="border-b border-border/80 bg-background/95 backdrop-blur-sm sticky top-0 z-40 transition-colors">
