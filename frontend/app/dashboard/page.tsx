@@ -93,6 +93,10 @@ export default function DashboardPage() {
   const [speechTimerSeconds, setSpeechTimerSeconds] = useState(0);
   const [showSpeakerNotes, setShowSpeakerNotes] = useState(false);
 
+  // PWA Offline & Install Prompt states
+  const [isOffline, setIsOffline] = useState(false);
+  const [canInstallPWA, setCanInstallPWA] = useState(false);
+
   // Version snapshot note draft
   const [newVersionSummary, setNewVersionSummary] = useState('');
 
@@ -269,6 +273,30 @@ export default function DashboardPage() {
       setWizardData((prev) => ({ ...prev, name: prev.name || fullName }));
     }
   }, [user]);
+
+  // PWA Offline detection & installability detection
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOffline(!navigator.onLine);
+      const handleOnline = () => setIsOffline(false);
+      const handleOffline = () => setIsOffline(true);
+      const handleInstallable = () => setCanInstallPWA(true);
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      window.addEventListener('pwa-installable', handleInstallable);
+
+      if ((window as any).__pwaInstallPrompt) {
+        setCanInstallPWA(true);
+      }
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+        window.removeEventListener('pwa-installable', handleInstallable);
+      };
+    }
+  }, []);
 
   // Scroll detection for sticky header blur
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -666,6 +694,22 @@ export default function DashboardPage() {
     window.print();
   };
 
+  // PWA App Installation Trigger
+  const handleInstallApp = async () => {
+    const promptEvent = (window as any).__pwaInstallPrompt;
+    if (!promptEvent) {
+      triggerToast('PWA installation is available via your browser menu');
+      return;
+    }
+    promptEvent.prompt();
+    const { outcome } = await promptEvent.userChoice;
+    if (outcome === 'accepted') {
+      setCanInstallPWA(false);
+      (window as any).__pwaInstallPrompt = null;
+      triggerToast('Installing Log2Def...');
+    }
+  };
+
   // Report Editor Formatting Commands
   const handleFormat = (cmd: string) => {
     document.execCommand(cmd, false);
@@ -959,6 +1003,24 @@ export default function DashboardPage() {
                 <h1>Hi, {effectiveUser?.first_name || 'John'}</h1>
                 <p>Your SIWES report, step by step.</p>
               </div>
+
+              {/* Offline Network Warning Banner */}
+              {isOffline && (
+                <div className="offline-banner" role="status">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="ms" aria-hidden="true">cloud_off</span>
+                    <span>Offline mode active. Your local drafts remain accessible.</span>
+                  </div>
+                  <button
+                    className="btn o s"
+                    type="button"
+                    style={{ color: '#fbbf24', borderColor: 'rgba(235, 178, 59, 0.4)' }}
+                    onClick={() => window.location.reload()}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
 
               {!effectiveProject ? (
                 <div className="card empty">
@@ -2590,6 +2652,27 @@ export default function DashboardPage() {
                           </option>
                         ))}
                       </select>
+                    </div>
+                  )}
+
+                  {canInstallPWA && (
+                    <div className="pwa-install-card">
+                      <div className="pwa-install-info">
+                        <div className="pwa-install-icon">
+                          <img src="/logo.svg" alt="Log2Def" />
+                        </div>
+                        <div className="pwa-install-text">
+                          <h4>Install Log2Def App</h4>
+                          <p>Fast offline access on your device</p>
+                        </div>
+                      </div>
+                      <button
+                        className="btn s"
+                        type="button"
+                        onClick={handleInstallApp}
+                      >
+                        Install
+                      </button>
                     </div>
                   )}
 

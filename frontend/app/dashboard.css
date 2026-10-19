@@ -1360,6 +1360,69 @@
   animation: spin 0.8s linear infinite;
 }
 
+/* PWA Install Banner & Offline Indicator */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(235, 178, 59, 0.15);
+  border: 1px solid rgba(235, 178, 59, 0.4);
+  color: #fbbf24;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.offline-banner .ms {
+  font-size: 18px;
+  color: #fbbf24;
+}
+
+.pwa-install-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(7, 23, 18, 0.8));
+  border: 1px solid rgba(85, 214, 162, 0.35);
+  border-radius: 16px;
+  margin-bottom: 18px;
+}
+.pwa-install-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pwa-install-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #0f5132;
+  border: 1px solid #55d6a2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pwa-install-icon img {
+  width: 26px;
+  height: 26px;
+}
+.pwa-install-text h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+.pwa-install-text p {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 2px 0 0;
+}
+
 /* Print Media Styles */
 @media print {
   body, html {
