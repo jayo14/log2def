@@ -5,11 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { projectsApi } from '@/lib/api';
-import { 
-  ArrowLeft, UploadCloud, FileText, Download, Award, Settings, 
-  CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, Eye, Edit3, 
-  Trash2, Plus, Check, Star, Play, Sparkles, Loader2, BookOpen, Clock, Building
-} from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 import { TiptapEditor } from '@/components/TiptapEditor';
 
 function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }) {
@@ -335,7 +331,7 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
   if (authLoading || loading) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-6 h-6 animate-spin text-emerald-800" />
+        <MaterialIcon name="progress_activity" size={28} spin className="text-emerald-800" />
       </div>
     );
   }
@@ -343,12 +339,15 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
   if (!project) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
-        <AlertCircle className="w-8 h-8 text-red-600 mx-auto mb-3" />
+        <MaterialIcon name="error" size={36} className="text-red-600 mx-auto mb-3" />
         <h2 className="text-xl font-bold font-serif text-foreground">Project Not Found</h2>
         <p className="text-sm text-muted-foreground mt-1 mb-6">
           The requested project does not exist or you do not have permission to view it.
         </p>
-        <Link href="/dashboard" className="px-4 py-2 bg-emerald-800 text-white rounded-md text-sm">
+        <Link
+          href="/dashboard"
+          className="px-4 py-2 bg-emerald-800 text-white rounded-md text-sm font-medium hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+        >
           Return to Dashboard
         </Link>
       </div>
@@ -371,10 +370,11 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
             <div className="flex items-center gap-3 min-w-0">
               <Link
                 href="/dashboard"
-                className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
                 title="Back to Dashboard"
+                aria-label="Back to Dashboard"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <MaterialIcon name="arrow_back" size={18} />
               </Link>
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -397,62 +397,70 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab('export')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-white text-foreground text-xs font-medium hover:bg-muted transition-colors shadow-2xs"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border bg-white text-foreground text-xs font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors shadow-2xs cursor-pointer"
               >
-                <Download className="w-3.5 h-3.5 text-emerald-800" />
-                Export Documents
+                <MaterialIcon name="download" size={16} className="text-emerald-800" />
+                <span>Export Documents</span>
               </button>
             </div>
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex items-center gap-1 mt-3 overflow-x-auto border-t border-border/40 pt-2 text-xs font-medium">
+          <div className="flex items-center gap-1 mt-3 overflow-x-auto border-t border-border/40 pt-2 text-xs font-medium" role="tablist" aria-label="Workspace tabs">
             <button
+              role="tab"
+              aria-selected={activeTab === 'sources'}
               onClick={() => setActiveTab('sources')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer ${
                 activeTab === 'sources'
                   ? 'bg-emerald-800 text-white font-semibold'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
-              <UploadCloud className="w-3.5 h-3.5" />
-              1. Sources & Logbook ({project.source_documents?.length || 0})
+              <MaterialIcon name="cloud_upload" size={16} />
+              <span>1. Sources & Logbook ({project.source_documents?.length || 0})</span>
             </button>
 
             <button
+              role="tab"
+              aria-selected={activeTab === 'report'}
               onClick={() => setActiveTab('report')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer ${
                 activeTab === 'report'
                   ? 'bg-emerald-800 text-white font-semibold'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              2. Report Editor {report ? `(${report.sections?.length || 0} sections)` : ''}
+              <MaterialIcon name="description" size={16} />
+              <span>2. Report Editor {report ? `(${report.sections?.length || 0} sections)` : ''}</span>
             </button>
 
             <button
+              role="tab"
+              aria-selected={activeTab === 'export'}
               onClick={() => setActiveTab('export')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer ${
                 activeTab === 'export'
                   ? 'bg-emerald-800 text-white font-semibold'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
-              <Download className="w-3.5 h-3.5" />
-              3. Document Export
+              <MaterialIcon name="download" size={16} />
+              <span>3. Document Export</span>
             </button>
 
             <button
+              role="tab"
+              aria-selected={activeTab === 'defence'}
               onClick={() => setActiveTab('defence')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer ${
                 activeTab === 'defence'
                   ? 'bg-emerald-800 text-white font-semibold'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
-              <Award className="w-3.5 h-3.5" />
-              4. Defence Prep ({defenceQuestions.length})
+              <MaterialIcon name="school" size={16} />
+              <span>4. Defence Prep ({defenceQuestions.length})</span>
             </button>
           </div>
         </div>
@@ -505,8 +513,8 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                   </div>
                 ) : (
                   <div>
-                    <label className="block w-full border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-emerald-700/60 transition-colors bg-[#FAF9F5]/40">
-                      <UploadCloud className="w-8 h-8 text-emerald-800 mx-auto mb-2" />
+                    <label className="block w-full border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-emerald-700/60 focus-within:ring-2 focus-within:ring-emerald-700 transition-colors bg-[#FAF9F5]/40">
+                      <MaterialIcon name="cloud_upload" size={36} className="text-emerald-800 mx-auto mb-2" />
                       <span className="text-sm font-medium text-foreground block">
                         {uploadFile ? uploadFile.name : 'Choose a file or drag & drop here'}
                       </span>
@@ -517,7 +525,8 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png,.docx"
                         onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                        className="hidden"
+                        className="sr-only"
+                        aria-label="Upload logbook file"
                       />
                     </label>
                   </div>
@@ -527,15 +536,17 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                   <button
                     type="submit"
                     disabled={uploading || (!uploadFile && !noteText.trim())}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none disabled:opacity-50 transition-colors cursor-pointer"
                   >
                     {uploading ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing Source...
+                        <MaterialIcon name="progress_activity" size={16} spin />
+                        <span>Processing Source...</span>
                       </>
                     ) : (
                       <>
-                        <UploadCloud className="w-3.5 h-3.5" /> Process & Extract Text
+                        <MaterialIcon name="cloud_upload" size={16} />
+                        <span>Process & Extract Text</span>
                       </>
                     )}
                   </button>
@@ -560,7 +571,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                     <div key={doc.id} className="bg-white rounded-xl border border-border p-4 shadow-2xs">
                       <div className="flex items-center justify-between pb-3 border-b border-border/60">
                         <div className="flex items-center gap-2.5">
-                          <FileText className="w-4 h-4 text-emerald-800" />
+                          <MaterialIcon name="description" size={20} className="text-emerald-800" />
                           <div>
                             <span className="font-semibold text-sm text-foreground">{doc.original_filename}</span>
                             <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
@@ -596,7 +607,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                               <div className="flex items-center gap-2">
                                 {page.status === 'manual_correction_needed' && (
                                   <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-200 text-amber-900 flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> Manual Verification Needed
+                                    <MaterialIcon name="warning" size={14} /> Manual Verification Needed
                                   </span>
                                 )}
                                 <button
@@ -604,9 +615,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                                     setEditingPage(page);
                                     setPageTextDraft(page.extracted_text || '');
                                   }}
-                                  className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 font-medium"
+                                  className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 font-medium focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded cursor-pointer"
                                 >
-                                  <Edit3 className="w-3 h-3" /> Correct Text
+                                  <MaterialIcon name="edit" size={14} /> Correct Text
                                 </button>
                               </div>
                             </div>
@@ -635,17 +646,17 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleBulkVerify}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200 text-xs font-medium hover:bg-emerald-100"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200 text-xs font-medium hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors cursor-pointer"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                    Verify All Entries
+                    <MaterialIcon name="check_circle" size={16} filled className="text-emerald-700" />
+                    <span>Verify All Entries</span>
                   </button>
                   <button
                     onClick={() => setShowNewEntry(true)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Manual Entry
+                    <MaterialIcon name="add" size={16} />
+                    <span>Add Manual Entry</span>
                   </button>
                 </div>
               </div>
@@ -683,7 +694,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                       <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                         {entry.is_verified ? (
                           <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                            <Check className="w-3 h-3" /> Verified
+                            <MaterialIcon name="check" size={14} /> Verified
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
@@ -692,10 +703,11 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                         )}
                         <button
                           onClick={() => handleDeleteEntry(entry.id)}
-                          className="p-1 text-muted-foreground hover:text-red-700 rounded"
+                          className="p-1 text-muted-foreground hover:text-red-700 focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:outline-none rounded transition-colors cursor-pointer"
                           title="Delete entry"
+                          aria-label={`Delete entry for Week ${entry.week_number}`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <MaterialIcon name="delete" size={16} />
                         </button>
                       </div>
                     </div>
@@ -711,7 +723,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
           <div>
             {!report ? (
               <div className="p-12 text-center bg-white rounded-xl border border-dashed border-border max-w-xl mx-auto my-8">
-                <FileText className="w-10 h-10 text-emerald-800 mx-auto mb-3" />
+                <MaterialIcon name="description" size={40} className="text-emerald-800 mx-auto mb-3" />
                 <h3 className="font-bold text-lg font-serif text-foreground">Generate Your Technical Report</h3>
                 <p className="text-xs text-muted-foreground mt-1 mb-6 max-w-sm mx-auto leading-relaxed">
                   Log2Def will synthesize your verified logbook records and placement details into the official LASUSTECH 5-chapter academic format.
@@ -719,15 +731,15 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 <button
                   onClick={() => handleGenerateReport(false)}
                   disabled={generatingReport}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
                 >
                   {generatingReport ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Generating All Sections...
+                      <MaterialIcon name="progress_activity" size={16} spin /> Generating All Sections...
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" /> Generate Structured Report
+                      <MaterialIcon name="auto_awesome" size={16} /> Generate Structured Report
                     </>
                   )}
                 </button>
@@ -741,22 +753,25 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                     <button
                       onClick={() => handleGenerateReport(true)}
                       disabled={generatingReport}
-                      className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 font-medium"
+                      className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 font-medium cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded"
                       title="Regenerate all sections from scratch"
+                      aria-label="Regenerate all report sections from scratch"
                     >
-                      <RefreshCw className={`w-3 h-3 ${generatingReport ? 'animate-spin' : ''}`} />
+                      <MaterialIcon name="sync" size={14} spin={generatingReport} />
                       Regen All
                     </button>
                   </div>
 
-                  <div className="space-y-1 max-h-[70vh] overflow-y-auto pr-1">
+                  <div className="space-y-1 max-h-[70vh] overflow-y-auto pr-1" role="tablist" aria-label="Report sections list">
                     {report.sections?.map((sec: any) => {
                       const isSelected = sec.id === activeSectionId;
                       return (
                         <button
                           key={sec.id}
+                          role="tab"
+                          aria-selected={isSelected}
                           onClick={() => handleSelectSection(sec)}
-                          className={`w-full text-left p-2.5 rounded-md text-xs transition-colors flex items-center justify-between ${
+                          className={`w-full text-left p-2.5 rounded-md text-xs transition-colors flex items-center justify-between cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
                             isSelected
                               ? 'bg-emerald-800 text-white font-medium'
                               : 'hover:bg-muted/70 text-foreground'
@@ -764,7 +779,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                         >
                           <span className="truncate pr-2">{sec.title}</span>
                           {sec.warnings && sec.warnings.length > 0 && (
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-amber-300' : 'bg-amber-500'}`} title="Missing information warning" />
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-amber-300' : 'bg-amber-500'}`} title="Missing information warning" aria-label="Warning: missing data" />
                           )}
                         </button>
                       );
@@ -787,28 +802,35 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => setPreviewMode(!previewMode)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-border text-xs font-medium text-foreground hover:bg-muted"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-border text-xs font-medium text-foreground hover:bg-muted cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                            aria-label={previewMode ? 'Switch to rich text editor' : 'Switch to document preview view'}
                           >
-                            <Eye className="w-3.5 h-3.5" />
+                            <MaterialIcon name="visibility" size={16} />
                             {previewMode ? 'Editor View' : 'Preview View'}
                           </button>
 
                           <button
                             onClick={() => handleRegenerateSection(activeSection.id)}
                             disabled={regeneratingSectionId === activeSection.id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-border text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded border border-border text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
                             title="Regenerate this specific section"
+                            aria-label="Regenerate this section with AI"
                           >
-                            <RefreshCw className={`w-3.5 h-3.5 ${regeneratingSectionId === activeSection.id ? 'animate-spin' : ''}`} />
+                            <MaterialIcon name="sync" size={16} spin={regeneratingSectionId === activeSection.id} />
                             Regenerate
                           </button>
 
                           <button
                             onClick={handleSaveSection}
                             disabled={savingSection}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                            aria-label="Save section content"
                           >
-                            {savingSection ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                            {savingSection ? (
+                              <MaterialIcon name="progress_activity" size={16} spin />
+                            ) : (
+                              <MaterialIcon name="check" size={16} />
+                            )}
                             Save Section
                           </button>
                         </div>
@@ -816,9 +838,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
 
                       {/* Warnings Alert */}
                       {activeSection.warnings && activeSection.warnings.length > 0 && (
-                        <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                        <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs" role="alert">
                           <div className="font-semibold flex items-center gap-1 mb-1">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            <MaterialIcon name="warning" size={16} className="text-amber-600" />
                             Missing Information / Verification Alert:
                           </div>
                           <ul className="list-disc pl-5 space-y-0.5">
@@ -860,7 +882,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
           <div className="max-w-4xl mx-auto space-y-8">
             <div className="bg-white rounded-xl border border-border p-6 sm:p-8 shadow-xs">
               <div className="text-center max-w-md mx-auto mb-8">
-                <Download className="w-10 h-10 text-emerald-800 mx-auto mb-2" />
+                <MaterialIcon name="download" size={40} className="text-emerald-800 mx-auto mb-2" />
                 <h2 className="text-2xl font-bold font-serif text-foreground">Export Official Documents</h2>
                 <p className="text-xs text-muted-foreground mt-1">
                   Download production-formatted files ready for academic review and physical binding.
@@ -882,15 +904,16 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                   <button
                     onClick={handleDownloadDocx}
                     disabled={exportingDocx || !report}
-                    className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 disabled:opacity-50"
+                    className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:outline-none"
+                    aria-label="Download technical report as Word document"
                   >
                     {exportingDocx ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating DOCX...
+                        <MaterialIcon name="progress_activity" size={16} spin /> Generating DOCX...
                       </>
                     ) : (
                       <>
-                        <Download className="w-3.5 h-3.5" /> Download Word Document
+                        <MaterialIcon name="download" size={16} /> Download Word Document
                       </>
                     )}
                   </button>
@@ -910,15 +933,16 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                   <button
                     onClick={handleDownloadPdf}
                     disabled={exportingPdf || !report}
-                    className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50"
+                    className="mt-6 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                    aria-label="Download validated technical report as PDF document"
                   >
                     {exportingPdf ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Rendering Validated PDF...
+                        <MaterialIcon name="progress_activity" size={16} spin /> Rendering Validated PDF...
                       </>
                     ) : (
                       <>
-                        <Download className="w-3.5 h-3.5" /> Download PDF Document
+                        <MaterialIcon name="download" size={16} /> Download PDF Document
                       </>
                     )}
                   </button>
@@ -932,19 +956,19 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center gap-2 text-zinc-700">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    <MaterialIcon name="check_circle" size={16} filled className="text-emerald-700 shrink-0" />
                     <span>A4 Standard Layout & 1.5" Left Margin</span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-700">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    <MaterialIcon name="check_circle" size={16} filled className="text-emerald-700 shrink-0" />
                     <span>Preliminary Roman Numerals (i, ii, iii...)</span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-700">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    <MaterialIcon name="check_circle" size={16} filled className="text-emerald-700 shrink-0" />
                     <span>Certification Page with Sign-off Lines</span>
                   </div>
                   <div className="flex items-center gap-2 text-zinc-700">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                    <MaterialIcon name="check_circle" size={16} filled className="text-emerald-700 shrink-0" />
                     <span>Weekly Activities Grounded in Logbook</span>
                   </div>
                 </div>
@@ -968,23 +992,25 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 <button
                   onClick={() => setMockExamActive(true)}
                   disabled={defenceQuestions.length === 0}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-zinc-900 text-white text-xs font-medium hover:bg-zinc-800 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-zinc-700 focus-visible:outline-none"
+                  aria-label="Launch full-screen mock defence oral examination"
                 >
-                  <Play className="w-3.5 h-3.5" />
+                  <MaterialIcon name="play_arrow" size={16} />
                   Launch Mock Defence Mode
                 </button>
                 <button
                   onClick={handleGenerateDefence}
                   disabled={generatingDefence}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                  aria-label="Generate questions grounded in your logbook"
                 >
                   {generatingDefence ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...
+                      <MaterialIcon name="progress_activity" size={16} spin /> Generating...
                     </>
                   ) : (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5" /> Generate Question Bank
+                      <MaterialIcon name="sync" size={16} /> Generate Question Bank
                     </>
                   )}
                 </button>
@@ -992,7 +1018,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
             </div>
 
             {/* Category Filter Chips */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs" role="toolbar" aria-label="Question category filters">
               {[
                 { id: 'all', label: 'All Questions' },
                 { id: 'flagged', label: 'Flagged / Needs Review' },
@@ -1005,7 +1031,8 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 <button
                   key={c.id}
                   onClick={() => setSelectedDefenceCategory(c.id)}
-                  className={`px-3 py-1.5 rounded-full border transition-colors shrink-0 ${
+                  aria-pressed={selectedDefenceCategory === c.id}
+                  className={`px-3 py-1.5 rounded-full border transition-colors shrink-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
                     selectedDefenceCategory === c.id
                       ? 'border-emerald-800 bg-emerald-800 text-white font-medium'
                       : 'border-border bg-white text-muted-foreground hover:bg-muted'
@@ -1019,7 +1046,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
             {/* Questions List */}
             {defenceQuestions.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-xl border border-dashed border-border">
-                <Award className="w-10 h-10 text-emerald-800 mx-auto mb-2" />
+                <MaterialIcon name="school" size={40} className="text-emerald-800 mx-auto mb-2" />
                 <h3 className="font-bold text-base font-serif text-foreground">No Defence Questions Generated Yet</h3>
                 <p className="text-xs text-muted-foreground mt-1 mb-4">
                   Click 'Generate Question Bank' above to create custom questions grounded in your host company and technical tasks.
@@ -1027,9 +1054,10 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 <button
                   onClick={handleGenerateDefence}
                   disabled={generatingDefence}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                  aria-label="Generate questions now"
                 >
-                  <Sparkles className="w-3.5 h-3.5" /> Generate Questions Now
+                  <MaterialIcon name="auto_awesome" size={16} /> Generate Questions Now
                 </button>
               </div>
             ) : (
@@ -1056,12 +1084,13 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleToggleHard(q.id, q.is_flagged_hard)}
-                            className={`p-1.5 rounded transition-colors ${
+                            className={`p-1.5 rounded transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${
                               q.is_flagged_hard ? 'text-amber-500 bg-amber-50' : 'text-zinc-400 hover:text-zinc-600'
                             }`}
-                            title="Flag question for revision"
+                            title={q.is_flagged_hard ? 'Unflag question' : 'Flag question for revision'}
+                            aria-label={q.is_flagged_hard ? 'Unflag question' : 'Flag question for revision'}
                           >
-                            <Star className="w-4 h-4 fill-current" />
+                            <MaterialIcon name="star" size={18} filled={q.is_flagged_hard} />
                           </button>
                         </div>
                       </div>
@@ -1080,7 +1109,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                               </span>
                               <button
                                 onClick={() => setRevealedAnswers({ ...revealedAnswers, [q.id]: false })}
-                                className="text-[11px] text-emerald-800 hover:underline"
+                                className="text-[11px] text-emerald-800 hover:underline cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded"
                               >
                                 Hide
                               </button>
@@ -1090,9 +1119,10 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                         ) : (
                           <button
                             onClick={() => setRevealedAnswers({ ...revealedAnswers, [q.id]: true })}
-                            className="text-xs text-emerald-800 font-medium hover:underline inline-flex items-center gap-1"
+                            className="text-xs text-emerald-800 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded"
+                            aria-label="Reveal model answer and examiner guidance"
                           >
-                            <Eye className="w-3.5 h-3.5" /> Reveal Model Answer & Guidance
+                            <MaterialIcon name="visibility" size={16} /> Reveal Model Answer & Guidance
                           </button>
                         )}
                       </div>
@@ -1100,10 +1130,11 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                       {/* Self-Mastery Rating */}
                       <div className="pt-3 border-t border-border/60 flex items-center justify-between text-xs">
                         <span className="text-muted-foreground text-[11px]">Your Mastery:</span>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5" role="group" aria-label="Mastery status">
                           <button
                             onClick={() => handleUpdateMastery(q.id, 'confident')}
-                            className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
+                            aria-pressed={q.mastery_status === 'confident'}
+                            className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
                               q.mastery_status === 'confident'
                                 ? 'bg-emerald-800 text-white border-emerald-800'
                                 : 'bg-white border-border text-foreground hover:bg-muted'
@@ -1113,7 +1144,8 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                           </button>
                           <button
                             onClick={() => handleUpdateMastery(q.id, 'needs_practice')}
-                            className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors ${
+                            aria-pressed={q.mastery_status === 'needs_practice'}
+                            className={`px-2.5 py-1 rounded text-[11px] font-medium border transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:outline-none ${
                               q.mastery_status === 'needs_practice'
                                 ? 'bg-amber-600 text-white border-amber-600'
                                 : 'bg-white border-border text-foreground hover:bg-muted'
@@ -1134,17 +1166,18 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
 
       {/* MODAL: Correct Extracted Page Text */}
       {editingPage && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-verify-page-title">
           <div className="bg-white rounded-xl border border-border p-6 max-w-2xl w-full shadow-lg space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="font-bold text-base font-serif text-foreground">
+              <h3 id="modal-verify-page-title" className="font-bold text-base font-serif text-foreground">
                 Verify / Correct Page {editingPage.page_number} Text
               </h3>
               <button
                 onClick={() => setEditingPage(null)}
-                className="text-muted-foreground hover:text-foreground text-sm font-bold"
+                className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                aria-label="Close dialog"
               >
-                ✕
+                <MaterialIcon name="close" size={20} />
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -1155,18 +1188,19 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
               value={pageTextDraft}
               onChange={(e) => setPageTextDraft(e.target.value)}
               className="w-full p-3.5 rounded-md border border-border text-xs font-mono leading-relaxed"
+              aria-label="Extracted OCR text"
             />
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setEditingPage(null)}
-                className="px-3.5 py-2 rounded border border-border text-xs font-medium text-foreground hover:bg-muted"
+                className="px-3.5 py-2 rounded border border-border text-xs font-medium text-foreground hover:bg-muted cursor-pointer focus-visible:ring-2 focus-visible:ring-zinc-700 focus-visible:outline-none"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSavePage}
                 disabled={savingPage}
-                className="px-4 py-2 rounded bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50"
+                className="px-4 py-2 rounded bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-900 disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
               >
                 {savingPage ? 'Saving...' : 'Save & Verify Page'}
               </button>
@@ -1177,22 +1211,24 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
 
       {/* MODAL: Add Manual Logbook Entry */}
       {showNewEntry && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-add-entry-title">
           <div className="bg-white rounded-xl border border-border p-6 max-w-lg w-full shadow-lg space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="font-bold text-base font-serif text-foreground">Add Manual Logbook Entry</h3>
+              <h3 id="modal-add-entry-title" className="font-bold text-base font-serif text-foreground">Add Manual Logbook Entry</h3>
               <button
                 onClick={() => setShowNewEntry(false)}
-                className="text-muted-foreground hover:text-foreground text-sm font-bold"
+                className="p-1 rounded text-muted-foreground hover:text-foreground cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+                aria-label="Close dialog"
               >
-                ✕
+                <MaterialIcon name="close" size={20} />
               </button>
             </div>
             <form onSubmit={handleCreateEntry} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold mb-1">Week Number</label>
+                  <label htmlFor="new-entry-week" className="block font-semibold mb-1">Week Number</label>
                   <input
+                    id="new-entry-week"
                     type="number"
                     min={1}
                     max={30}
@@ -1202,8 +1238,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold mb-1">Day of Week</label>
+                  <label htmlFor="new-entry-day" className="block font-semibold mb-1">Day of Week</label>
                   <select
+                    id="new-entry-day"
                     value={newEntryData.day_of_week}
                     onChange={(e) => setNewEntryData({ ...newEntryData, day_of_week: e.target.value })}
                     className="w-full p-2 rounded border border-border bg-white"
@@ -1219,8 +1256,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Activity Summary</label>
+                <label htmlFor="new-entry-summary" className="block font-semibold mb-1">Activity Summary</label>
                 <input
+                  id="new-entry-summary"
                   type="text"
                   required
                   value={newEntryData.activity_summary}
@@ -1231,8 +1269,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Tools / Equipment Used</label>
+                <label htmlFor="new-entry-tools" className="block font-semibold mb-1">Tools / Equipment Used</label>
                 <input
+                  id="new-entry-tools"
                   type="text"
                   value={newEntryData.tools_used}
                   onChange={(e) => setNewEntryData({ ...newEntryData, tools_used: e.target.value })}
@@ -1242,8 +1281,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Detailed Technical Explanation</label>
+                <label htmlFor="new-entry-details" className="block font-semibold mb-1">Detailed Technical Explanation</label>
                 <textarea
+                  id="new-entry-details"
                   rows={4}
                   required
                   value={newEntryData.verified_text}
@@ -1257,13 +1297,13 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                 <button
                   type="button"
                   onClick={() => setShowNewEntry(false)}
-                  className="px-3.5 py-1.5 rounded border border-border text-foreground hover:bg-muted"
+                  className="px-3.5 py-1.5 rounded border border-border text-foreground hover:bg-muted cursor-pointer focus-visible:ring-2 focus-visible:ring-zinc-700 focus-visible:outline-none"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded bg-emerald-800 text-white font-medium hover:bg-emerald-900"
+                  className="px-4 py-1.5 rounded bg-emerald-800 text-white font-medium hover:bg-emerald-900 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
                 >
                   Add Entry
                 </button>
@@ -1275,7 +1315,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
 
       {/* FULL-SCREEN MOCK ORAL EXAMINATION MODAL */}
       {mockExamActive && defenceQuestions.length > 0 && (
-        <div className="fixed inset-0 z-50 bg-[#111827] text-white flex flex-col">
+        <div className="fixed inset-0 z-50 bg-[#111827] text-white flex flex-col" role="dialog" aria-modal="true" aria-label="Mock oral defence examination">
           <div className="p-4 border-b border-gray-800 flex items-center justify-between max-w-5xl mx-auto w-full">
             <div className="flex items-center gap-3">
               <span className="font-bold text-sm uppercase tracking-wider text-emerald-400">
@@ -1287,7 +1327,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
             </div>
             <button
               onClick={() => setMockExamActive(false)}
-              className="px-3 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-200"
+              className="px-3 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
             >
               Exit Mock Exam
             </button>
@@ -1324,7 +1364,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                       [defenceQuestions[mockExamIndex]?.id]: true,
                     })
                   }
-                  className="px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-700"
+                  className="px-4 py-2 rounded-md bg-emerald-800 text-white text-xs font-medium hover:bg-emerald-700 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
                 >
                   Reveal Model Answer
                 </button>
@@ -1335,7 +1375,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
               <button
                 disabled={mockExamIndex === 0}
                 onClick={() => setMockExamIndex(mockExamIndex - 1)}
-                className="px-4 py-2 rounded border border-gray-700 text-xs text-gray-300 hover:bg-gray-800 disabled:opacity-40"
+                className="px-4 py-2 rounded border border-gray-700 text-xs text-gray-300 hover:bg-gray-800 disabled:opacity-40 cursor-pointer focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:outline-none"
               >
                 Previous Question
               </button>
@@ -1349,7 +1389,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                     alert('Mock examination complete! Review your mastery scores in the defence workspace.');
                   }
                 }}
-                className="px-5 py-2 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500"
+                className="px-5 py-2 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-500 cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
               >
                 {mockExamIndex < defenceQuestions.length - 1 ? 'Next Question' : 'Finish Examination'}
               </button>
@@ -1366,7 +1406,7 @@ export default function ProjectWorkspacePage({ params }: { params: Promise<{ id:
     <Suspense
       fallback={
         <div className="flex-1 flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="w-6 h-6 animate-spin text-emerald-800" />
+          <MaterialIcon name="progress_activity" size={24} spin className="text-emerald-800" />
         </div>
       }
     >
