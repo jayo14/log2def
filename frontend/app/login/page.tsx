@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import './auth.css';
+import '@/app/auth.css';
 
 export default function LoginPage() {
   const { login } = useAuth();
