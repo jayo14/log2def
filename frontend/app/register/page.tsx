@@ -69,18 +69,13 @@ export default function RegisterPage() {
 
     setLoading(true);
 
-    // Split name into first and last name
-    const parts = fullName.trim().split(/\s+/);
-    const firstName = parts[0] || 'Student';
-    const lastName = parts.slice(1).join(' ') || parts[0];
-    const username = email.trim().split('@')[0] || `student_${Date.now()}`;
-
     try {
+      if (typeof window !== 'undefined' && university) {
+        localStorage.setItem('log2def_preferred_university', university);
+      }
       await register({
-        username,
+        full_name: fullName.trim(),
         email: email.trim(),
-        first_name: firstName,
-        last_name: lastName,
         password,
         password_confirm: password,
       });
