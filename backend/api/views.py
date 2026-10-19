@@ -338,12 +338,28 @@ class LogbookEntryListCreateView(views.APIView):
     @extend_schema(
         tags=['Logbook Entries'],
         summary='List logbook entries',
+        parameters=[
+            OpenApiParameter(name='week', description='Filter by week number', required=False, type=int),
+            OpenApiParameter(name='verified', description='Filter by verification status (true/false)', required=False, type=bool),
+        ],
         responses={200: LogbookEntrySerializer(many=True)}
     )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
-        entries = project.logbook_entries.all().order_by('week_number', 'order', 'entry_date', 'id')
+        qs = project.logbook_entries.all()
+        week = request.query_params.get('week')
+        if week is not None:
+            try:
+                qs = qs.filter(week_number=int(week))
+            except ValueError:
+                pass
+        verified = request.query_params.get('verified')
+        if verified is not None:
+            is_v = verified.lower() in ['true', '1']
+            qs = qs.filter(is_verified=is_v)
+        entries = qs.order_by('week_number', 'order', 'entry_date', 'id')
         return Response(LogbookEntrySerializer(entries, many=True).data)
+
 
     @extend_schema(
         tags=['Logbook Entries'],
@@ -582,12 +598,24 @@ class DefenceQuestionListView(views.APIView):
     @extend_schema(
         tags=['Defence Preparation'],
         summary='List defence questions for project',
+        parameters=[
+            OpenApiParameter(name='category', description='Filter by question category', required=False, type=str),
+            OpenApiParameter(name='mastery', description='Filter by mastery status (unanswered, reviewing, mastered)', required=False, type=str),
+        ],
         responses={200: DefenceQuestionSerializer(many=True)}
     )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
-        questions = project.defence_questions.all().order_by('order', 'id')
+        qs = project.defence_questions.all()
+        category = request.query_params.get('category')
+        if category:
+            qs = qs.filter(category=category)
+        mastery = request.query_params.get('mastery')
+        if mastery:
+            qs = qs.filter(mastery_status=mastery)
+        questions = qs.order_by('order', 'id')
         return Response(DefenceQuestionSerializer(questions, many=True).data)
+
 
 
 class DefenceQuestionDetailView(views.APIView):
