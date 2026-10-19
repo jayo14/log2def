@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { Navbar } from "@/components/Navbar";
+import { GlobalToast } from "@/components/ui/toast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +49,7 @@ export default function RootLayout({
             <Navbar />
           </Suspense>
           <main className="flex-1 flex flex-col">{children}</main>
+          <GlobalToast />
         </AuthProvider>
       </body>
     </html>
