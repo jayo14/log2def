@@ -1,16 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi, getAuthToken, removeAuthToken } from './api';
-
-interface User {
-  id: number;
-  username: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-}
+import { useAuthStore, type User } from './store/use-auth-store';
 
 interface AuthContextType {
   user: User | null;
@@ -25,54 +17,33 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    user,
+    token,
+    isLoading,
+    login: storeLogin,
+    register: storeRegister,
+    logout: storeLogout,
+    refreshUser,
+  } = useAuthStore();
   const router = useRouter();
-
-  const refreshUser = async () => {
-    try {
-      const currentToken = getAuthToken();
-      if (!currentToken) {
-        setUser(null);
-        setToken(null);
-        setIsLoading(false);
-        return;
-      }
-      setToken(currentToken);
-      const userData = await authApi.getCurrentUser();
-      setUser(userData);
-    } catch {
-      removeAuthToken();
-      setUser(null);
-      setToken(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   useEffect(() => {
     refreshUser();
-  }, []);
+  }, [refreshUser]);
 
   const login = async (credentials: any) => {
-    const res = await authApi.login(credentials);
-    setUser(res.user);
-    setToken(res.access);
+    await storeLogin(credentials);
     router.push('/dashboard');
   };
 
   const register = async (data: any) => {
-    const res = await authApi.register(data);
-    setUser(res.user);
-    setToken(res.tokens.access);
+    await storeRegister(data);
     router.push('/dashboard');
   };
 
   const logout = () => {
-    removeAuthToken();
-    setUser(null);
-    setToken(null);
+    storeLogout();
     router.push('/login');
   };
 
