@@ -507,9 +507,14 @@ class ExportDocxView(views.APIView):
         if not os.path.exists(docx_path):
             raise Http404("Document could not be generated.")
 
-        filename = os.path.basename(docx_path)
+        resolved_path = os.path.realpath(docx_path)
+        media_root = os.path.realpath(settings.MEDIA_ROOT)
+        if not resolved_path.startswith(media_root):
+            raise Http404("Access denied: Invalid export path.")
+
+        filename = os.path.basename(resolved_path)
         return FileResponse(
-            open(docx_path, 'rb'),
+            open(resolved_path, 'rb'),
             as_attachment=True,
             filename=filename,
             content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -537,13 +542,19 @@ class ExportPdfView(views.APIView):
         except Exception as e:
             return Response({"error": f"PDF export failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        filename = os.path.basename(pdf_path)
+        resolved_path = os.path.realpath(pdf_path)
+        media_root = os.path.realpath(settings.MEDIA_ROOT)
+        if not resolved_path.startswith(media_root):
+            raise Http404("Access denied: Invalid export path.")
+
+        filename = os.path.basename(resolved_path)
         return FileResponse(
-            open(pdf_path, 'rb'),
+            open(resolved_path, 'rb'),
             as_attachment=True,
             filename=filename,
             content_type='application/pdf'
         )
+
 
 
 # --- Defence Views ---
