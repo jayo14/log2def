@@ -3,7 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView, LoginView, CurrentUserView, AIStatusView,
     ProjectListCreateView, ProjectDetailView,
-    DocumentListUploadView, DocumentDetailView, DocumentReprocessView, PageUpdateView,
+    DocumentListUploadView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
     ExportDocxView, ExportPdfView,
@@ -25,6 +25,7 @@ urlpatterns = [
     # Documents & Pages
     path('projects/<int:project_id>/documents/', DocumentListUploadView.as_view(), name='document-list-upload'),
     path('projects/<int:project_id>/documents/<int:doc_id>/', DocumentDetailView.as_view(), name='document-detail'),
+    path('projects/<int:project_id>/documents/<int:doc_id>/download/', DocumentDownloadView.as_view(), name='document-download'),
     path('projects/<int:project_id>/documents/<int:doc_id>/reprocess/', DocumentReprocessView.as_view(), name='document-reprocess'),
     path('projects/<int:project_id>/pages/<int:page_id>/', PageUpdateView.as_view(), name='page-update'),
 

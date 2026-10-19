@@ -243,6 +243,16 @@ class DocumentDetailView(views.APIView):
 
     @extend_schema(
         tags=['Source Documents'],
+        summary='Get source document details',
+        responses={200: SourceDocumentSerializer}
+    )
+    def get(self, request, project_id, doc_id):
+        project = get_user_project(request.user, project_id)
+        doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
+        return Response(SourceDocumentSerializer(doc).data)
+
+    @extend_schema(
+        tags=['Source Documents'],
         summary='Delete source document',
         responses={204: None}
     )
@@ -251,6 +261,29 @@ class DocumentDetailView(views.APIView):
         doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
         doc.delete()
         return Response({"message": "Source document deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
+
+class DocumentDownloadView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='Download original source document safely',
+        responses={200: bytes, 404: OpenApiResponse(description="Document not found")}
+    )
+    def get(self, request, project_id, doc_id):
+        project = get_user_project(request.user, project_id)
+        doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
+        if not doc.file or not os.path.exists(doc.file.path):
+            raise Http404("Document file does not exist on disk.")
+
+        resolved_path = os.path.realpath(doc.file.path)
+        media_root = os.path.realpath(settings.MEDIA_ROOT)
+        if not resolved_path.startswith(media_root):
+            raise Http404("Access denied: Invalid file path.")
+
+        return FileResponse(open(resolved_path, 'rb'), as_attachment=True, filename=doc.original_filename)
+
 
 
 class DocumentReprocessView(views.APIView):
