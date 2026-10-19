@@ -54,6 +54,10 @@ class ReportProject(models.Model):
     problems_encountered = models.TextField(blank=True)
     skills_acquired = models.TextField(blank=True)
 
+    # Defence Presentation Assets
+    presentation_slides = models.JSONField(default=list, blank=True)
+    presentation_script = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -215,6 +219,21 @@ class ReportSection(models.Model):
 
     def __str__(self):
         return f"[{self.chapter_number}] {self.title}"
+
+
+class ReportVersion(models.Model):
+    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='versions')
+    version_number = models.IntegerField(default=1)
+    title = models.CharField(max_length=255, default='SIWES Technical Report')
+    sections_snapshot = models.JSONField(default=list)
+    change_summary = models.CharField(max_length=255, default='Snapshot')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-version_number', '-created_at']
+
+    def __str__(self):
+        return f"v{self.version_number} - {self.change_summary} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
 
 
 class DefenceQuestion(models.Model):
