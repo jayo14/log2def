@@ -1097,3 +1097,155 @@
     scroll-behavior: auto;
   }
 }
+
+/* Version History & Reversion UI */
+.dashboard-root .ver-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s;
+}
+.dashboard-root .ver-card.current {
+  border-color: var(--g);
+  background: #f4faf6;
+}
+.dashboard-root .ver-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dashboard-root .ver-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #edf6f1;
+  color: var(--gd);
+}
+.dashboard-root .ver-badge.active {
+  background: var(--g);
+  color: #fff;
+}
+
+/* Presentation Slides & Slideshow */
+.dashboard-root .slide-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dashboard-root .slide-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 2px 8px rgba(20, 32, 27, 0.04);
+}
+.dashboard-root .slide-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.dashboard-root .slide-num {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--g);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.dashboard-root .slide-title {
+  font-size: 18px;
+  margin-bottom: 8px;
+  font-family: 'Fraunces', Georgia, serif;
+}
+.dashboard-root .slide-bullets {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.dashboard-root .slide-notes {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #fbf9f4;
+  border-left: 3px solid var(--amb);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+  color: var(--mut);
+}
+
+/* Slideshow Projection Overlay */
+.dashboard-root .slideshow-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #090e11;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 32px;
+  box-sizing: border-box;
+}
+.dashboard-root .slideshow-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.dashboard-root .slideshow-content {
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 30px;
+  background: #141c20;
+  border-radius: 28px;
+  border: 1px solid #233138;
+}
+.dashboard-root .slideshow-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Oral Speech Rehearsal Timer & Content */
+.dashboard-root .rehearsal-timer-card {
+  background: #14201b;
+  color: #ffffff;
+  border-radius: 24px;
+  padding: 20px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.dashboard-root .timer-digits {
+  font-family: monospace;
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #55d6a2;
+  margin: 10px 0;
+}
+.dashboard-root .script-body {
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: #ffffff;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  padding: 20px;
+}
+
