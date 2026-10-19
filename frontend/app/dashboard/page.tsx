@@ -14,7 +14,7 @@ import { projectsApi } from '@/lib/api';
 import '@/app/dashboard.css';
 
 export default function DashboardPage() {
-  const { user, isLoading: authLoading, logout } = useAuth();
+  const { user, isLoading: authLoading, logout, refreshUser } = useAuth();
   const router = useRouter();
 
   // Project & Data Stores
@@ -119,6 +119,8 @@ export default function DashboardPage() {
     visible: false,
   });
 
+  const [isPreview, setIsPreview] = useState(false);
+
   const triggerToast = (msg: string) => {
     setLocalToast({ message: msg, visible: true });
     setTimeout(() => {
@@ -126,12 +128,47 @@ export default function DashboardPage() {
     }, 2300);
   };
 
+  // Check URL params, tokens, and hash on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const search = window.location.search;
+      if (search.includes('preview=1') || search.includes('demo=1')) {
+        setIsPreview(true);
+      }
+      const params = new URLSearchParams(search);
+      const urlToken = params.get('token');
+      if (urlToken) {
+        import('@/lib/api').then(({ setAuthToken }) => {
+          setAuthToken(urlToken);
+          refreshUser();
+        });
+      }
+      const hash = window.location.hash.replace('#/', '').split('/')[0];
+      if (['home', 'logbook', 'report', 'defence', 'new'].includes(hash)) {
+        setCurrentTab(hash as any);
+      }
+      const handleHashChange = () => {
+        const h = window.location.hash.replace('#/', '').split('/')[0];
+        if (['home', 'logbook', 'report', 'defence', 'new'].includes(h)) {
+          setCurrentTab(h as any);
+        }
+      };
+      window.addEventListener('hashchange', handleHashChange);
+      return () => window.removeEventListener('hashchange', handleHashChange);
+    }
+  }, [refreshUser]);
+
   // Auth redirect
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (typeof window !== 'undefined') {
+      if (window.location.search.includes('preview=1') || window.location.search.includes('token=')) {
+        return;
+      }
+    }
+    if (!authLoading && !user && !isPreview) {
       router.push('/login');
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, isPreview, router]);
 
   // Load projects list on mount
   useEffect(() => {
@@ -176,18 +213,81 @@ export default function DashboardPage() {
   const navigateTab = (newTab: 'home' | 'logbook' | 'report' | 'defence' | 'new', dir: 'fw' | 'bw' = 'fw') => {
     setAnimDir(dir);
     setCurrentTab(newTab);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `#/${newTab}`;
+    }
     if (scrRef.current) {
       scrRef.current.scrollTop = 0;
     }
   };
 
+  // Artifact fallback project for preview and empty state fidelity
+  const FALLBACK_PROJECT = {
+    id: 1,
+    title: 'SIWES Report at Mi Labs',
+    full_name: 'John Samuel',
+    matric_number: '1234567890',
+    organization_name: 'Mi Labs',
+    logbook_entries: [
+      {
+        id: 1,
+        week_number: 1,
+        activity_summary: 'Safety induction and tour of the workshop',
+        verified_text: 'Safety induction and tour of the workshop',
+        is_verified: true,
+      },
+      {
+        id: 2,
+        week_number: 2,
+        activity_summary: 'Helped the technician test the earthing on the main board',
+        verified_text: 'Helped the technician test the earthing on the main board',
+        is_verified: false,
+      },
+    ],
+    source_documents: [
+      {
+        id: 1,
+        filename: 'Logbook_week1-2.pdf',
+        ocr_status: 'completed',
+        pages: [
+          {
+            id: 1,
+            page_number: 1,
+            confidence_score: 0.82,
+            extracted_text:
+              'Week 1: Safety induction and tour of the workshop.\nWeek 2: Helped the technician test the <mark>earthing</mark> on the main board.',
+          },
+        ],
+      },
+    ],
+  };
+
+  const effectiveProject = activeProject || (isPreview ? (FALLBACK_PROJECT as any) : null);
+  const effectiveUser =
+    user ||
+    (isPreview
+      ? {
+          id: 1,
+          first_name: 'John',
+          last_name: 'Samuel',
+          email: 'john@lasustech.edu.ng',
+          username: 'john',
+        }
+      : null);
+
+  const userInitials = effectiveUser?.first_name
+    ? `${effectiveUser.first_name[0]}${effectiveUser.last_name ? effectiveUser.last_name[0] : ''}`.toUpperCase()
+    : 'JS';
+
   // Project progress computation derived from real data
-  const verifiedCount = (activeProject?.logbook_entries || []).filter((e: any) => e.is_verified).length;
-  const totalEntries = (activeProject?.logbook_entries || []).length;
-  const hasReport = !!(report || activeProject?.report);
+  const projectEntries = effectiveProject?.logbook_entries || [];
+  const projectDocuments = effectiveProject?.source_documents || [];
+  const verifiedCount = projectEntries.filter((e: any) => e.is_verified).length;
+  const totalEntries = projectEntries.length;
+  const hasReport = !!(report || effectiveProject?.report);
   const hasPracticed = (defenceQuestions || []).some((q: any) => q.mastery_status === 'confident');
 
-  const progressPct = activeProject
+  const progressPct = effectiveProject
     ? Math.round((1 + (verifiedCount > 0 ? 1 : 0) + (hasReport ? 1 : 0) + (hasPracticed ? 1 : 0)) / 4 * 100)
     : 0;
 
@@ -651,12 +751,9 @@ export default function DashboardPage() {
     }
   };
 
-  // User initials
-  const userInitials = user
-    ? `${user.first_name?.[0] || user.username?.[0] || 'S'}${user.last_name?.[0] || ''}`.toUpperCase()
-    : 'JS';
-
-  const studentName = user?.first_name ? `${user.first_name} ${user.last_name}` : user?.username || 'Student';
+  const studentName = effectiveUser?.first_name
+    ? `${effectiveUser.first_name} ${effectiveUser.last_name || ''}`.trim()
+    : effectiveUser?.username || 'Student';
 
   return (
     <div className="dashboard-root">
@@ -688,11 +785,11 @@ export default function DashboardPage() {
               </header>
 
               <div className="lg">
-                <h1>Hi, {user?.first_name || user?.username || 'Student'}</h1>
+                <h1>Hi, {effectiveUser?.first_name || 'John'}</h1>
                 <p>Your SIWES report, step by step.</p>
               </div>
 
-              {!activeProject || projects.length === 0 ? (
+              {!effectiveProject ? (
                 <div className="card empty">
                   <div className="ico">
                     <span className="ms" aria-hidden="true">
@@ -731,7 +828,7 @@ export default function DashboardPage() {
                     >
                       {hasReport ? 'Report ready' : 'In progress'}
                     </span>
-                    <h2 style={{ maxWidth: '11em' }}>{activeProject.title}</h2>
+                    <h2 style={{ maxWidth: '11em' }}>{effectiveProject.title}</h2>
                     <p>
                       {verifiedCount} of {totalEntries} entries verified
                     </p>
@@ -840,7 +937,7 @@ export default function DashboardPage() {
 
               <div className="lg">
                 <h1>Logbook</h1>
-                <p>{activeProject?.organization_name || 'Upload handwritten notes & scans'}</p>
+                <p>{effectiveProject?.organization_name || 'Upload handwritten notes & scans'}</p>
               </div>
 
               {/* Upload Drop Area */}
@@ -869,7 +966,7 @@ export default function DashboardPage() {
                   onClick={() => setActiveSheet('typeNotes')}
                 >
                   <span className="ms" aria-hidden="true">
-                    edit_note
+                     edit_note
                   </span>
                   Type notes
                 </button>
@@ -901,7 +998,7 @@ export default function DashboardPage() {
                   aria-selected={logbookTab === 'docs'}
                   onClick={() => setLogbookTab('docs')}
                 >
-                  Documents ({(activeProject?.source_documents || []).length})
+                  Documents ({projectDocuments.length})
                 </button>
               </div>
 
@@ -909,7 +1006,7 @@ export default function DashboardPage() {
                 totalEntries > 0 ? (
                   <>
                     <div className="card" style={{ padding: '4px 16px' }}>
-                      {activeProject.logbook_entries.map((e: any, i: number) => (
+                      {projectEntries.map((e: any, i: number) => (
                         <div className="en" key={e.id || i}>
                           <button
                             className="ck"
@@ -960,12 +1057,12 @@ export default function DashboardPage() {
                   </div>
                 )
               ) : (
-                (activeProject?.source_documents || []).length > 0 ? (
-                  activeProject.source_documents.map((d: any, idx: number) => (
+                projectDocuments.length > 0 ? (
+                  projectDocuments.map((d: any, idx: number) => (
                     <div className="card" key={d.id || idx}>
                       <div className="row sb">
                         <b style={{ fontSize: '15px', wordBreak: 'break-all' }}>
-                          {d.file_name || d.title || 'Document'}
+                          {d.filename || d.file_name || d.title || 'Document'}
                         </b>
                         {d.status === 'error' ? (
                           <span className="chip w">
@@ -980,6 +1077,8 @@ export default function DashboardPage() {
                       </div>
                       <div className="pg">
                         {d.extracted_pages?.[0]?.extracted_text ||
+                          d.pages?.[0]?.extracted_text ||
+                          d.extracted_text ||
                           'Text extracted from this source will appear here for student review.'}
                       </div>
                       <button
@@ -1027,7 +1126,7 @@ export default function DashboardPage() {
 
               <div className="lg">
                 <h1>Report</h1>
-                <p>{activeProject?.title || 'SIWES Technical Report'}</p>
+                <p>{effectiveProject?.title || 'SIWES Technical Report'}</p>
               </div>
 
               {/* Segmented Editor vs Export */}
@@ -1645,7 +1744,7 @@ export default function DashboardPage() {
                 <>
                   <h2>{studentName}</h2>
                   <p className="mut" style={{ margin: '-8px 0 18px' }}>
-                    {user?.email || 'Logged in student'}
+                    {effectiveUser?.email || 'Logged in student'}
                   </p>
 
                   {projects.length > 1 && (
