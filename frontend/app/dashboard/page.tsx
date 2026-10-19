@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import {
+  useAuthStore,
   useProjectStore,
   useReportStore,
   useDefenceStore,
@@ -130,33 +131,32 @@ export default function DashboardPage() {
 
   // Check URL params, tokens, and hash on mount
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const search = window.location.search;
-      if (search.includes('preview=1') || search.includes('demo=1')) {
-        setIsPreview(true);
-      }
-      const params = new URLSearchParams(search);
-      const urlToken = params.get('token');
-      if (urlToken) {
-        import('@/lib/api').then(({ setAuthToken }) => {
-          setAuthToken(urlToken);
-          refreshUser();
-        });
-      }
-      const hash = window.location.hash.replace('#/', '').split('/')[0];
-      if (['home', 'logbook', 'report', 'defence', 'new'].includes(hash)) {
-        setCurrentTab(hash as any);
-      }
-      const handleHashChange = () => {
-        const h = window.location.hash.replace('#/', '').split('/')[0];
-        if (['home', 'logbook', 'report', 'defence', 'new'].includes(h)) {
-          setCurrentTab(h as any);
-        }
-      };
-      window.addEventListener('hashchange', handleHashChange);
-      return () => window.removeEventListener('hashchange', handleHashChange);
+    if (typeof window === 'undefined') return;
+    const search = window.location.search;
+    if (search.includes('preview=1') || search.includes('demo=1')) {
+      setIsPreview(true);
     }
-  }, [refreshUser]);
+    const params = new URLSearchParams(search);
+    const urlToken = params.get('token');
+    if (urlToken) {
+      import('@/lib/api').then(({ setAuthToken }) => {
+        setAuthToken(urlToken);
+        useAuthStore.getState().refreshUser();
+      });
+    }
+    const hash = window.location.hash.replace('#/', '').split('/')[0];
+    if (['home', 'logbook', 'report', 'defence', 'new'].includes(hash)) {
+      setCurrentTab(hash as any);
+    }
+    const handleHashChange = () => {
+      const h = window.location.hash.replace('#/', '').split('/')[0];
+      if (['home', 'logbook', 'report', 'defence', 'new'].includes(h)) {
+        setCurrentTab(h as any);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // Auth redirect
   useEffect(() => {
