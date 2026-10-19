@@ -42,8 +42,10 @@ export default function DashboardPage() {
     fetchReport,
     generateReport: storeGenerateReport,
     saveSection: storeSaveSection,
+    regenerateSection: storeRegenerateSection,
     downloadDocx: storeDownloadDocx,
     downloadPdf: storeDownloadPdf,
+    isGeneratingReport,
   } = useReportStore();
 
   const {
@@ -528,11 +530,25 @@ export default function DashboardPage() {
   const handleGenerateReport = async () => {
     if (!activeProject?.id) return;
     try {
+      triggerToast('AI is compiling verified logbook and generating report...');
       await storeGenerateReport(activeProject.id, false);
       setCurrentChapterIdx(0);
-      triggerToast('Report generated');
+      triggerToast('Report generated successfully');
     } catch (err: any) {
       triggerToast(err.message || 'Report generation failed');
+    }
+  };
+
+  // Regenerate Current Section with AI
+  const handleRegenerateCurrentSection = async () => {
+    if (!activeProject?.id || !report?.sections?.[currentChapterIdx]) return;
+    const sec = report.sections[currentChapterIdx];
+    try {
+      triggerToast(`Regenerating Chapter ${sec.chapter_number} with AI...`);
+      await storeRegenerateSection(activeProject.id, sec.id);
+      triggerToast(`Chapter ${sec.chapter_number} updated with AI`);
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to regenerate section');
     }
   };
 
@@ -1241,12 +1257,13 @@ export default function DashboardPage() {
                     <button
                       className="btn w"
                       type="button"
+                      disabled={isGeneratingReport}
                       onClick={handleGenerateReport}
                     >
                       <span className="ms" aria-hidden="true">
                         auto_awesome
                       </span>
-                      Generate report
+                      {isGeneratingReport ? 'Generating report with AI...' : 'Generate report'}
                     </button>
                   </div>
                 ) : (
@@ -1261,9 +1278,23 @@ export default function DashboardPage() {
                           aria-selected={i === currentChapterIdx}
                           onClick={() => setCurrentChapterIdx(i)}
                         >
-                          {i + 1}. {name.split(' ')[0]}
+                          {i === 0 ? 'Prelims' : `Ch.${i}: ${name.split(' ')[0]}`}
                         </button>
                       ))}
+                    </div>
+
+                    {/* Editor Action Bar */}
+                    <div className="row sb" style={{ marginBottom: '10px' }}>
+                      <button
+                        className="btn o s"
+                        type="button"
+                        onClick={handleRegenerateCurrentSection}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          auto_awesome
+                        </span>
+                        Regenerate this chapter
+                      </button>
                     </div>
 
                     {/* Editor Card */}
@@ -1300,7 +1331,7 @@ export default function DashboardPage() {
                           <span className="ms" style={{ fontSize: '17px' }} aria-hidden="true">
                             {saveStatus === 'saving' ? 'sync' : 'cloud_done'}
                           </span>
-                          {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+                          {saveStatus === 'saving' ? 'Saving...' : 'Saved to cloud'}
                         </span>
                       </div>
 
