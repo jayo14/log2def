@@ -50,9 +50,10 @@
 
 ## Architecture & Tech Stack
 
-- **Backend:** Python 3.12+ / 3.14, Django 6+, Django REST Framework, SimpleJWT, PyMuPDF, python-docx, Pillow, Requests.
+- **Backend:** Python 3.12+ / 3.14, Django 6+, Django REST Framework, SimpleJWT, drf-spectacular (OpenAPI 3.0 / Swagger), PyMuPDF, python-docx, Pillow, Requests.
+- **API Documentation:** Interactive Swagger UI documentation served at `/docs` (and OpenAPI schema at `/api/schema/`).
 - **Database:** SQLite (default for development) / PostgreSQL (production-ready via `DB_ENGINE=postgres`).
-- **Frontend:** Next.js 16 (App Router with Turbopack), React 19, TypeScript, Tailwind CSS, Lucide React.
+- **Frontend:** Next.js 16 (App Router with Turbopack), React 19, TypeScript, Tailwind CSS, Lucide React, Tiptap.
 - **Rendering:** Headless LibreOffice (`libreoffice`) for PDF compilation.
 
 ---

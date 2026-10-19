@@ -275,3 +275,13 @@ class Log2DefBackendTests(TestCase):
             'notes': 'Prepared well for NOC networking questions.'
         })
         self.assertEqual(session_resp.status_code, status.HTTP_201_CREATED)
+
+    def test_swagger_docs_and_schema_endpoints(self):
+        # Anonymous client can access OpenAPI schema and Swagger documentation at /docs
+        anon_client = APIClient()
+        schema_resp = anon_client.get('/api/schema/')
+        self.assertEqual(schema_resp.status_code, status.HTTP_200_OK)
+
+        docs_resp = anon_client.get('/docs/')
+        self.assertEqual(docs_resp.status_code, status.HTTP_200_OK)
+        self.assertIn(b'swagger-ui', docs_resp.content.lower())
