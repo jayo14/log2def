@@ -333,4 +333,3 @@ export const projectsApi = {
       body: JSON.stringify(data),
     });
   },
-
