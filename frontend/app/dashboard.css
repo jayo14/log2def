@@ -1,4 +1,6 @@
 /* Log2Def Dashboard Styles — Migrated from new-dashboard.html */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,500,1,0&display=block');
 
 :root {
   --g: #066b4d;
