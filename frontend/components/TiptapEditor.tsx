@@ -3,10 +3,7 @@
 import React, { useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { 
-  Bold, Italic, Heading1, Heading2, Heading3, 
-  List, ListOrdered, Quote, Undo, Redo, Minus 
-} from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 
 interface TiptapEditorProps {
   content: string;
@@ -44,128 +41,139 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
   return (
     <div className="border border-border rounded-lg bg-white overflow-hidden flex flex-col flex-1 shadow-2xs">
       {/* Editor Toolbar */}
-      <div className="border-b border-border bg-[#FAF9F5] px-3 py-2 flex items-center flex-wrap gap-1">
+      <div className="border-b border-border bg-[#FAF9F5] px-3 py-2 flex items-center flex-wrap gap-1" role="toolbar" aria-label="Formatting toolbar">
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleBold().run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('bold') ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
-          title="Bold"
+          title="Bold (Ctrl+B)"
+          aria-label="Bold"
         >
-          <Bold className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_bold" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('italic') ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
-          title="Italic"
+          title="Italic (Ctrl+I)"
+          aria-label="Italic"
         >
-          <Italic className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_italic" size={18} />
         </button>
 
-        <span className="w-px h-4 bg-zinc-300 mx-1" />
+        <span className="w-px h-4 bg-zinc-300 mx-1" aria-hidden="true" />
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('heading', { level: 1 }) ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
           title="Heading 1"
+          aria-label="Heading 1"
         >
-          <Heading1 className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_h1" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('heading', { level: 2 }) ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
           title="Heading 2"
+          aria-label="Heading 2"
         >
-          <Heading2 className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_h2" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('heading', { level: 3 }) ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
           title="Heading 3"
+          aria-label="Heading 3"
         >
-          <Heading3 className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_h3" size={18} />
         </button>
 
-        <span className="w-px h-4 bg-zinc-300 mx-1" />
+        <span className="w-px h-4 bg-zinc-300 mx-1" aria-hidden="true" />
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('bulletList') ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
           title="Bullet List"
+          aria-label="Bullet List"
         >
-          <List className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_list_bulleted" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('orderedList') ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
           title="Numbered List"
+          aria-label="Numbered List"
         >
-          <ListOrdered className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_list_numbered" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          className={`p-1.5 rounded transition-colors ${
+          className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('blockquote') ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
           title="Blockquote"
+          aria-label="Blockquote"
         >
-          <Quote className="w-3.5 h-3.5" />
+          <MaterialIcon name="format_quote" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200"
+          className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
           title="Divider Line"
+          aria-label="Divider Line"
         >
-          <Minus className="w-3.5 h-3.5" />
+          <MaterialIcon name="horizontal_rule" size={18} />
         </button>
 
-        <span className="w-px h-4 bg-zinc-300 mx-1" />
+        <span className="w-px h-4 bg-zinc-300 mx-1" aria-hidden="true" />
 
         <button
           type="button"
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
-          className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200 disabled:opacity-40"
-          title="Undo"
+          className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
         >
-          <Undo className="w-3.5 h-3.5" />
+          <MaterialIcon name="undo" size={18} />
         </button>
 
         <button
           type="button"
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
-          className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200 disabled:opacity-40"
-          title="Redo"
+          className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
+          title="Redo (Ctrl+Y)"
+          aria-label="Redo"
         >
-          <Redo className="w-3.5 h-3.5" />
+          <MaterialIcon name="redo" size={18} />
         </button>
       </div>
 
