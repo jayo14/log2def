@@ -11,25 +11,45 @@ from .models import (
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     username = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=True)
+    full_name = serializers.CharField(required=False, write_only=True, allow_blank=True)
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True, required=True)
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'password', 'password_confirm')
+        fields = ('id', 'username', 'email', 'full_name', 'first_name', 'last_name', 'password', 'password_confirm')
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({"password": "Password fields did not match."})
+
+        email = attrs.get('email', '').strip().lower()
+        if not email:
+            raise serializers.ValidationError({"email": "Email address is required."})
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email address already exists."})
+        attrs['email'] = email
+
+        # Handle full_name parsing
+        full_name = attrs.pop('full_name', '').strip()
+        if full_name and not attrs.get('first_name'):
+            parts = full_name.split(maxsplit=1)
+            attrs['first_name'] = parts[0]
+            attrs['last_name'] = parts[1] if len(parts) > 1 else ''
+
+        # Auto-generate unique username if omitted
         if not attrs.get('username'):
-            email = attrs.get('email', '')
-            base_username = email.split('@')[0] if email else 'student'
-            candidate = base_username
+            import re
+            base_raw = email.split('@')[0]
+            base_cleaned = re.sub(r'[^a-zA-Z0-9_]', '_', base_raw)[:25] or 'student'
+            candidate = base_cleaned
             idx = 1
             while User.objects.filter(username=candidate).exists():
-                candidate = f"{base_username}_{idx}"
+                candidate = f"{base_cleaned}_{idx}"
                 idx += 1
             attrs['username'] = candidate
+
         return attrs
 
     def create(self, validated_data):
