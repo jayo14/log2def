@@ -1,224 +1,1786 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { useProjectStore, useUIStore } from '@/lib/store';
-import { MaterialIcon } from '@/components/ui/material-icon';
+import {
+  useProjectStore,
+  useReportStore,
+  useDefenceStore,
+  useUIStore,
+} from '@/lib/store';
+import { projectsApi } from '@/lib/api';
+import '@/app/dashboard.css';
 
 export default function DashboardPage() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading: authLoading, logout } = useAuth();
   const router = useRouter();
+
+  // Project & Data Stores
   const {
     projects,
-    aiStatus,
+    activeProject,
     isLoadingProjects,
     fetchProjects,
-    fetchAiStatus,
-    deleteProject,
+    fetchActiveProject,
+    createProject,
+    uploadDocument: storeUploadDocument,
+    updatePage: storeUpdatePage,
+    createLogbookEntry: storeCreateLogbookEntry,
+    updateLogbookEntry: storeUpdateLogbookEntry,
+    deleteLogbookEntry: storeDeleteLogbookEntry,
+    bulkVerifyEntries: storeBulkVerifyEntries,
   } = useProjectStore();
+
+  const {
+    report,
+    activeSectionId,
+    fetchReport,
+    generateReport: storeGenerateReport,
+    saveSection: storeSaveSection,
+    downloadDocx: storeDownloadDocx,
+    downloadPdf: storeDownloadPdf,
+  } = useReportStore();
+
+  const {
+    questions: defenceQuestions,
+    fetchQuestions,
+    generateQuestions: storeGenerateDefence,
+    updateQuestion: storeUpdateDefenceQuestion,
+  } = useDefenceStore();
+
   const { showToast } = useUIStore();
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, isLoading, router]);
+  // Navigation tab state: 'home' | 'logbook' | 'report' | 'defence' | 'new'
+  const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'defence' | 'new'>('home');
+  const [logbookTab, setLogbookTab] = useState<'entries' | 'docs'>('entries');
+  const [reportTab, setReportTab] = useState<'editor' | 'export'>('editor');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
 
-  const loadDashboardData = async () => {
-    try {
-      await Promise.all([fetchProjects(), fetchAiStatus()]);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to refresh dashboard', 'error');
-    }
+  // Local UI & Scroll states
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [animDir, setAnimDir] = useState<'fw' | 'bw'>('fw');
+  const scrRef = useRef<HTMLDivElement>(null);
+  const docRef = useRef<HTMLDivElement>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+
+  // Interactive Bottom Sheet Modal state
+  const [activeSheet, setActiveSheet] = useState<
+    'me' | 'addEntry' | 'typeNotes' | 'correctText' | null
+  >(null);
+  const [correctingDocIdx, setCorrectingDocIdx] = useState<number>(0);
+  const [correctingText, setCorrectingText] = useState<string>('');
+
+  // Manual entry modal form draft
+  const [manualWeek, setManualWeek] = useState<number>(3);
+  const [manualText, setManualText] = useState<string>('');
+  const [rawNotes, setRawNotes] = useState<string>('');
+
+  // Full-screen Mock Defence Exam state
+  const [examOpen, setExamOpen] = useState(false);
+  const [examIndex, setExamIndex] = useState(0);
+  const [examRevealed, setExamRevealed] = useState(false);
+  const [revealedDefenceAnswers, setRevealedDefenceAnswers] = useState<Record<number, boolean>>({});
+
+  // 6-step Wizard State for 'new' tab
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardErrors, setWizardErrors] = useState<Record<string, string>>({});
+  const [wizardData, setWizardData] = useState({
+    name: '',
+    matric: '',
+    dept: '',
+    prog: '',
+    level: '400 Level (Final Year SIWES)',
+    uni: 'Lagos State University of Science and Technology (LASUSTECH)',
+    fac: 'College of Applied Sciences and Technology',
+    guide: '',
+    host: '',
+    unit: '',
+    addr: '',
+    sum: '',
+    sup: '',
+    supT: '',
+    inst: '',
+    start: '',
+    end: '',
+    tools: '',
+    tasks: '',
+    projs: '',
+    prob: '',
+    skills: '',
+  });
+
+  // Local Toast notification
+  const [localToast, setLocalToast] = useState<{ message: string; visible: boolean }>({
+    message: '',
+    visible: false,
+  });
+
+  const triggerToast = (msg: string) => {
+    setLocalToast({ message: msg, visible: true });
+    setTimeout(() => {
+      setLocalToast((prev) => ({ ...prev, visible: false }));
+    }, 2300);
   };
 
+  // Auth redirect
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
+
+  // Load projects list on mount
   useEffect(() => {
     if (user) {
-      loadDashboardData();
+      fetchProjects().then((projs) => {
+        if (projs && projs.length > 0 && !activeProject) {
+          fetchActiveProject(projs[0].id);
+        }
+      });
     }
   }, [user]);
 
-  const handleDelete = async (id: number) => {
-    try {
-      await deleteProject(id);
-      setDeleteConfirmId(null);
-      showToast('Project deleted successfully', 'success');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete project', 'error');
+  // Load active project details (logbook, report, defence)
+  useEffect(() => {
+    if (activeProject?.id) {
+      fetchReport(activeProject.id).catch(() => null);
+      fetchQuestions(activeProject.id).catch(() => []);
+    }
+  }, [activeProject?.id]);
+
+  // Prepopulate student name in wizard
+  useEffect(() => {
+    if (user) {
+      const fullName = user.first_name
+        ? `${user.first_name} ${user.last_name}`.trim()
+        : user.username;
+      setWizardData((prev) => ({ ...prev, name: prev.name || fullName }));
+    }
+  }, [user]);
+
+  // Scroll detection for sticky header blur
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop > 40 && !isScrolled) {
+      setIsScrolled(true);
+    } else if (target.scrollTop <= 40 && isScrolled) {
+      setIsScrolled(false);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'exported':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">Exported</span>;
-      case 'editing_report':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Report Ready to Edit</span>;
-      case 'reviewing_sources':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Reviewing Sources</span>;
-      case 'generating':
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">Generating</span>;
+  // Switch Tab
+  const navigateTab = (newTab: 'home' | 'logbook' | 'report' | 'defence' | 'new', dir: 'fw' | 'bw' = 'fw') => {
+    setAnimDir(dir);
+    setCurrentTab(newTab);
+    if (scrRef.current) {
+      scrRef.current.scrollTop = 0;
+    }
+  };
+
+  // Project progress computation derived from real data
+  const verifiedCount = (activeProject?.logbook_entries || []).filter((e: any) => e.is_verified).length;
+  const totalEntries = (activeProject?.logbook_entries || []).length;
+  const hasReport = !!(report || activeProject?.report);
+  const hasPracticed = (defenceQuestions || []).some((q: any) => q.mastery_status === 'confident');
+
+  const progressPct = activeProject
+    ? Math.round((1 + (verifiedCount > 0 ? 1 : 0) + (hasReport ? 1 : 0) + (hasPracticed ? 1 : 0)) / 4 * 100)
+    : 0;
+
+  // Up next recommendation derived from workflow state
+  const upNext = !verifiedCount
+    ? {
+        title: 'Verify a logbook entry',
+        desc: 'Entries you confirm feed Chapter Three',
+        tab: 'logbook' as const,
+        icon: 'task_alt',
+      }
+    : !hasReport
+    ? {
+        title: 'Generate your report',
+        desc: 'Build all five chapters',
+        tab: 'report' as const,
+        icon: 'auto_awesome',
+      }
+    : {
+        title: 'Practise your defence',
+        desc: 'Rehearse with mock questions',
+        tab: 'defence' as const,
+        icon: 'school',
+      };
+
+  // Chapter sections
+  const CHAPTER_NAMES = [
+    'Preliminary pages',
+    'Introduction',
+    'Company profile',
+    'Activities',
+    'Challenges and conclusion',
+  ];
+
+  const getSectionContent = (idx: number) => {
+    if (report?.sections && report.sections.length > idx) {
+      return report.sections[idx].content;
+    }
+    const host = activeProject?.organization_name || 'your host organisation';
+    const name = activeProject?.full_name || (user?.first_name ? `${user.first_name} ${user.last_name}` : 'Student');
+    const verified = (activeProject?.logbook_entries || []).filter((e: any) => e.is_verified);
+
+    switch (idx) {
+      case 0:
+        return `<p><b>Preliminary pages</b></p><p>Title page, certification, dedication, acknowledgements and contents for ${name}’s SIWES report at ${host}.</p>`;
+      case 1:
+        return `<p><b>Chapter One: Introduction</b></p><p>This report presents the industrial training of ${name} at ${host}.</p>`;
+      case 2:
+        return `<p><b>Chapter Two: Company profile</b></p><p>${host} is the host organisation where the industrial training was completed.</p>`;
+      case 3:
+        return `<p><b>Chapter Three: Activities</b></p>${
+          verified.length > 0
+            ? verified.map((e: any) => `<p>Week ${e.week_number}: ${e.activity_summary || e.verified_text}</p>`).join('')
+            : '<p>Verify a logbook entry to build this chapter.</p>'
+        }`;
+      case 4:
       default:
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 capitalize">{status.replace('_', ' ')}</span>;
+        return `<p><b>Chapters Four and Five</b></p><p>Describe the technical challenges you met, how you handled them, and your recommendations.</p>`;
     }
   };
 
-  if (isLoading || !user) {
-    return (
-      <div className="flex-1 flex items-center justify-center min-h-[60vh]">
-        <MaterialIcon name="progress_activity" size={28} spin className="text-emerald-800" />
-      </div>
+  // Handle Logbook File Upload
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!activeProject?.id) {
+      triggerToast('Create a report project first');
+      return;
+    }
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await storeUploadDocument(activeProject.id, formData);
+      setLogbookTab('docs');
+      triggerToast('File uploaded and text extracted');
+    } catch (err: any) {
+      triggerToast(err.message || 'Upload failed');
+    }
+  };
+
+  // Toggle Entry Verified
+  const handleToggleVerify = async (entry: any) => {
+    if (!activeProject?.id) return;
+    try {
+      await storeUpdateLogbookEntry(activeProject.id, entry.id, {
+        is_verified: !entry.is_verified,
+      });
+      triggerToast(entry.is_verified ? 'Entry unverified' : 'Entry verified');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to update entry');
+    }
+  };
+
+  // Bulk verify all entries
+  const handleVerifyAll = async () => {
+    if (!activeProject?.id) return;
+    try {
+      await storeBulkVerifyEntries(activeProject.id);
+      triggerToast('All entries verified');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to verify entries');
+    }
+  };
+
+  // Delete Logbook Entry
+  const handleDeleteEntry = async (entryId: number) => {
+    if (!activeProject?.id) return;
+    try {
+      await storeDeleteLogbookEntry(activeProject.id, entryId);
+      triggerToast('Entry deleted');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to delete entry');
+    }
+  };
+
+  // Add Manual Entry Submit
+  const handleAddManualEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProject?.id || !manualText.trim()) return;
+
+    try {
+      await storeCreateLogbookEntry(activeProject.id, {
+        week_number: manualWeek,
+        activity_summary: manualText.trim(),
+        verified_text: manualText.trim(),
+        is_verified: true,
+      });
+      setActiveSheet(null);
+      setManualText('');
+      setLogbookTab('entries');
+      triggerToast('Logbook entry added');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to create entry');
+    }
+  };
+
+  // Process typed raw notes
+  const handleProcessNotes = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProject?.id || !rawNotes.trim()) return;
+
+    const lines = rawNotes.trim().split('\n');
+    let addedCount = 0;
+
+    for (const line of lines) {
+      const match = line.match(/^week\s*(\d+)\s*[:\-]\s*(.+)/i);
+      if (match) {
+        const week = parseInt(match[1], 10) || 1;
+        const text = match[2].trim();
+        try {
+          await storeCreateLogbookEntry(activeProject.id, {
+            week_number: week,
+            activity_summary: text,
+            verified_text: text,
+            is_verified: false,
+          });
+          addedCount++;
+        } catch {}
+      }
+    }
+
+    setActiveSheet(null);
+    setRawNotes('');
+    setLogbookTab('entries');
+    triggerToast(
+      addedCount > 0
+        ? `${addedCount} entr${addedCount > 1 ? 'ies' : 'y'} added`
+        : 'Prefix lines with “Week 1:”'
     );
-  }
+  };
+
+  // Save corrected document extracted text
+  const handleSaveCorrectedPage = async () => {
+    if (!activeProject?.id || !activeProject.source_documents?.[correctingDocIdx]) return;
+    const doc = activeProject.source_documents[correctingDocIdx];
+    const page = doc.extracted_pages?.[0];
+    if (!page) {
+      setActiveSheet(null);
+      return;
+    }
+
+    try {
+      await storeUpdatePage(activeProject.id, page.id, {
+        extracted_text: correctingText,
+        status: 'processed',
+        is_reviewed: true,
+      });
+      setActiveSheet(null);
+      triggerToast('Page corrections saved');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to update page');
+    }
+  };
+
+  // Report Generation
+  const handleGenerateReport = async () => {
+    if (!activeProject?.id) return;
+    try {
+      await storeGenerateReport(activeProject.id, false);
+      setCurrentChapterIdx(0);
+      triggerToast('Report generated');
+    } catch (err: any) {
+      triggerToast(err.message || 'Report generation failed');
+    }
+  };
+
+  // Report Editor Formatting Commands
+  const handleFormat = (cmd: string) => {
+    document.execCommand(cmd, false);
+    if (docRef.current) {
+      docRef.current.focus();
+    }
+  };
+
+  // Auto-save edited section
+  const handleDocInput = (e: React.FormEvent<HTMLDivElement>) => {
+    const html = e.currentTarget.innerHTML;
+    setSaveStatus('saving');
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(async () => {
+      if (activeProject?.id && report?.sections?.[currentChapterIdx]) {
+        try {
+          await storeSaveSection(activeProject.id, report.sections[currentChapterIdx].id, html);
+        } catch {}
+      }
+      setSaveStatus('saved');
+    }, 700);
+  };
+
+  // Export Downloads
+  const handleDownloadWord = async () => {
+    if (!activeProject?.id) return;
+    try {
+      const filename = `${(activeProject.title || 'siwes_report').replace(/[^a-zA-Z0-9_-]/g, '_')}.docx`;
+      await storeDownloadDocx(activeProject.id, filename);
+      triggerToast('Download Word started');
+    } catch (err: any) {
+      triggerToast(err.message || 'DOCX download failed');
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!activeProject?.id) return;
+    try {
+      const filename = `${(activeProject.title || 'siwes_report').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      await storeDownloadPdf(activeProject.id, filename);
+      triggerToast('Download PDF started');
+    } catch (err: any) {
+      triggerToast(err.message || 'PDF export failed');
+    }
+  };
+
+  // Defence questions filtering
+  const fallbackQuestions = [
+    {
+      id: 1,
+      category: 'Organisation',
+      question: 'Can you describe the host organisation and its core services?',
+      suggested_answer: 'Name the organisation, what it does and where your unit fits. Keep it to 30 seconds.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 2,
+      category: 'Organisation',
+      question: 'Who was your industry-based supervisor, and who did you report to day to day?',
+      suggested_answer: 'Give the supervisor’s name and title, then your day-to-day reporting line.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 3,
+      category: 'Objectives',
+      question: 'What were the objectives of your SIWES attachment, and how did your duties meet them?',
+      suggested_answer: 'Link two or three of your own tasks to the objectives in Chapter One.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 4,
+      category: 'Tasks',
+      question: 'Walk the panel through one key technical task you carried out yourself.',
+      suggested_answer: 'Goal, tools, what you did, and the result. Say “I”, not “we”.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 5,
+      category: 'Tools',
+      question: 'Which tool or technology did you use most, and why was it chosen?',
+      suggested_answer: 'Name it, state its primary purpose, and give one concrete reason it suited the job.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 6,
+      category: 'Troubleshooting',
+      question: 'What was the biggest technical challenge you met, and how did you resolve it?',
+      suggested_answer: 'Explain symptom, how you traced the fault, the fix, and how you verified it worked.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 7,
+      category: 'Troubleshooting',
+      question: 'If a procedure failed unexpectedly, what would you do first?',
+      suggested_answer: 'Make the environment safe, stop work, notify your supervisor, then begin fault diagnostics.',
+      mastery_status: 'unanswered',
+    },
+    {
+      id: 8,
+      category: 'Cross-exam',
+      question: 'Were you directly involved in the core engineering work, or mainly observing?',
+      suggested_answer: 'Be honest and direct. Highlight what you executed hands-on and what was shadowing.',
+      mastery_status: 'unanswered',
+    },
+  ];
+
+  const questionsList = defenceQuestions.length > 0 ? defenceQuestions : fallbackQuestions;
+  const categories = ['All', ...Array.from(new Set(questionsList.map((q: any) => q.category)))];
+  const filteredQuestions = questionsList.filter(
+    (q: any) => selectedCategory === 'All' || q.category === selectedCategory
+  );
+
+  // Update Mastery
+  const handleUpdateMastery = async (questionId: number, status: string) => {
+    if (activeProject?.id && defenceQuestions.some((q) => q.id === questionId)) {
+      try {
+        await storeUpdateDefenceQuestion(activeProject.id, questionId, {
+          mastery_status: status,
+        });
+      } catch {}
+    }
+    triggerToast(`Marked ${status.replace('_', ' ')}`);
+  };
+
+  // Wizard Phases
+  const WIZARD_PHASES = [
+    {
+      t: 'About you',
+      d: 'These go on your cover page.',
+      f: [
+        { id: 'name', label: 'Full name', req: false, ph: '' },
+        { id: 'matric', label: 'Matriculation number', req: true, ph: 'STE/2021/0456' },
+        { id: 'dept', label: 'Department', req: false, ph: 'Computer Engineering' },
+        { id: 'prog', label: 'Programme', req: false, ph: 'B.Tech Computer Engineering' },
+        {
+          id: 'level',
+          label: 'Level',
+          req: false,
+          sel: ['400 Level (Final Year SIWES)', '300 Level', 'Other'],
+        },
+      ],
+    },
+    {
+      t: 'Your school',
+      d: 'Defaulted to LASUSTECH. Change it if you study elsewhere.',
+      f: [
+        { id: 'uni', label: 'University', req: false, ph: '' },
+        { id: 'fac', label: 'Faculty or college', req: false, ph: '' },
+        { id: 'guide', label: 'Department guidelines (optional)', req: false, txt: true, ph: 'Anything your SIWES coordinator asked for.' },
+      ],
+    },
+    {
+      t: 'Where you trained',
+      d: 'Tell us about the host organisation.',
+      f: [
+        { id: 'host', label: 'Host organisation', req: true, ph: 'e.g. MainOne Cable Company' },
+        { id: 'unit', label: 'Department or unit', req: false, ph: 'e.g. Network Operations' },
+        { id: 'addr', label: 'Address', req: false, ph: 'e.g. Victoria Island, Lagos' },
+        { id: 'sum', label: 'What they do', req: false, txt: true, ph: 'A short summary of the organisation.' },
+      ],
+    },
+    {
+      t: 'People and dates',
+      d: 'Your supervisors and training period.',
+      f: [
+        { id: 'sup', label: 'Industry-based supervisor', req: false, ph: 'e.g. Engr. Babatunde Fashola' },
+        { id: 'supT', label: 'Supervisor job title', req: false, ph: 'e.g. Senior Network Engineer' },
+        { id: 'inst', label: 'Institution-based supervisor', req: false, ph: 'e.g. Dr. K. A. Salami' },
+        { id: 'start', label: 'Start date', req: false, date: true, ph: '' },
+        { id: 'end', label: 'End date', req: false, date: true, ph: '' },
+      ],
+    },
+    {
+      t: 'Your work',
+      d: 'What you used and what you did.',
+      f: [
+        { id: 'tools', label: 'Tools and technologies', req: false, ph: 'e.g. Multimeter, Python, Linux' },
+        { id: 'tasks', label: 'Key technical tasks', req: false, txt: true, ph: 'Recurring procedures you handled.' },
+      ],
+    },
+    {
+      t: 'Highlights',
+      d: 'Last step. Projects, problems and skills.',
+      f: [
+        { id: 'projs', label: 'Projects', req: false, txt: true, ph: 'e.g. LAN cabling, an internal dashboard.' },
+        { id: 'prob', label: 'Problems and solutions', req: false, txt: true, ph: 'A fault you met and how you fixed it.' },
+        { id: 'skills', label: 'Skills acquired', req: false, ph: 'e.g. Fault diagnosis, teamwork' },
+      ],
+    },
+  ];
+
+  // Submit Wizard Step
+  const handleWizardSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const phase = WIZARD_PHASES[wizardStep];
+    const errors: Record<string, string> = {};
+
+    phase.f.forEach((field) => {
+      if (field.req && !(wizardData as any)[field.id]?.trim()) {
+        errors[field.id] = 'Please fill this in.';
+      }
+    });
+
+    if (Object.keys(errors).length > 0) {
+      setWizardErrors(errors);
+      return;
+    }
+    setWizardErrors({});
+
+    if (wizardStep < WIZARD_PHASES.length - 1) {
+      setAnimDir('fw');
+      setWizardStep((prev) => prev + 1);
+    } else {
+      // Create new report project
+      try {
+        const payload = {
+          title: `SIWES Report at ${wizardData.host || 'Host Organisation'}`,
+          full_name:
+            wizardData.name ||
+            (user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Student'),
+          matric_number: wizardData.matric,
+          department: wizardData.dept,
+          programme: wizardData.prog,
+          level: wizardData.level,
+          university_name: wizardData.uni,
+          faculty_school: wizardData.fac,
+          department_requirements: wizardData.guide,
+          organization_name: wizardData.host,
+          placement_department: wizardData.unit,
+          organization_address: wizardData.addr,
+          organization_activities: wizardData.sum,
+          industry_supervisor_name: wizardData.sup,
+          industry_supervisor_title: wizardData.supT,
+          academic_supervisor_name: wizardData.inst,
+          training_start_date: wizardData.start || null,
+          training_end_date: wizardData.end || null,
+          tools_used: wizardData.tools,
+          tasks_performed: wizardData.tasks,
+          projects_undertaken: wizardData.projs,
+          problems_encountered: wizardData.prob,
+          skills_acquired: wizardData.skills,
+        };
+
+        const newProj = await createProject(payload);
+        await fetchActiveProject(newProj.id);
+        setWizardStep(0);
+        navigateTab('logbook');
+        triggerToast('Report project created');
+      } catch (err: any) {
+        triggerToast(err.message || 'Failed to create report project');
+      }
+    }
+  };
+
+  // User initials
+  const userInitials = user
+    ? `${user.first_name?.[0] || user.username?.[0] || 'S'}${user.last_name?.[0] || ''}`.toUpperCase()
+    : 'JS';
+
+  const studentName = user?.first_name ? `${user.first_name} ${user.last_name}` : user?.username || 'Student';
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 w-full flex-1">
-      {/* Top Banner / Welcome */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-border mb-8">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-serif text-foreground">
-            Welcome, {user.first_name || user.username}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage your SIWES technical reports, verified logbooks, and defence preparation.
-          </p>
-        </div>
+    <div className="dashboard-root">
+      <div
+        className={`app ${currentTab === 'new' ? 'nt wz' : ''} ${animDir}`}
+        id="app"
+      >
+        <div
+          className={`scr ${isScrolled ? 'sc' : ''}`}
+          id="scr"
+          tabIndex={-1}
+          ref={scrRef}
+          onScroll={handleScroll}
+        >
+          {/* ======================= TAB: HOME ======================= */}
+          {currentTab === 'home' && (
+            <div className="view">
+              <header className="top">
+                <span className="sp"></span>
+                <span className="tt">Home</span>
+                <button
+                  className="ib pl"
+                  type="button"
+                  aria-label="Account"
+                  onClick={() => setActiveSheet('me')}
+                >
+                  {userInitials}
+                </button>
+              </header>
 
-        <div className="flex items-center gap-3">
-          {aiStatus && (
-            <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium ${
-              aiStatus.available 
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
-                : 'bg-zinc-100 border-zinc-200 text-zinc-700'
-            }`}>
-              <MaterialIcon name="auto_awesome" size={16} />
-              <span>{aiStatus.available ? `AI Enabled (${aiStatus.model})` : 'No-AI Mode: Deterministic Engine'}</span>
+              <div className="lg">
+                <h1>Hi, {user?.first_name || user?.username || 'Student'}</h1>
+                <p>Your SIWES report, step by step.</p>
+              </div>
+
+              {!activeProject || projects.length === 0 ? (
+                <div className="card empty">
+                  <div className="ico">
+                    <span className="ms" aria-hidden="true">
+                      auto_stories
+                    </span>
+                  </div>
+                  <h2>No report yet</h2>
+                  <p>
+                    Add your placement details, upload logbook pages and generate
+                    your chapters.
+                  </p>
+                  <button
+                    className="btn w"
+                    type="button"
+                    onClick={() => navigateTab('new')}
+                  >
+                    <span className="ms" aria-hidden="true">
+                      add
+                    </span>
+                    Start your first report
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Hero Card */}
+                  <section className="hero" aria-label="Current project">
+                    <div
+                      className="ring"
+                      style={{ '--p': `${progressPct}%` } as React.CSSProperties}
+                    >
+                      <b>{progressPct}%</b>
+                    </div>
+                    <span
+                      className="chip"
+                      style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}
+                    >
+                      {hasReport ? 'Report ready' : 'In progress'}
+                    </span>
+                    <h2 style={{ maxWidth: '11em' }}>{activeProject.title}</h2>
+                    <p>
+                      {verifiedCount} of {totalEntries} entries verified
+                    </p>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => navigateTab(upNext.tab)}
+                    >
+                      Continue
+                      <span className="ms" aria-hidden="true">
+                        arrow_forward
+                      </span>
+                    </button>
+                  </section>
+
+                  {/* Quick Actions */}
+                  <div className="qa">
+                    <button type="button" onClick={() => navigateTab('logbook')}>
+                      <span className="ms" aria-hidden="true">
+                        upload_file
+                      </span>
+                      Add logbook
+                    </button>
+                    <button type="button" onClick={() => navigateTab('report')}>
+                      <span className="ms" aria-hidden="true">
+                        auto_awesome
+                      </span>
+                      Generate
+                    </button>
+                    <button type="button" onClick={() => navigateTab('defence')}>
+                      <span className="ms" aria-hidden="true">
+                        quiz
+                      </span>
+                      Practise
+                    </button>
+                  </div>
+
+                  {/* Up Next Section */}
+                  <h2 className="sh">Up next</h2>
+                  <div className="card" style={{ padding: '4px 16px' }}>
+                    <div
+                      className="lr"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => navigateTab(upNext.tab)}
+                    >
+                      <span className="ic">
+                        <span className="ms" aria-hidden="true">
+                          {upNext.icon}
+                        </span>
+                      </span>
+                      <span style={{ flex: 1 }}>
+                        <b>{upNext.title}</b>
+                        <small>{upNext.desc}</small>
+                      </span>
+                      <span className="ms mut" aria-hidden="true">
+                        chevron_right
+                      </span>
+                    </div>
+
+                    <div
+                      className="lr"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        navigateTab('report');
+                        setReportTab('export');
+                      }}
+                    >
+                      <span className="ic">
+                        <span className="ms" aria-hidden="true">
+                          download
+                        </span>
+                      </span>
+                      <span style={{ flex: 1 }}>
+                        <b>Export Word and PDF</b>
+                        <small>A4, ready to print and bind</small>
+                      </span>
+                      <span className="ms mut" aria-hidden="true">
+                        chevron_right
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-          <Link
-            href="/projects/new"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors shadow-xs"
-          >
-            <MaterialIcon name="add_circle" size={18} />
-            <span>New Report Project</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* Projects List */}
-      {isLoadingProjects ? (
-        <div className="py-20 text-center">
-          <MaterialIcon name="progress_activity" size={26} spin className="mx-auto text-emerald-800 mb-2" />
-          <p className="text-sm text-muted-foreground">Loading your report projects...</p>
-        </div>
-      ) : projects.length === 0 ? (
-        <div className="text-center py-16 px-4 rounded-xl border border-dashed border-border bg-white max-w-xl mx-auto my-8">
-          <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-800 flex items-center justify-center mx-auto mb-4">
-            <MaterialIcon name="menu_book" size={26} />
-          </div>
-          <h3 className="text-lg font-bold font-serif text-foreground">No Report Projects Yet</h3>
-          <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto leading-relaxed">
-            Create your first SIWES report project. You can enter your placement details, upload logbook scans, and generate your chapters.
-          </p>
-          <div className="mt-6">
-            <Link
-              href="/projects/new"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md bg-emerald-800 text-white font-medium text-sm hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none shadow-xs"
-            >
-              <MaterialIcon name="add_circle" size={18} />
-              <span>Start Your First Report</span>
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4">
-          {projects.map((project) => (
-            <div
-              key={project.id}
-              className="bg-white rounded-xl border border-border p-5 hover:border-emerald-800/40 transition-all hover:shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-                  <h3 className="font-semibold text-lg text-foreground hover:text-emerald-800 truncate">
-                    <Link href={`/projects/${project.id}`}>{project.title}</Link>
-                  </h3>
-                  {getStatusBadge(project.status)}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mt-1">
-                  {project.organization_name && (
-                    <span className="flex items-center gap-1">
-                      <MaterialIcon name="domain" size={15} className="text-zinc-500" />
-                      {project.organization_name}
-                    </span>
-                  )}
-                  {project.matric_number && (
-                    <span className="font-mono bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-700">
-                      {project.matric_number}
-                    </span>
-                  )}
-                  {project.department && <span>{project.department}</span>}
-                  <span className="flex items-center gap-1">
-                    <MaterialIcon name="schedule" size={15} className="text-zinc-400" />
-                    Updated {new Date(project.updated_at).toLocaleDateString()}
+          {/* ======================= TAB: LOGBOOK ======================= */}
+          {currentTab === 'logbook' && (
+            <div className="view">
+              <header className="top">
+                <button
+                  className="ib"
+                  type="button"
+                  aria-label="Back to home"
+                  onClick={() => navigateTab('home', 'bw')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    arrow_back
                   </span>
-                </div>
+                </button>
+                <span className="tt">Logbook</span>
+                <span className="sp"></span>
+              </header>
 
-                <div className="flex items-center gap-4 mt-3 text-xs text-zinc-600">
-                  <span className="flex items-center gap-1.5">
-                    <MaterialIcon name="folder_open" size={16} className="text-emerald-700" />
-                    <strong>{project.source_documents_count || 0}</strong> sources uploaded
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <MaterialIcon name="fact_check" size={16} className="text-emerald-700" />
-                    <strong>{project.logbook_entries_count || 0}</strong> logbook entries
-                  </span>
-                </div>
+              <div className="lg">
+                <h1>Logbook</h1>
+                <p>{activeProject?.organization_name || 'Upload handwritten notes & scans'}</p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border">
-                {deleteConfirmId === project.id ? (
-                  <div className="flex items-center gap-1">
+              {/* Upload Drop Area */}
+              <label className="up">
+                <span className="ms" aria-hidden="true">
+                  cloud_upload
+                </span>
+                <b>Upload pages</b>
+                <span className="mut" style={{ fontSize: '13.5px' }}>
+                  PDF, JPG, PNG or DOCX
+                </span>
+                <input
+                  type="file"
+                  id="fi"
+                  accept=".pdf,.jpg,.jpeg,.png,.docx"
+                  aria-label="Upload logbook pages"
+                  onChange={handleFileUpload}
+                />
+              </label>
+
+              {/* Action Buttons */}
+              <div className="row" style={{ marginBottom: '14px' }}>
+                <button
+                  className="btn o w s"
+                  type="button"
+                  onClick={() => setActiveSheet('typeNotes')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    edit_note
+                  </span>
+                  Type notes
+                </button>
+                <button
+                  className="btn w s"
+                  type="button"
+                  onClick={() => setActiveSheet('addEntry')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    add
+                  </span>
+                  Add entry
+                </button>
+              </div>
+
+              {/* Segmented View */}
+              <div className="seg" role="tablist" aria-label="Logbook view">
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={logbookTab === 'entries'}
+                  onClick={() => setLogbookTab('entries')}
+                >
+                  Entries ({totalEntries})
+                </button>
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={logbookTab === 'docs'}
+                  onClick={() => setLogbookTab('docs')}
+                >
+                  Documents ({(activeProject?.source_documents || []).length})
+                </button>
+              </div>
+
+              {logbookTab === 'entries' ? (
+                totalEntries > 0 ? (
+                  <>
+                    <div className="card" style={{ padding: '4px 16px' }}>
+                      {activeProject.logbook_entries.map((e: any, i: number) => (
+                        <div className="en" key={e.id || i}>
+                          <button
+                            className="ck"
+                            type="button"
+                            aria-pressed={!!e.is_verified}
+                            aria-label={`Week ${e.week_number} verified`}
+                            onClick={() => handleToggleVerify(e)}
+                          >
+                            <span className="ms" aria-hidden="true">
+                              check
+                            </span>
+                          </button>
+                          <div style={{ flex: 1, paddingTop: '2px' }}>
+                            <small>
+                              WEEK {e.week_number} ·{' '}
+                              {e.is_verified ? 'VERIFIED' : 'UNVERIFIED'}
+                            </small>
+                            <p>{e.activity_summary || e.verified_text}</p>
+                          </div>
+                          <button
+                            className="ib"
+                            type="button"
+                            aria-label={`Delete week ${e.week_number}`}
+                            style={{ boxShadow: 'none', background: 'none' }}
+                            onClick={() => handleDeleteEntry(e.id)}
+                          >
+                            <span className="ms mut" aria-hidden="true">
+                              delete
+                            </span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                     <button
-                      onClick={() => handleDelete(project.id)}
-                      className="px-2.5 py-1.5 rounded bg-red-600 text-white text-xs font-medium hover:bg-red-700 focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:outline-none cursor-pointer"
+                      className="btn o w"
+                      type="button"
+                      onClick={handleVerifyAll}
                     >
-                      Confirm Delete
+                      <span className="ms" aria-hidden="true">
+                        done_all
+                      </span>
+                      Verify all entries
                     </button>
+                  </>
+                ) : (
+                  <div className="card empty">
+                    <p style={{ margin: 0 }}>No entries yet. Upload pages or add one.</p>
+                  </div>
+                )
+              ) : (
+                (activeProject?.source_documents || []).length > 0 ? (
+                  activeProject.source_documents.map((d: any, idx: number) => (
+                    <div className="card" key={d.id || idx}>
+                      <div className="row sb">
+                        <b style={{ fontSize: '15px', wordBreak: 'break-all' }}>
+                          {d.file_name || d.title || 'Document'}
+                        </b>
+                        {d.status === 'error' ? (
+                          <span className="chip w">
+                            <span className="ms" aria-hidden="true">
+                              warning
+                            </span>
+                            Check required
+                          </span>
+                        ) : (
+                          <span className="chip">Extracted</span>
+                        )}
+                      </div>
+                      <div className="pg">
+                        {d.extracted_pages?.[0]?.extracted_text ||
+                          'Text extracted from this source will appear here for student review.'}
+                      </div>
+                      <button
+                        className="tx"
+                        type="button"
+                        onClick={() => {
+                          setCorrectingDocIdx(idx);
+                          setCorrectingText(d.extracted_pages?.[0]?.extracted_text || '');
+                          setActiveSheet('correctText');
+                        }}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          edit
+                        </span>
+                        Correct text
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="card empty">
+                    <p style={{ margin: 0 }}>No documents uploaded yet.</p>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
+          {/* ======================= TAB: REPORT ======================= */}
+          {currentTab === 'report' && (
+            <div className="view">
+              <header className="top">
+                <button
+                  className="ib"
+                  type="button"
+                  aria-label="Back to home"
+                  onClick={() => navigateTab('home', 'bw')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    arrow_back
+                  </span>
+                </button>
+                <span className="tt">Report</span>
+                <span className="sp"></span>
+              </header>
+
+              <div className="lg">
+                <h1>Report</h1>
+                <p>{activeProject?.title || 'SIWES Technical Report'}</p>
+              </div>
+
+              {/* Segmented Editor vs Export */}
+              <div className="seg" role="tablist" aria-label="Report view">
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={reportTab === 'editor'}
+                  onClick={() => setReportTab('editor')}
+                >
+                  Editor
+                </button>
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={reportTab === 'export'}
+                  onClick={() => setReportTab('export')}
+                >
+                  Export
+                </button>
+              </div>
+
+              {reportTab === 'editor' ? (
+                !hasReport ? (
+                  <div className="card empty">
+                    <div className="ico">
+                      <span className="ms" aria-hidden="true">
+                        description
+                      </span>
+                    </div>
+                    <h2>Generate your report</h2>
+                    <p>
+                      Your verified entries and placement details become the five standard
+                      chapters. Nothing is invented.
+                    </p>
                     <button
-                      onClick={() => setDeleteConfirmId(null)}
-                      className="px-2.5 py-1.5 rounded border border-border text-xs font-medium text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer"
+                      className="btn w"
+                      type="button"
+                      onClick={handleGenerateReport}
                     >
-                      Cancel
+                      <span className="ms" aria-hidden="true">
+                        auto_awesome
+                      </span>
+                      Generate report
                     </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => setDeleteConfirmId(project.id)}
-                    className="p-2 rounded text-muted-foreground hover:text-red-700 hover:bg-red-50 focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:outline-none transition-colors cursor-pointer"
-                    title="Delete Project"
-                    aria-label={`Delete project ${project.title}`}
-                  >
-                    <MaterialIcon name="delete" size={18} />
-                  </button>
-                )}
+                  <>
+                    {/* Chapter selector pills */}
+                    <div className="pills" role="tablist" aria-label="Chapters">
+                      {CHAPTER_NAMES.map((name, i) => (
+                        <button
+                          key={name}
+                          role="tab"
+                          type="button"
+                          aria-selected={i === currentChapterIdx}
+                          onClick={() => setCurrentChapterIdx(i)}
+                        >
+                          {i + 1}. {name.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
 
-                <Link
-                  href={`/projects/${project.id}`}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md bg-emerald-50 text-emerald-900 border border-emerald-200/80 font-medium text-xs hover:bg-emerald-100 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
-                >
-                  <span>Open Workspace</span>
-                  <MaterialIcon name="arrow_forward" size={15} />
-                </Link>
-              </div>
+                    {/* Editor Card */}
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div className="tl" role="toolbar" aria-label="Formatting">
+                        <button
+                          type="button"
+                          aria-label="Bold"
+                          onClick={() => handleFormat('bold')}
+                        >
+                          <span className="ms" aria-hidden="true">
+                            format_bold
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Italic"
+                          onClick={() => handleFormat('italic')}
+                        >
+                          <span className="ms" aria-hidden="true">
+                            format_italic
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Bullets"
+                          onClick={() => handleFormat('insertUnorderedList')}
+                        >
+                          <span className="ms" aria-hidden="true">
+                            format_list_bulleted
+                          </span>
+                        </button>
+                        <span className="sv">
+                          <span className="ms" style={{ fontSize: '17px' }} aria-hidden="true">
+                            {saveStatus === 'saving' ? 'sync' : 'cloud_done'}
+                          </span>
+                          {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+                        </span>
+                      </div>
+
+                      <div
+                        className="doc"
+                        ref={docRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        role="textbox"
+                        aria-multiline="true"
+                        aria-label={CHAPTER_NAMES[currentChapterIdx]}
+                        onInput={handleDocInput}
+                        dangerouslySetInnerHTML={{
+                          __html: getSectionContent(currentChapterIdx),
+                        }}
+                      />
+                    </div>
+                    <p className="hint">Chapters you edit stay locked when others regenerate.</p>
+                  </>
+                )
+              ) : (
+                <>
+                  {/* Export Options */}
+                  <div className="card">
+                    <span className="tag">WORD</span>
+                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Editable report</h3>
+                    <p className="mut" style={{ fontSize: '14px', marginBottom: '16px' }}>
+                      A4, 1.5 inch left margin, Times New Roman 12pt, 1.5 spacing.
+                    </p>
+                    <button
+                      className="btn w"
+                      type="button"
+                      disabled={!hasReport}
+                      onClick={handleDownloadWord}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        download
+                      </span>
+                      Download Word
+                    </button>
+                  </div>
+
+                  <div className="card">
+                    <span className="tag p">PDF</span>
+                    <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Print-ready PDF</h3>
+                    <p className="mut" style={{ fontSize: '14px', marginBottom: '16px' }}>
+                      Matching pagination, headers, footers and signature blocks.
+                    </p>
+                    <button
+                      className="btn w"
+                      type="button"
+                      disabled={!hasReport}
+                      onClick={handleDownloadPdf}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        download
+                      </span>
+                      Download PDF
+                    </button>
+                  </div>
+
+                  {!hasReport && (
+                    <p className="hint" style={{ marginBottom: '14px' }}>
+                      Generate your report to enable downloads.
+                    </p>
+                  )}
+
+                  <div className="card">
+                    <h3 style={{ fontSize: '17px', marginBottom: '6px' }}>Before you submit</h3>
+                    <ul className="cl">
+                      <li>
+                        <span className="ms" aria-hidden="true">
+                          check_circle
+                        </span>
+                        A4 with 1.5 inch binding margin
+                      </li>
+                      <li>
+                        <span className="ms" aria-hidden="true">
+                          check_circle
+                        </span>
+                        Certification page with sign-off lines
+                      </li>
+                      <li>
+                        <span className="ms" aria-hidden="true">
+                          check_circle
+                        </span>
+                        Roman numerals on preliminary pages
+                      </li>
+                      <li>
+                        <span className="ms" aria-hidden="true">
+                          check_circle
+                        </span>
+                        Activities taken from your logbook
+                      </li>
+                    </ul>
+                  </div>
+                </>
+              )}
             </div>
-          ))}
+          )}
+
+          {/* ======================= TAB: DEFENCE ======================= */}
+          {currentTab === 'defence' && (
+            <div className="view">
+              <header className="top">
+                <button
+                  className="ib"
+                  type="button"
+                  aria-label="Back to home"
+                  onClick={() => navigateTab('home', 'bw')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    arrow_back
+                  </span>
+                </button>
+                <span className="tt">Defence</span>
+                <span className="sp"></span>
+              </header>
+
+              <div className="lg">
+                <h1>Defence</h1>
+                <p>Practise before the panel does.</p>
+              </div>
+
+              <button
+                className="btn w"
+                type="button"
+                style={{ marginBottom: '16px' }}
+                onClick={() => {
+                  setExamIndex(0);
+                  setExamRevealed(false);
+                  setExamOpen(true);
+                }}
+              >
+                <span className="ms" aria-hidden="true">
+                  play_arrow
+                </span>
+                Start mock defence
+              </button>
+
+              {/* Category Filter Pills */}
+              <div className="pills" role="group" aria-label="Filter questions">
+                {categories.map((c: string) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={selectedCategory === c}
+                    onClick={() => setSelectedCategory(c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+
+              {/* Questions List */}
+              {filteredQuestions.map((q: any) => {
+                const isOpen = !!revealedDefenceAnswers[q.id];
+                return (
+                  <article className={`card q ${isOpen ? 'open' : ''}`} key={q.id}>
+                    <span className="chip">{q.category}</span>
+                    <h3>{q.question}</h3>
+                    <button
+                      className="tx"
+                      type="button"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setRevealedDefenceAnswers((prev) => ({
+                          ...prev,
+                          [q.id]: !prev[q.id],
+                        }))
+                      }
+                    >
+                      <span className="ms" aria-hidden="true">
+                        visibility
+                      </span>
+                      How to answer
+                    </button>
+                    <p className="ans">{q.suggested_answer}</p>
+                    <div className="row">
+                      <button
+                        className="btn o s"
+                        type="button"
+                        aria-pressed={q.mastery_status === 'confident'}
+                        onClick={() => handleUpdateMastery(q.id, 'confident')}
+                      >
+                        Confident
+                      </button>
+                      <button
+                        className="btn o s"
+                        type="button"
+                        aria-pressed={q.mastery_status === 'needs_practice'}
+                        onClick={() => handleUpdateMastery(q.id, 'needs_practice')}
+                      >
+                        Needs practice
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ======================= TAB: WIZARD (NEW REPORT) ======================= */}
+          {currentTab === 'new' && (
+            <div className="view">
+              <div className="wh">
+                <div className="row sb">
+                  <button
+                    className="ib"
+                    type="button"
+                    aria-label="Close and go back to home"
+                    onClick={() => navigateTab('home', 'bw')}
+                  >
+                    <span className="ms" aria-hidden="true">
+                      close
+                    </span>
+                  </button>
+                  <b style={{ fontSize: '14px' }}>
+                    Step {wizardStep + 1} of {WIZARD_PHASES.length}
+                  </b>
+                  <span className="sp"></span>
+                </div>
+                <div
+                  className="wp"
+                  role="progressbar"
+                  aria-valuemin={1}
+                  aria-valuemax={WIZARD_PHASES.length}
+                  aria-valuenow={wizardStep + 1}
+                  aria-label="Setup progress"
+                >
+                  {WIZARD_PHASES.map((_, k) => (
+                    <i key={k} className={k <= wizardStep ? 'on' : ''}></i>
+                  ))}
+                </div>
+              </div>
+
+              <form id="wf" className="view" noValidate onSubmit={handleWizardSubmit}>
+                <h1 className="wt" tabIndex={-1}>
+                  {WIZARD_PHASES[wizardStep].t}
+                </h1>
+                <p className="wd">{WIZARD_PHASES[wizardStep].d}</p>
+
+                {WIZARD_PHASES[wizardStep].f.map((f: any) => {
+                  const val = (wizardData as any)[f.id] || '';
+                  const hasErr = !!wizardErrors[f.id];
+
+                  return (
+                    <div className={`f ${hasErr ? 'bad' : ''}`} key={f.id}>
+                      <label htmlFor={f.id}>
+                        {f.label}
+                        {f.req && <em aria-hidden="true"> *</em>}
+                      </label>
+                      {f.sel ? (
+                        <select
+                          id={f.id}
+                          name={f.id}
+                          value={val}
+                          onChange={(e) =>
+                            setWizardData({ ...wizardData, [f.id]: e.target.value })
+                          }
+                        >
+                          {f.sel.map((opt: string) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : f.txt ? (
+                        <textarea
+                          id={f.id}
+                          name={f.id}
+                          placeholder={f.ph}
+                          value={val}
+                          onChange={(e) =>
+                            setWizardData({ ...wizardData, [f.id]: e.target.value })
+                          }
+                        />
+                      ) : (
+                        <input
+                          id={f.id}
+                          name={f.id}
+                          type={f.date ? 'date' : 'text'}
+                          placeholder={f.ph}
+                          value={val}
+                          required={f.req}
+                          onChange={(e) =>
+                            setWizardData({ ...wizardData, [f.id]: e.target.value })
+                          }
+                        />
+                      )}
+                      {hasErr && <p className="err">{wizardErrors[f.id]}</p>}
+                    </div>
+                  );
+                })}
+
+                <div className="wc">
+                  {wizardStep > 0 && (
+                    <button
+                      className="ib"
+                      type="button"
+                      aria-label="Previous step"
+                      style={{ width: '54px', height: '54px' }}
+                      onClick={() => {
+                        setAnimDir('bw');
+                        setWizardStep((prev) => prev - 1);
+                      }}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        arrow_back
+                      </span>
+                    </button>
+                  )}
+                  <button className="btn" type="submit" style={{ flex: 1 }}>
+                    {wizardStep === WIZARD_PHASES.length - 1 ? (
+                      <>
+                        <span className="ms" aria-hidden="true">
+                          check
+                        </span>
+                        Create report
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <span className="ms" aria-hidden="true">
+                          arrow_forward
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Floating Bottom Tab Bar */}
+        <nav className="tb" id="tb" aria-label="Main">
+          <button
+            className="tab-btn"
+            type="button"
+            aria-current={currentTab === 'home' ? 'page' : undefined}
+            onClick={() => navigateTab('home')}
+          >
+            <span className="ms" aria-hidden="true">
+              home
+            </span>
+            Home
+          </button>
+          <button
+            className="tab-btn"
+            type="button"
+            aria-current={currentTab === 'logbook' ? 'page' : undefined}
+            onClick={() => navigateTab('logbook')}
+          >
+            <span className="ms" aria-hidden="true">
+              menu_book
+            </span>
+            Logbook
+          </button>
+          <button
+            className="fab"
+            type="button"
+            aria-label="New report project"
+            onClick={() => navigateTab('new')}
+          >
+            <span className="ms" aria-hidden="true">
+              add
+            </span>
+          </button>
+          <button
+            className="tab-btn"
+            type="button"
+            aria-current={currentTab === 'report' ? 'page' : undefined}
+            onClick={() => navigateTab('report')}
+          >
+            <span className="ms" aria-hidden="true">
+              description
+            </span>
+            Report
+          </button>
+          <button
+            className="tab-btn"
+            type="button"
+            aria-current={currentTab === 'defence' ? 'page' : undefined}
+            onClick={() => navigateTab('defence')}
+          >
+            <span className="ms" aria-hidden="true">
+              school
+            </span>
+            Defence
+          </button>
+        </nav>
+
+        {/* ======================= FULL-SCREEN MOCK DEFENCE ======================= */}
+        {examOpen && (
+          <div id="exam" role="dialog" aria-modal="true" aria-labelledby="exT">
+            <div className="row sb" style={{ padding: '14px 18px' }}>
+              <div>
+                <b id="exT" style={{ font: '600 14px Fraunces, serif', color: '#58d6ad' }}>
+                  MOCK DEFENCE
+                </b>
+                <div style={{ fontSize: '13px', color: '#aab6c8' }} aria-live="polite">
+                  Question {examIndex + 1} of {questionsList.length}
+                </div>
+              </div>
+              <button
+                className="ib"
+                type="button"
+                aria-label="Exit mock defence"
+                style={{
+                  background: 'rgba(255,255,255,.12)',
+                  color: '#fff',
+                  boxShadow: 'none',
+                }}
+                onClick={() => setExamOpen(false)}
+              >
+                <span className="ms" aria-hidden="true">
+                  close
+                </span>
+              </button>
+            </div>
+
+            <div
+              className="bar"
+              role="progressbar"
+              aria-valuemin={1}
+              aria-valuemax={questionsList.length}
+              aria-valuenow={examIndex + 1}
+              aria-label="Exam progress"
+            >
+              <i
+                style={{
+                  width: `${((examIndex + 1) / questionsList.length) * 100}%`,
+                }}
+              ></i>
+            </div>
+
+            <div className="xb">
+              <span className="chip" style={{ width: 'max-content' }}>
+                {questionsList[examIndex]?.category}
+              </span>
+              <h2 id="exq" tabIndex={-1}>
+                “{questionsList[examIndex]?.question}”
+              </h2>
+              <p style={{ color: '#aab6c8', fontSize: '14.5px' }}>
+                Say your answer aloud first, then check the guidance.
+              </p>
+              <div>
+                <button
+                  className="btn o s"
+                  type="button"
+                  aria-expanded={examRevealed}
+                  onClick={() => setExamRevealed(!examRevealed)}
+                >
+                  {examRevealed ? 'Hide guidance' : 'Show guidance'}
+                </button>
+              </div>
+              {examRevealed && (
+                <p className="ans" id="exa">
+                  {questionsList[examIndex]?.suggested_answer}
+                </p>
+              )}
+            </div>
+
+            <div className="xn">
+              <button
+                className="btn o"
+                type="button"
+                disabled={examIndex === 0}
+                aria-label="Previous question"
+                onClick={() => {
+                  if (examIndex > 0) {
+                    setExamIndex((prev) => prev - 1);
+                    setExamRevealed(false);
+                  }
+                }}
+              >
+                <span className="ms" aria-hidden="true">
+                  arrow_back
+                </span>
+              </button>
+              <button
+                className="btn"
+                type="button"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  if (examIndex < questionsList.length - 1) {
+                    setExamIndex((prev) => prev + 1);
+                    setExamRevealed(false);
+                  } else {
+                    setExamOpen(false);
+                    triggerToast('Mock defence complete');
+                  }
+                }}
+              >
+                {examIndex === questionsList.length - 1 ? 'Finish' : 'Next question'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ======================= BOTTOM MODAL SHEETS ======================= */}
+        {activeSheet && (
+          <div id="layer">
+            <div className="bd" onClick={() => setActiveSheet(null)}></div>
+            <div
+              className="sht"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Dialog"
+              tabIndex={-1}
+            >
+              <div className="hd"></div>
+
+              {/* Account Profile Sheet */}
+              {activeSheet === 'me' && (
+                <>
+                  <h2>{studentName}</h2>
+                  <p className="mut" style={{ margin: '-8px 0 18px' }}>
+                    {user?.email || 'Logged in student'}
+                  </p>
+
+                  {projects.length > 1 && (
+                    <div className="f" style={{ marginBottom: '14px' }}>
+                      <label htmlFor="switch-proj">Switch Active Project</label>
+                      <select
+                        id="switch-proj"
+                        value={activeProject?.id || ''}
+                        onChange={(e) => {
+                          const id = Number(e.target.value);
+                          fetchActiveProject(id);
+                          setActiveSheet(null);
+                        }}
+                      >
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    className="btn o w"
+                    type="button"
+                    style={{ marginBottom: '10px' }}
+                    onClick={() => {
+                      setActiveSheet(null);
+                      navigateTab('new');
+                    }}
+                  >
+                    Start new report project
+                  </button>
+
+                  <button
+                    className="btn w"
+                    type="button"
+                    onClick={() => {
+                      setActiveSheet(null);
+                      logout();
+                    }}
+                  >
+                    Log out
+                  </button>
+                </>
+              )}
+
+              {/* Add Manual Entry Sheet */}
+              {activeSheet === 'addEntry' && (
+                <form onSubmit={handleAddManualEntry}>
+                  <h2>Add entry</h2>
+                  <div className="f">
+                    <label htmlFor="mw">Week</label>
+                    <input
+                      id="mw"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={52}
+                      value={manualWeek}
+                      onChange={(e) => setManualWeek(parseInt(e.target.value, 10) || 1)}
+                    />
+                  </div>
+                  <div className="f">
+                    <label htmlFor="mt">What you did</label>
+                    <textarea
+                      id="mt"
+                      value={manualText}
+                      onChange={(e) => setManualText(e.target.value)}
+                      placeholder="Tasks performed, machines operated, or troubleshooting carried out"
+                    ></textarea>
+                  </div>
+                  <button className="btn w" type="submit">
+                    Save entry
+                  </button>
+                </form>
+              )}
+
+              {/* Type Notes Sheet */}
+              {activeSheet === 'typeNotes' && (
+                <form onSubmit={handleProcessNotes}>
+                  <h2>Type notes</h2>
+                  <div className="f">
+                    <label htmlFor="nt">One entry per line, like “Week 3: …”</label>
+                    <textarea
+                      id="nt"
+                      style={{ minHeight: '160px' }}
+                      value={rawNotes}
+                      onChange={(e) => setRawNotes(e.target.value)}
+                      placeholder="Week 1: Safety induction and tour of facility&#10;Week 2: Configured router subnets with supervisor&#10;Week 3: Troubleshot optical transceiver attenuation"
+                    ></textarea>
+                  </div>
+                  <button className="btn w" type="submit">
+                    Add entries
+                  </button>
+                </form>
+              )}
+
+              {/* Correct Extracted Text Sheet */}
+              {activeSheet === 'correctText' && (
+                <div>
+                  <h2>Correct text</h2>
+                  <div className="f">
+                    <label htmlFor="ft">Fix any OCR or unclear words</label>
+                    <textarea
+                      id="ft"
+                      style={{ minHeight: '180px' }}
+                      value={correctingText}
+                      onChange={(e) => setCorrectingText(e.target.value)}
+                    ></textarea>
+                  </div>
+                  <button
+                    className="btn w"
+                    type="button"
+                    onClick={handleSaveCorrectedPage}
+                  >
+                    Save
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Local Toast Notification Pill */}
+        <div
+          id="toast"
+          className={localToast.visible ? 'on' : ''}
+          role="status"
+          aria-live="polite"
+        >
+          {localToast.message}
+        </div>
+      </div>
     </div>
   );
 }
