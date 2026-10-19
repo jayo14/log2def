@@ -3,10 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { 
-  ArrowRight, UploadCloud, FileText, Award, CheckCircle2, 
-  HelpCircle, ShieldCheck, Download, Sparkles, BookOpen 
-} from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 
 export default function LandingPage() {
   const { user } = useAuth();
@@ -16,7 +13,7 @@ export default function LandingPage() {
       {/* Hero Section */}
       <section className="relative pt-20 pb-16 md:pt-28 md:pb-24 border-b border-border/60 bg-gradient-to-b from-[#F7F6F0] to-[#FAF9F5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-medium mb-6">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-medium mb-6 shadow-xs">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
             Designed for LASUSTECH & Nigerian Universities
           </div>
@@ -33,28 +30,28 @@ export default function LandingPage() {
           <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               href={user ? "/dashboard" : "/register"}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg bg-emerald-800 text-white font-medium text-base hover:bg-emerald-900 shadow-sm transition-all hover:gap-3"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-lg bg-emerald-800 text-white font-medium text-base hover:bg-emerald-900 shadow-sm transition-all hover:gap-3 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
             >
-              Create your report
-              <ArrowRight className="w-4 h-4" />
+              <span>Create your report</span>
+              <MaterialIcon name="arrow_forward" size={18} />
             </Link>
             <a
               href="#how-it-works"
-              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 rounded-lg border border-border bg-white text-foreground font-medium text-base hover:bg-muted/70 transition-colors"
+              className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 rounded-lg border border-border bg-white text-foreground font-medium text-base hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
             >
               See how it works
             </a>
           </div>
 
-          <div className="mt-12 flex items-center justify-center gap-6 text-xs text-muted-foreground">
+          <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700" /> Grounded in your real work
+              <MaterialIcon name="check_circle" size={16} className="text-emerald-700" filled /> Grounded in your real work
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700" /> A4 DOCX & PDF exports
+              <MaterialIcon name="check_circle" size={16} className="text-emerald-700" filled /> A4 DOCX & PDF exports
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700" /> Mock defence exam
+              <MaterialIcon name="check_circle" size={16} className="text-emerald-700" filled /> Mock defence exam
             </span>
           </div>
         </div>
@@ -114,8 +111,8 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="p-6 rounded-xl border border-border bg-white shadow-xs">
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-md bg-emerald-50 text-emerald-800">
-                  <UploadCloud className="w-5 h-5" />
+                <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+                  <MaterialIcon name="cloud_upload" size={22} className="text-emerald-800" />
                 </div>
                 <h3 className="font-semibold text-base text-foreground">Smart Document Extraction</h3>
               </div>
@@ -126,8 +123,8 @@ export default function LandingPage() {
 
             <div className="p-6 rounded-xl border border-border bg-white shadow-xs">
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-md bg-emerald-50 text-emerald-800">
-                  <FileText className="w-5 h-5" />
+                <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+                  <MaterialIcon name="description" size={22} className="text-emerald-800" />
                 </div>
                 <h3 className="font-semibold text-base text-foreground">Institutional 5-Chapter Template</h3>
               </div>
@@ -138,8 +135,8 @@ export default function LandingPage() {
 
             <div className="p-6 rounded-xl border border-border bg-white shadow-xs">
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-md bg-emerald-50 text-emerald-800">
-                  <Download className="w-5 h-5" />
+                <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+                  <MaterialIcon name="download" size={22} className="text-emerald-800" />
                 </div>
                 <h3 className="font-semibold text-base text-foreground">Real Academic Export (DOCX & PDF)</h3>
               </div>
@@ -150,8 +147,8 @@ export default function LandingPage() {
 
             <div className="p-6 rounded-xl border border-border bg-white shadow-xs">
               <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-md bg-emerald-50 text-emerald-800">
-                  <Award className="w-5 h-5" />
+                <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center">
+                  <MaterialIcon name="school" size={22} className="text-emerald-800" />
                 </div>
                 <h3 className="font-semibold text-base text-foreground">Grounded Defence Workspace</h3>
               </div>
@@ -213,10 +210,10 @@ export default function LandingPage() {
           <div className="mt-8 flex justify-center gap-4">
             <Link
               href={user ? "/dashboard" : "/register"}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-500 transition-colors shadow-sm"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none transition-colors shadow-sm"
             >
-              Start Your Report Project
-              <ArrowRight className="w-4 h-4" />
+              <span>Start Your Report Project</span>
+              <MaterialIcon name="arrow_forward" size={18} />
             </Link>
           </div>
         </div>
