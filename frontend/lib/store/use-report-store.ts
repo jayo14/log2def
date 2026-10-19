@@ -12,6 +12,8 @@ export interface ReportState {
   previewMode: boolean;
   isExportingDocx: boolean;
   isExportingPdf: boolean;
+  versions: any[];
+  isLoadingVersions: boolean;
   error: string | null;
 
   fetchReport: (projectId: number | string) => Promise<any>;
@@ -20,6 +22,9 @@ export interface ReportState {
   setSectionDraft: (sectionId: number, content: string) => void;
   saveSection: (projectId: number | string, sectionId: number, content?: string, title?: string) => Promise<any>;
   regenerateSection: (projectId: number | string, sectionId: number) => Promise<any>;
+  fetchVersions: (projectId: number | string) => Promise<any[]>;
+  createVersion: (projectId: number | string, summary?: string) => Promise<any>;
+  revertVersion: (projectId: number | string, versionId: number) => Promise<any>;
   setPreviewMode: (preview: boolean) => void;
   downloadDocx: (projectId: number | string, filename?: string) => Promise<void>;
   downloadPdf: (projectId: number | string, filename?: string) => Promise<void>;
@@ -37,6 +42,8 @@ export const useReportStore = create<ReportState>((set, get) => ({
   previewMode: false,
   isExportingDocx: false,
   isExportingPdf: false,
+  versions: [],
+  isLoadingVersions: false,
   error: null,
 
   resetReportState: () =>
@@ -51,6 +58,8 @@ export const useReportStore = create<ReportState>((set, get) => ({
       previewMode: false,
       isExportingDocx: false,
       isExportingPdf: false,
+      versions: [],
+      isLoadingVersions: false,
       error: null,
     }),
 
@@ -156,6 +165,48 @@ export const useReportStore = create<ReportState>((set, get) => ({
       return updatedSection;
     } catch (err: any) {
       set({ regeneratingSectionId: null, error: err.message || 'Failed to regenerate section' });
+      throw err;
+    }
+  },
+
+  fetchVersions: async (projectId: number | string) => {
+    set({ isLoadingVersions: true });
+    try {
+      const data = await projectsApi.getReportVersions(projectId);
+      set({ versions: data, isLoadingVersions: false });
+      return data;
+    } catch (err: any) {
+      set({ isLoadingVersions: false });
+      return [];
+    }
+  },
+
+  createVersion: async (projectId: number | string, summary?: string) => {
+    try {
+      const newVersion = await projectsApi.createReportVersion(projectId, summary);
+      set((state) => ({ versions: [newVersion, ...state.versions] }));
+      return newVersion;
+    } catch (err: any) {
+      throw err;
+    }
+  },
+
+  revertVersion: async (projectId: number | string, versionId: number) => {
+    set({ isLoadingReport: true });
+    try {
+      const updatedReport = await projectsApi.revertReportVersion(projectId, versionId);
+      set({ report: updatedReport, isLoadingReport: false });
+      if (updatedReport.sections && updatedReport.sections.length > 0) {
+        const drafts: Record<number, string> = {};
+        updatedReport.sections.forEach((s: any) => {
+          drafts[s.id] = s.content;
+        });
+        set({ sectionDrafts: drafts });
+      }
+      get().fetchVersions(projectId);
+      return updatedReport;
+    } catch (err: any) {
+      set({ isLoadingReport: false });
       throw err;
     }
   },
