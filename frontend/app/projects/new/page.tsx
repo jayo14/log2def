@@ -4,10 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { projectsApi } from '@/lib/api';
-import { 
-  ArrowLeft, ArrowRight, Check, User, School, 
-  Building, Wrench, Save, Loader2, AlertCircle 
-} from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 
 export default function NewProjectWizard() {
   const { user } = useAuth();
@@ -95,10 +92,10 @@ export default function NewProjectWizard() {
   };
 
   const steps = [
-    { num: 1, label: 'Student Info', icon: User },
-    { num: 2, label: 'Institution', icon: School },
-    { num: 3, label: 'Placement', icon: Building },
-    { num: 4, label: 'Experience', icon: Wrench },
+    { num: 1, label: 'Student Info', iconName: 'person' },
+    { num: 2, label: 'Institution', iconName: 'school' },
+    { num: 3, label: 'Placement', iconName: 'domain' },
+    { num: 4, label: 'Experience', iconName: 'build' },
   ];
 
   return (
@@ -107,9 +104,9 @@ export default function NewProjectWizard() {
       <div className="mb-8">
         <button
           onClick={() => router.push('/dashboard')}
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-3 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none rounded transition-colors cursor-pointer"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard
+          <MaterialIcon name="arrow_back" size={16} /> <span>Back to Dashboard</span>
         </button>
         <h1 className="text-2xl sm:text-3xl font-bold font-serif text-foreground">
           Create New SIWES Report Project
@@ -120,21 +117,24 @@ export default function NewProjectWizard() {
       </div>
 
       {/* Wizard Step Indicator */}
-      <div className="grid grid-cols-4 gap-2 mb-8">
+      <div className="grid grid-cols-4 gap-2 mb-8" role="tablist" aria-label="Wizard Steps">
         {steps.map((s) => {
-          const Icon = s.icon;
           const isActive = currentStep === s.num;
           const isDone = currentStep > s.num;
           return (
-            <div
+            <button
               key={s.num}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-label={`Step ${s.num}: ${s.label}`}
               onClick={() => isDone && setCurrentStep(s.num)}
-              className={`p-3 rounded-lg border text-left flex items-center gap-2.5 transition-colors ${
+              className={`p-3 rounded-lg border text-left flex items-center gap-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
                 isActive
                   ? 'border-emerald-800 bg-emerald-50/50 text-emerald-950 font-medium'
                   : isDone
                   ? 'border-emerald-200 bg-white text-emerald-800 cursor-pointer'
-                  : 'border-border bg-white text-muted-foreground'
+                  : 'border-border bg-white text-muted-foreground cursor-default'
               }`}
             >
               <div
@@ -146,20 +146,25 @@ export default function NewProjectWizard() {
                     : 'bg-zinc-100 text-zinc-500'
                 }`}
               >
-                {isDone ? <Check className="w-3.5 h-3.5" /> : s.num}
+                {isDone ? <MaterialIcon name="check" size={16} /> : s.num}
               </div>
               <span className="text-xs hidden sm:inline truncate">{s.label}</span>
-            </div>
+            </button>
           );
         })}
       </div>
 
       {error && (
-        <div className="mb-6 p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+        <div
+          role="alert"
+          aria-live="polite"
+          className="mb-6 p-3.5 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5"
+        >
+          <MaterialIcon name="error" size={18} className="text-red-600 shrink-0 mt-0.5" />
           <span>{error}</span>
         </div>
       )}
+
 
       {/* Wizard Step Forms */}
       <div className="bg-white rounded-xl border border-border p-6 sm:p-8 shadow-xs mb-8">
@@ -529,9 +534,10 @@ export default function NewProjectWizard() {
             <button
               type="button"
               onClick={handlePrev}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md border border-border text-foreground text-sm font-medium hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" /> Previous
+              <MaterialIcon name="arrow_back" size={18} />
+              <span>Previous</span>
             </button>
           ) : (
             <div></div>
@@ -541,24 +547,27 @@ export default function NewProjectWizard() {
             <button
               type="button"
               onClick={handleNext}
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-md bg-emerald-800 text-white text-sm font-medium hover:bg-emerald-900"
+              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-md bg-emerald-800 text-white text-sm font-medium hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700/60 focus-visible:outline-none transition-colors cursor-pointer"
             >
-              Next Step <ArrowRight className="w-4 h-4" />
+              <span>Next Step</span>
+              <MaterialIcon name="arrow_forward" size={18} />
             </button>
           ) : (
             <button
               type="button"
               disabled={saving}
               onClick={handleSubmit}
-              className="inline-flex items-center gap-2 px-6 py-2 rounded-md bg-emerald-800 text-white text-sm font-medium hover:bg-emerald-900 disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-6 py-2 rounded-md bg-emerald-800 text-white text-sm font-medium hover:bg-emerald-900 focus-visible:ring-2 focus-visible:ring-emerald-700/60 focus-visible:outline-none disabled:opacity-50 transition-colors cursor-pointer"
             >
               {saving ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Saving Project...
+                  <MaterialIcon name="progress_activity" size={18} spin />
+                  <span>Saving Project...</span>
                 </>
               ) : (
                 <>
-                  <Save className="w-4 h-4" /> Create & Open Workspace
+                  <MaterialIcon name="save" size={18} />
+                  <span>Create & Open Workspace</span>
                 </>
               )}
             </button>
