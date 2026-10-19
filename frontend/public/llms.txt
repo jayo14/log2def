@@ -1,0 +1,44 @@
+# Log2Def: SIWES Logbook-to-Defence Academic Platform
+
+> Log2Def is an academic productivity platform designed for Nigerian higher education students (universities, polytechnics, and colleges of technology) participating in the Students Industrial Work Experience Scheme (SIWES). It bridges fieldwork records into submission-ready technical reports and oral defense rehearsal materials.
+
+## Core Capabilities
+
+### 1. Multi-Page Logbook OCR & Verification
+- Ingests mobile camera photos of student industrial logbooks from cover to cover.
+- Extracts dates, weekly task summaries, technical operations, equipment handled, and supervisor sign-offs.
+- Enables students to review and correct OCR text before compilation.
+
+### 2. Institutional Technical Report Generation
+- Complies strictly with National Universities Commission (NUC), Industrial Training Fund (ITF), and LASUSTECH guidelines.
+- Standard 5-Chapter Academic Architecture:
+  - Chapter 1: Introduction, History & Objectives of SIWES.
+  - Chapter 2: Host Organisation Profile, Organogram & Core Mandate.
+  - Chapter 3: Technical Activities, Operations & Logbook Procedures.
+  - Chapter 4: Skills Acquired, Industrial Problems Encountered & Solutions.
+  - Chapter 5: Conclusions, Recommendations & Acknowledgements.
+- Academic Formatting:
+  - 1.5-inch left binding margin; 1.0-inch top, bottom, and right margins.
+  - Times New Roman 12pt typography with 1.5 line spacing.
+  - Preliminary Roman numerals (i, ii, iii) and technical Arabic numerals (1, 2, 3).
+  - Institutional cover page, title page, declaration, certification with supervisor signature lines, acknowledgements, abstract, and table of contents.
+
+### 3. In-Editor Version Control & Reversion
+- Automated snapshots on every AI section regeneration.
+- Manual milestone snapshots with custom change notes.
+- One-click rollback to restore previous drafts safely.
+
+### 4. Direct Browser Printing & Document Export
+- Browser direct printing with `@media print` paper rendering.
+- Editable Word (.docx) and print-ready PDF (.pdf) downloads.
+
+### 5. Defence Preparation & Oral Rehearsal Suite
+- **Mock Quizzes**: Targeted departmental questions across organisation, safety, troubleshooting, and theory.
+- **Presentation Slides**: Slide decks covering background, placement duties, challenges, and conclusions with fullscreen keyboard projection.
+- **Oral Speech Script & Stopwatch**: Rehearsal timer with target pace indicators (130 wpm) and custom speech templates.
+
+## Canonical Endpoints
+- Homepage: https://log2def.com/
+- User Authentication: https://log2def.com/login
+- Student Registration: https://log2def.com/register
+- Sitemap: https://log2def.com/sitemap.xml
