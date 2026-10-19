@@ -261,7 +261,7 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav>
         <Link href={user ? '/dashboard' : '/'} className="logo">
-          <div className="mark">L2D</div>
+          <img src="/icons/icon-72.png" alt="Log2Def Logo" className="mark" width={34} height={34} style={{ borderRadius: '10px', objectFit: 'contain' }} />
           Log2Def
         </Link>
         <div className="links">
@@ -948,7 +948,7 @@ export default function LandingPage() {
           <div className="ftop">
             <div>
               <div className="logo">
-                <div className="mark">L2D</div>
+                <img src="/icons/icon-72.png" alt="Log2Def Logo" className="mark" width={34} height={34} style={{ borderRadius: '10px', objectFit: 'contain' }} />
                 Log2Def
               </div>
               <p>Turn your SIWES logbook into a report you can defend, built for Nigerian higher institutions.</p>

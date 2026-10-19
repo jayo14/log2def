@@ -2659,7 +2659,7 @@ export default function DashboardPage() {
                     <div className="pwa-install-card">
                       <div className="pwa-install-info">
                         <div className="pwa-install-icon">
-                          <img src="/logo.svg" alt="Log2Def" />
+                          <img src="/icons/icon-72.png" alt="Log2Def" />
                         </div>
                         <div className="pwa-install-text">
                           <h4>Install Log2Def App</h4>

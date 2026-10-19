@@ -29,9 +29,11 @@ export function Navbar() {
             className="flex items-center gap-2.5 group rounded-md focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
             aria-label="Log2Def Home"
           >
-            <div className="w-8 h-8 rounded-md bg-emerald-800 text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-sm transition-transform group-hover:scale-105">
-              L2D
-            </div>
+            <img
+              src="/icons/icon-72.png"
+              alt="Log2Def Logo"
+              className="w-8 h-8 rounded-md object-contain shadow-sm transition-transform group-hover:scale-105"
+            />
             <div className="flex flex-col">
               <span className="font-semibold text-foreground tracking-tight text-base leading-tight">Log2Def</span>
               <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">SIWES Platform</span>

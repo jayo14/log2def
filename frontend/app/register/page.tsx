@@ -93,7 +93,7 @@ export default function RegisterPage() {
       <div className="shell">
         <main className="left">
           <Link className="logo" href="/">
-            <div className="mark">L2D</div>
+            <img src="/icons/icon-72.png" alt="Log2Def Logo" className="mark" width={34} height={34} style={{ borderRadius: '10px', objectFit: 'contain' }} />
             Log2Def
           </Link>
 
