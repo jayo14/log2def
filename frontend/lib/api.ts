@@ -242,6 +242,26 @@ export const projectsApi = {
     });
   },
 
+  
+  // Report Version Control
+
+  getReportVersions: async (projectId: number | string) => {
+    return apiRequest<any[]>(`/projects/${projectId}/report/versions/`);
+  },
+
+  createReportVersion: async (projectId: number | string, summary?: string) => {
+    return apiRequest(`/projects/${projectId}/report/versions/`, {
+      method: 'POST',
+      body: JSON.stringify({ summary }),
+    });
+  },
+
+  revertReportVersion: async (projectId: number | string, versionId: number | string) => {
+    return apiRequest(`/projects/${projectId}/report/versions/${versionId}/revert/`, {
+      method: 'POST',
+    });
+  },
+
   // Document Export Download URLs
   getExportDocxUrl: (projectId: number | string) => {
     return `${API_BASE_URL}/projects/${projectId}/export/docx/`;
@@ -313,4 +333,4 @@ export const projectsApi = {
       body: JSON.stringify(data),
     });
   },
-};
+
