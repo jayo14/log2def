@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView, LoginView, CurrentUserView, AIStatusView,
+    PasswordResetRequestView, PasswordResetConfirmView,
     ProjectListCreateView, ProjectDetailView,
     DocumentListUploadView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
@@ -14,6 +15,8 @@ urlpatterns = [
     # Auth & System
     path('auth/register/', RegisterView.as_view(), name='auth-register'),
     path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/password-reset/', PasswordResetRequestView.as_view(), name='auth-password-reset'),
+    path('auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='auth-token-refresh'),
     path('auth/me/', CurrentUserView.as_view(), name='auth-me'),
     path('ai/status/', AIStatusView.as_view(), name='ai-status'),
