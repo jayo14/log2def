@@ -4,15 +4,21 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { projectsApi, authApi } from '@/lib/api';
+import { useProjectStore, useUIStore } from '@/lib/store';
 import { MaterialIcon } from '@/components/ui/material-icon';
 
 export default function DashboardPage() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const [projects, setProjects] = useState<any[]>([]);
-  const [aiStatus, setAiStatus] = useState<any>(null);
-  const [loadingProjects, setLoadingProjects] = useState(true);
+  const {
+    projects,
+    aiStatus,
+    isLoadingProjects,
+    fetchProjects,
+    fetchAiStatus,
+    deleteProject,
+  } = useProjectStore();
+  const { showToast } = useUIStore();
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -23,17 +29,9 @@ export default function DashboardPage() {
 
   const loadDashboardData = async () => {
     try {
-      setLoadingProjects(true);
-      const [projList, statusData] = await Promise.all([
-        projectsApi.list(),
-        authApi.getAiStatus().catch(() => null),
-      ]);
-      setProjects(projList);
-      setAiStatus(statusData);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingProjects(false);
+      await Promise.all([fetchProjects(), fetchAiStatus()]);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to refresh dashboard', 'error');
     }
   };
 
@@ -45,11 +43,11 @@ export default function DashboardPage() {
 
   const handleDelete = async (id: number) => {
     try {
-      await projectsApi.delete(id);
-      setProjects(projects.filter((p) => p.id !== id));
+      await deleteProject(id);
       setDeleteConfirmId(null);
+      showToast('Project deleted successfully', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to delete project');
+      showToast(err.message || 'Failed to delete project', 'error');
     }
   };
 
