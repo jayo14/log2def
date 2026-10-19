@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { BookOpen, User as UserIcon, LogOut, PlusCircle, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { MaterialIcon } from '@/components/ui/material-icon';
 
 export function Navbar() {
   const { user, logout } = useAuth();
@@ -12,7 +12,11 @@ export function Navbar() {
     <header className="border-b border-border/80 bg-background/95 backdrop-blur-sm sticky top-0 z-40 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2.5 group">
+          <Link
+            href={user ? "/dashboard" : "/"}
+            className="flex items-center gap-2.5 group rounded-md focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none"
+            aria-label="Log2Def Home"
+          >
             <div className="w-8 h-8 rounded-md bg-emerald-800 text-white flex items-center justify-center font-bold text-sm tracking-tight shadow-sm transition-transform group-hover:scale-105">
               L2D
             </div>
@@ -23,19 +27,19 @@ export function Navbar() {
           </Link>
 
           {user && (
-            <nav className="hidden md:flex items-center gap-1 text-sm font-medium">
+            <nav className="hidden md:flex items-center gap-1 text-sm font-medium" aria-label="Main navigation">
               <Link
                 href="/dashboard"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
               >
-                <LayoutDashboard className="w-4 h-4 text-emerald-700" />
+                <MaterialIcon name="dashboard" size={18} className="text-emerald-700" />
                 Dashboard
               </Link>
               <Link
                 href="/projects/new"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
               >
-                <PlusCircle className="w-4 h-4 text-emerald-700" />
+                <MaterialIcon name="add_circle" size={18} className="text-emerald-700" />
                 New Report Project
               </Link>
             </nav>
@@ -53,10 +57,11 @@ export function Navbar() {
               </div>
               <button
                 onClick={logout}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-border text-xs font-medium text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
                 title="Logout"
+                aria-label="Logout"
               >
-                <LogOut className="w-3.5 h-3.5 text-muted-foreground" />
+                <MaterialIcon name="logout" size={16} className="text-muted-foreground" />
                 <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
