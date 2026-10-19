@@ -10,6 +10,7 @@ import {
   CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, Eye, Edit3, 
   Trash2, Plus, Check, Star, Play, Sparkles, Loader2, BookOpen, Clock, Building
 } from 'lucide-react';
+import { TiptapEditor } from '@/components/TiptapEditor';
 
 function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -836,12 +837,9 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
                             dangerouslySetInnerHTML={{ __html: sectionContentDraft }}
                           />
                         ) : (
-                          <textarea
-                            value={sectionContentDraft}
-                            onChange={(e) => setSectionContentDraft(e.target.value)}
-                            rows={18}
-                            className="w-full flex-1 p-4 rounded-lg border border-border text-sm font-mono leading-relaxed focus:outline-none focus:border-emerald-700 bg-white"
-                            placeholder="Enter or edit HTML / structured section text..."
+                          <TiptapEditor
+                            content={sectionContentDraft}
+                            onChange={(html) => setSectionContentDraft(html)}
                           />
                         )}
                       </div>
