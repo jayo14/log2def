@@ -129,9 +129,37 @@ Visit `http://localhost:3000` to access Log2Def.
 
 ---
 
+## Security & Data Integrity Architecture
+
+Log2Def implements layered defense-in-depth for university student data and computational safety:
+
+1. **Magic-Byte File Verification:**
+   - Every uploaded document is inspected at the raw byte header level (`%PDF-`, `\x89PNG`, `\xff\xd8\xff`, `PK\x03\x04` containing `word/`). Disguised executables, shell scripts, or renamed binaries are rejected with HTTP 400.
+2. **Path Traversal & Safe Filenames:**
+   - Uploads are saved using cryptographically randomized UUID hex tokens without user-controlled directory components.
+   - All file stream responses verify that `os.path.realpath(path).startswith(os.path.realpath(settings.MEDIA_ROOT))` to guarantee no arbitrary file disclosure.
+3. **Multi-Tenant Ownership Isolation:**
+   - Every project, source document, logbook entry, section, export, and defence question query enforces ownership via `get_user_project(request.user, project_id)`. Cross-student access is strictly forbidden (HTTP 404).
+   - Dedicated authenticated download endpoints (`/api/projects/{id}/documents/{doc_id}/download/`) protect student sources from anonymous static access.
+4. **HTML XSS Sanitization:**
+   - Student custom rich-text inputs (via Tiptap) and AI-generated outputs pass through `sanitize_html()` which strips `<script>`, `<iframe>`, inline `on*` event handlers, and `javascript:` pseudo-protocols before persistence.
+5. **Prompt Injection Boundary Protection:**
+   - Untrusted student logbook activities and text are isolated inside `<<<STUDENT_UNTRUSTED_CONTENT>>>` safety delimiters, instructing AI models to ignore any instructions or role overrides within student data.
+6. **Scoped API Rate Throttling:**
+   - Protects resource-intensive operations against DoS:
+     - `auth`: 30 requests/minute (brute-force defense)
+     - `uploads`: 120 requests/minute
+     - `heavy_generation`: 60 requests/minute (report generation, PDF rendering, defence bank creation)
+7. **Filesystem Cascade Cleanup:**
+   - Deleting a project automatically triggers recursive disk cleanup of all student documents, pages, and exports in `media/projects/{id}/`.
+8. **Production Security Guards:**
+   - When `DEBUG=False`, insecure default keys are prevented from starting, and strict HTTPS security headers (`SECURE_BROWSER_XSS_FILTER`, `SECURE_CONTENT_TYPE_NOSNIFF`, `X_FRAME_OPTIONS='DENY'`, secure cookies) are enforced.
+
+---
+
 ## Running the Automated Test Suite
 
-Log2Def includes automated tests for all critical backend modules:
+Log2Def includes automated tests covering 14 critical test suites:
 - Student registration & JWT authentication
 - Multi-tenant ownership isolation (404/denial across users)
 - PDF extraction with PyMuPDF
@@ -140,6 +168,12 @@ Log2Def includes automated tests for all critical backend modules:
 - 5-chapter report generation and student edit preservation
 - A4 DOCX generation and validated LibreOffice PDF rendering
 - Defence question generation, mastery ratings, and session recording
+- Magic-byte spoofing rejection (blocking disguised scripts/executables)
+- HTML XSS sanitization (stripping `<script>`, `onerror`, and pseudo-protocols)
+- Authenticated safe source document download and access control
+- Cascade filesystem cleanup on project deletion
+- Logbook and defence query parameter filtering
+- Swagger UI (`/docs/`) and OpenAPI schema (`/api/schema/`) endpoints
 
 Run the test suite:
 
@@ -150,7 +184,7 @@ python backend/manage.py test api
 
 Expected output:
 ```
-Ran 8 tests in ~14s
+Ran 14 tests in ~22s
 OK
 ```
 
@@ -164,3 +198,4 @@ OK
 4. Run Django via Gunicorn / Uwsgi behind Nginx.
 5. Deploy the Next.js frontend using `npm run build` and run with PM2 / Docker or on Vercel.
 6. Mount a persistent private volume for `backend/media/` to store student uploads and exports.
+
