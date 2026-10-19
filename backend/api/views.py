@@ -18,7 +18,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiPara
 
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
-    ExtractedPage, LogbookEntry, Report, ReportSection, 
+    ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
     DefenceQuestion, DefenceSession
 )
 from .serializers import (
@@ -26,6 +26,8 @@ from .serializers import (
     ReportProjectSerializer, ReportProjectDetailSerializer,
     SourceDocumentSerializer, ExtractedPageSerializer,
     LogbookEntrySerializer, ReportSerializer, ReportSectionSerializer,
+    ReportVersionSerializer, ReportVersionCreateRequestSerializer,
+    PresentationSlidesResponseSerializer, PresentationScriptResponseSerializer,
     DefenceQuestionSerializer, DefenceSessionSerializer,
     DocumentUploadRequestSerializer, ReportGenerateRequestSerializer,
     BulkVerifyRequestSerializer, SectionUpdateRequestSerializer,
@@ -35,7 +37,11 @@ from .serializers import (
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
 from .document_exporter import generate_docx_report, export_report_documents
-from .defence_generator import generate_defence_questions
+from .defence_generator import (
+    generate_defence_questions,
+    generate_presentation_slides,
+    generate_presentation_script
+)
 from .ai_provider import get_ai_status
 
 
@@ -270,30 +276,38 @@ class DocumentListUploadView(views.APIView):
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         
-        file_obj = request.FILES.get('file')
+        file_list = request.FILES.getlist('files') or request.FILES.getlist('file')
         raw_text = request.data.get('text', '').strip()
         doc_type = request.data.get('file_type', '')
 
-        if not file_obj and not raw_text:
+        if not file_list and not raw_text:
             return Response({"error": "Either an upload file or typed text must be provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if file_obj:
-            try:
-                verified_type = validate_file_content(file_obj)
-            except ValidationError as ve:
-                err_msg = ve.messages[0] if hasattr(ve, 'messages') else str(ve)
-                return Response({"error": err_msg}, status=status.HTTP_400_BAD_REQUEST)
+        created_docs = []
+        if file_list:
+            for file_obj in file_list:
+                try:
+                    verified_type = validate_file_content(file_obj)
+                except ValidationError as ve:
+                    err_msg = ve.messages[0] if hasattr(ve, 'messages') else str(ve)
+                    return Response({"error": err_msg}, status=status.HTTP_400_BAD_REQUEST)
 
-            doc = SourceDocument.objects.create(
-                project=project,
-                file=file_obj,
-                original_filename=file_obj.name,
-                file_type=verified_type,
-                file_size=file_obj.size,
-                status='uploaded'
-            )
+                doc = SourceDocument.objects.create(
+                    project=project,
+                    file=file_obj,
+                    original_filename=file_obj.name,
+                    file_type=verified_type,
+                    file_size=file_obj.size,
+                    status='uploaded'
+                )
+                process_source_document(doc.id)
+                doc.refresh_from_db()
+                created_docs.append(doc)
+
+            if len(created_docs) == 1:
+                return Response(SourceDocumentSerializer(created_docs[0]).data, status=status.HTTP_201_CREATED)
+            return Response(SourceDocumentSerializer(created_docs, many=True).data, status=status.HTTP_201_CREATED)
         else:
-            doc_type = 'note'
             title = request.data.get('title', 'Manual Log Note')
             doc = SourceDocument.objects.create(
                 project=project,
@@ -303,10 +317,9 @@ class DocumentListUploadView(views.APIView):
                 error_message=raw_text,
                 status='uploaded'
             )
-
-        process_source_document(doc.id)
-        doc.refresh_from_db()
-        return Response(SourceDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+            process_source_document(doc.id)
+            doc.refresh_from_db()
+            return Response(SourceDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
 
 class DocumentDetailView(views.APIView):
@@ -719,3 +732,184 @@ class DefenceSessionView(views.APIView):
         serializer.is_valid(raise_exception=True)
         session = serializer.save(project=project)
         return Response(DefenceSessionSerializer(session).data, status=status.HTTP_201_CREATED)
+
+
+class ReportVersionListView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Report Versions'],
+        summary='List report version snapshots',
+        description='Returns the version history of the generated SIWES technical report with snapshot summaries.',
+        responses={200: ReportVersionSerializer(many=True)}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        if not hasattr(project, 'report'):
+            return Response([])
+        versions = project.report.versions.all().order_by('-version_number', '-created_at')
+        return Response(ReportVersionSerializer(versions, many=True).data)
+
+    @extend_schema(
+        tags=['Report Versions'],
+        summary='Create manual report version snapshot',
+        description='Takes a snapshot of current report sections and registers a new revision in version history.',
+        request=ReportVersionCreateRequestSerializer,
+        responses={201: ReportVersionSerializer}
+    )
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        if not hasattr(project, 'report'):
+            return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        report = project.report
+        report.version += 1
+        report.save(update_fields=['version'])
+
+        summary = request.data.get('summary', f"Revision snapshot v{report.version}")
+        snapshot = [
+            {
+                "id": s.id,
+                "chapter_number": s.chapter_number,
+                "section_key": s.section_key,
+                "title": s.title,
+                "content": s.content,
+                "order": s.order,
+            }
+            for s in report.sections.all().order_by('chapter_number', 'order')
+        ]
+        version = ReportVersion.objects.create(
+            report=report,
+            version_number=report.version,
+            title=report.title,
+            sections_snapshot=snapshot,
+            change_summary=summary
+        )
+        return Response(ReportVersionSerializer(version).data, status=status.HTTP_201_CREATED)
+
+
+class ReportVersionRevertView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Report Versions'],
+        summary='Revert report sections to a specific version snapshot',
+        description='Restores report sections from a previously saved snapshot and increments version history.',
+        request=None,
+        responses={200: ReportSerializer}
+    )
+    def post(self, request, project_id, version_id):
+        project = get_user_project(request.user, project_id)
+        if not hasattr(project, 'report'):
+            return Response({"error": "Report not found."}, status=status.HTTP_400_BAD_REQUEST)
+
+        report = project.report
+        version = get_object_or_404(ReportVersion, id=version_id, report=report)
+
+        for sec_data in version.sections_snapshot:
+            sec_key = sec_data.get('section_key')
+            if not sec_key:
+                continue
+            section = report.sections.filter(section_key=sec_key).first()
+            if section:
+                section.content = sec_data.get('content', '')
+                section.title = sec_data.get('title', section.title)
+                section.last_edited_by_student = True
+                section.save(update_fields=['content', 'title', 'last_edited_by_student'])
+
+        report.version += 1
+        report.save(update_fields=['version'])
+
+        revert_snapshot = [
+            {
+                "id": s.id,
+                "chapter_number": s.chapter_number,
+                "section_key": s.section_key,
+                "title": s.title,
+                "content": s.content,
+                "order": s.order,
+            }
+            for s in report.sections.all().order_by('chapter_number', 'order')
+        ]
+        ReportVersion.objects.create(
+            report=report,
+            version_number=report.version,
+            title=report.title,
+            sections_snapshot=revert_snapshot,
+            change_summary=f"Reverted to v{version.version_number} ({version.change_summary})"
+        )
+
+        return Response(ReportSerializer(report).data)
+
+
+class DefenceSlidesView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Get presentation slides',
+        description='Returns structured presentation slides for oral defence and projection display.',
+        responses={200: PresentationSlidesResponseSerializer}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        slides = project.presentation_slides
+        if not slides:
+            slides = generate_presentation_slides(project)
+        return Response({
+            "slides": slides,
+            "total_slides": len(slides),
+            "project_title": project.title
+        })
+
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Regenerate presentation slides',
+        description='Regenerates the presentation slides based on latest verified logbook entries.',
+        request=None,
+        responses={200: PresentationSlidesResponseSerializer}
+    )
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        slides = generate_presentation_slides(project)
+        return Response({
+            "slides": slides,
+            "total_slides": len(slides),
+            "project_title": project.title
+        })
+
+
+class DefenceScriptView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Get timed oral presentation script',
+        description='Returns a 5-7 minute timed oral defence presentation script tailored to the student.',
+        responses={200: PresentationScriptResponseSerializer}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        script = project.presentation_script
+        if not script:
+            script = generate_presentation_script(project)
+        return Response({
+            "script": script,
+            "estimated_duration_minutes": 7,
+            "project_title": project.title
+        })
+
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Regenerate timed oral presentation script',
+        request=None,
+        responses={200: PresentationScriptResponseSerializer}
+    )
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        script = generate_presentation_script(project)
+        return Response({
+            "script": script,
+            "estimated_duration_minutes": 7,
+            "project_title": project.title
+        })

@@ -7,8 +7,10 @@ from .views import (
     DocumentListUploadView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
+    ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView,
-    DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView
+    DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
+    DefenceSlidesView, DefenceScriptView
 )
 
 urlpatterns = [
@@ -42,6 +44,8 @@ urlpatterns = [
     path('projects/<int:project_id>/report/generate/', ReportGenerateView.as_view(), name='report-generate'),
     path('projects/<int:project_id>/report/sections/<int:section_id>/', SectionUpdateView.as_view(), name='section-update'),
     path('projects/<int:project_id>/report/sections/<int:section_id>/regenerate/', SectionRegenerateView.as_view(), name='section-regenerate'),
+    path('projects/<int:project_id>/report/versions/', ReportVersionListView.as_view(), name='report-versions'),
+    path('projects/<int:project_id>/report/versions/<int:version_id>/revert/', ReportVersionRevertView.as_view(), name='report-version-revert'),
 
     # Document Export
     path('projects/<int:project_id>/export/docx/', ExportDocxView.as_view(), name='export-docx'),
@@ -52,4 +56,6 @@ urlpatterns = [
     path('projects/<int:project_id>/defence/questions/', DefenceQuestionListView.as_view(), name='defence-questions'),
     path('projects/<int:project_id>/defence/questions/<int:question_id>/', DefenceQuestionDetailView.as_view(), name='defence-question-detail'),
     path('projects/<int:project_id>/defence/session/', DefenceSessionView.as_view(), name='defence-session'),
+    path('projects/<int:project_id>/defence/slides/', DefenceSlidesView.as_view(), name='defence-slides'),
+    path('projects/<int:project_id>/defence/script/', DefenceScriptView.as_view(), name='defence-script'),
 ]

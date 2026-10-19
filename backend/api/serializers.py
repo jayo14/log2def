@@ -4,7 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
-    ExtractedPage, LogbookEntry, Report, ReportSection, 
+    ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
     DefenceQuestion, DefenceSession
 )
 
@@ -99,8 +99,16 @@ class ReportSectionSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
 
+class ReportVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReportVersion
+        fields = '__all__'
+        read_only_fields = ('version_number', 'created_at')
+
+
 class ReportSerializer(serializers.ModelSerializer):
     sections = ReportSectionSerializer(many=True, read_only=True)
+    versions = ReportVersionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Report
@@ -193,6 +201,35 @@ class DefenceQuestionUpdateRequestSerializer(serializers.Serializer):
         required=False, 
         help_text="Flag question for prioritized revision"
     )
+
+
+class ReportVersionCreateRequestSerializer(serializers.Serializer):
+    summary = serializers.CharField(
+        required=False, 
+        default="Manual revision snapshot", 
+        help_text="Description or summary of this report revision"
+    )
+
+
+class PresentationSlideSerializer(serializers.Serializer):
+    slide_number = serializers.IntegerField()
+    title = serializers.CharField()
+    subtitle = serializers.CharField(required=False, allow_blank=True)
+    bullets = serializers.ListField(child=serializers.CharField(), required=False)
+    speaker_notes = serializers.CharField(required=False, allow_blank=True)
+    layout = serializers.CharField(required=False, default="bullets")
+
+
+class PresentationSlidesResponseSerializer(serializers.Serializer):
+    slides = serializers.ListField(child=serializers.DictField())
+    total_slides = serializers.IntegerField()
+    project_title = serializers.CharField()
+
+
+class PresentationScriptResponseSerializer(serializers.Serializer):
+    script = serializers.CharField()
+    estimated_duration_minutes = serializers.IntegerField(default=7)
+    project_title = serializers.CharField()
 
 
 class AIStatusResponseSerializer(serializers.Serializer):

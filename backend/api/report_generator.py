@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from django.utils import timezone
-from .models import ReportProject, Report, ReportSection, LogbookEntry
+from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion
 from .ai_provider import is_ai_available, generate_completion, AIProviderUnavailableError
 from .security import wrap_untrusted_prompt_input, sanitize_html
 
@@ -669,6 +669,29 @@ def generate_full_report(project: ReportProject, force_all: bool = False) -> Rep
 
     report.version += 1
     report.save()
+
+    # Save initial / generation version snapshot for version control
+    try:
+        snapshot = [
+            {
+                "id": s.id,
+                "chapter_number": s.chapter_number,
+                "section_key": s.section_key,
+                "title": s.title,
+                "content": s.content,
+                "order": s.order,
+            }
+            for s in report.sections.all().order_by('chapter_number', 'order')
+        ]
+        ReportVersion.objects.create(
+            report=report,
+            version_number=report.version,
+            title=report.title,
+            sections_snapshot=snapshot,
+            change_summary=f"Full report generation v{report.version}"
+        )
+    except Exception:
+        pass
 
     project.status = 'editing_report'
     project.save(update_fields=['status'])
