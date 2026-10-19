@@ -90,6 +90,20 @@ export const authApi = {
     return apiRequest('/auth/me/');
   },
 
+  requestPasswordReset: async (email: string) => {
+    return apiRequest<{ detail: string; reset_token?: string; reset_url?: string }>('/auth/password-reset/', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  confirmPasswordReset: async (data: { token: string; password: string; password_confirm: string }) => {
+    return apiRequest<{ detail: string }>('/auth/password-reset/confirm/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   getAiStatus: async () => {
     return apiRequest('/ai/status/');
   },
