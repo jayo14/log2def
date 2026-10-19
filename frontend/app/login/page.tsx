@@ -525,6 +525,10 @@ export default function LoginPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           setView('signin');
+                          setResetDone(false);
+                          setForgotDone(false);
+                          setNewPassword('');
+                          setConfirmPassword('');
                           window.location.hash = '/signin';
                         }}
                       >
