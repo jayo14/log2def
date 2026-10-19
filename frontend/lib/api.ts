@@ -333,3 +333,30 @@ export const projectsApi = {
       body: JSON.stringify(data),
     });
   },
+
+  getDefenceSlides: async (projectId: number | string) => {
+    return apiRequest<{ slides: any[]; total_slides: number; project_title: string }>(
+      `/projects/${projectId}/defence/slides/`
+    );
+  },
+
+  regenerateDefenceSlides: async (projectId: number | string) => {
+    return apiRequest<{ slides: any[]; total_slides: number; project_title: string }>(
+      `/projects/${projectId}/defence/slides/`,
+      { method: 'POST' }
+    );
+  },
+
+  getDefenceScript: async (projectId: number | string) => {
+    return apiRequest<{ script: string; estimated_duration_minutes: number; project_title: string }>(
+      `/projects/${projectId}/defence/script/`
+    );
+  },
+
+  regenerateDefenceScript: async (projectId: number | string) => {
+    return apiRequest<{ script: string; estimated_duration_minutes: number; project_title: string }>(
+      `/projects/${projectId}/defence/script/`,
+      { method: 'POST' }
+    );
+  },
+};
