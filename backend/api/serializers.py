@@ -223,7 +223,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
             raw_data = signer.unsign(token, max_age=86400)
             user_id, pw_prefix = raw_data.split(':', 1)
             user = User.objects.get(pk=user_id)
-            if user.password[:10] != pw_prefix:
+            if user.password[-16:] != pw_prefix:
                 raise serializers.ValidationError({"token": "This reset link has already been used."})
             self.user = user
         except SignatureExpired:

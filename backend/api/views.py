@@ -113,7 +113,7 @@ class PasswordResetRequestView(views.APIView):
         if user:
             from django.core.signing import TimestampSigner
             signer = TimestampSigner(salt='password-reset-salt')
-            token = signer.sign(f"{user.pk}:{user.password[:10]}")
+            token = signer.sign(f"{user.pk}:{user.password[-16:]}")
 
         return Response({
             "detail": f"If an account exists for {email}, a reset link has been dispatched.",
