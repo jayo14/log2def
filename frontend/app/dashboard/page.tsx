@@ -110,7 +110,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Projects List */}
-      {loadingProjects ? (
+      {isLoadingProjects ? (
         <div className="py-20 text-center">
           <MaterialIcon name="progress_activity" size={26} spin className="mx-auto text-emerald-800 mb-2" />
           <p className="text-sm text-muted-foreground">Loading your report projects...</p>

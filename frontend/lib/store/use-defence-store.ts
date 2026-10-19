@@ -134,7 +134,7 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
     set({ isGeneratingQuestions: true, error: null });
     try {
       const res = await projectsApi.generateDefenceQuestions(projectId);
-      const questions = res.questions || [];
+      const questions = Array.isArray(res) ? res : (res as any)?.questions || [];
       set({ questions, isGeneratingQuestions: false });
       return questions;
     } catch (err: any) {
