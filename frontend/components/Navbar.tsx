@@ -10,8 +10,13 @@ export function Navbar() {
   const { user, logout } = useAuth();
   const pathname = usePathname();
 
-  // Hide the default generic navbar on public landing and authentication screens
-  if (pathname === '/' || pathname === '/login' || pathname === '/register') {
+  // Hide the default generic navbar on public landing, auth, and dashboard screens
+  if (
+    pathname === '/' ||
+    pathname === '/login' ||
+    pathname === '/register' ||
+    pathname.startsWith('/dashboard')
+  ) {
     return null;
   }
 
