@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, 
@@ -101,6 +102,7 @@ class ReportProjectSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('user', 'created_at', 'updated_at')
 
+    @extend_schema_field(serializers.BooleanField)
     def get_has_report(self, obj):
         return hasattr(obj, 'report')
 
@@ -115,3 +117,57 @@ class ReportProjectDetailSerializer(serializers.ModelSerializer):
         model = ReportProject
         fields = '__all__'
         read_only_fields = ('user', 'created_at', 'updated_at')
+
+
+# --- Documentation & Request Helper Serializers ---
+
+class DocumentUploadRequestSerializer(serializers.Serializer):
+    file = serializers.FileField(required=False, help_text="Upload scanned or digital file (PDF, JPG, PNG, DOCX)")
+    text = serializers.CharField(required=False, help_text="Direct typed or pasted logbook notes")
+    title = serializers.CharField(required=False, default="Manual Log Note", help_text="Title for typed note")
+    file_type = serializers.ChoiceField(
+        choices=['pdf', 'image', 'docx', 'note'], 
+        required=False, 
+        help_text="Optional explicit document type override"
+    )
+
+
+class ReportGenerateRequestSerializer(serializers.Serializer):
+    force_all = serializers.BooleanField(
+        required=False, 
+        default=False, 
+        help_text="Set to true to force regenerate all sections and overwrite student edits"
+    )
+
+
+class BulkVerifyRequestSerializer(serializers.Serializer):
+    entry_ids = serializers.ListField(
+        child=serializers.IntegerField(), 
+        required=False, 
+        help_text="Optional list of specific entry IDs to verify. If omitted, all entries are verified."
+    )
+
+
+class SectionUpdateRequestSerializer(serializers.Serializer):
+    content = serializers.CharField(required=False, help_text="Updated HTML / rich-text content for the section")
+    title = serializers.CharField(required=False, help_text="Updated title for the section")
+
+
+class DefenceQuestionUpdateRequestSerializer(serializers.Serializer):
+    mastery_status = serializers.ChoiceField(
+        choices=['unanswered', 'needs_practice', 'confident'], 
+        required=False, 
+        help_text="Mastery self-assessment rating"
+    )
+    is_flagged_hard = serializers.BooleanField(
+        required=False, 
+        help_text="Flag question for prioritized revision"
+    )
+
+
+class AIStatusResponseSerializer(serializers.Serializer):
+    available = serializers.BooleanField()
+    provider = serializers.CharField()
+    model = serializers.CharField()
+    mode = serializers.CharField()
+    message = serializers.CharField()

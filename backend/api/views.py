@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
 
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
@@ -18,7 +19,10 @@ from .serializers import (
     ReportProjectSerializer, ReportProjectDetailSerializer,
     SourceDocumentSerializer, ExtractedPageSerializer,
     LogbookEntrySerializer, ReportSerializer, ReportSectionSerializer,
-    DefenceQuestionSerializer, DefenceSessionSerializer
+    DefenceQuestionSerializer, DefenceSessionSerializer,
+    DocumentUploadRequestSerializer, ReportGenerateRequestSerializer,
+    BulkVerifyRequestSerializer, SectionUpdateRequestSerializer,
+    DefenceQuestionUpdateRequestSerializer, AIStatusResponseSerializer
 )
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
@@ -29,6 +33,12 @@ from .ai_provider import get_ai_status
 
 # --- Auth Views ---
 
+@extend_schema(
+    tags=['Authentication'],
+    summary='Register student account',
+    description='Registers a new student account and returns JWT access and refresh tokens.',
+    responses={201: UserSerializer}
+)
 class RegisterView(generics.CreateAPIView):
     permission_classes = (AllowAny,)
     serializer_class = UserRegistrationSerializer
@@ -54,11 +64,21 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         return data
 
 
+@extend_schema(
+    tags=['Authentication'],
+    summary='Login and obtain JWT token pair',
+    description='Authenticates student credentials and returns JWT access token, refresh token, and student profile.'
+)
 class LoginView(TokenObtainPairView):
     permission_classes = (AllowAny,)
     serializer_class = CustomTokenObtainPairSerializer
 
 
+@extend_schema(
+    tags=['Authentication'],
+    summary='Get current authenticated student profile',
+    responses={200: UserSerializer}
+)
 class CurrentUserView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -66,6 +86,12 @@ class CurrentUserView(views.APIView):
         return Response(UserSerializer(request.user).data)
 
 
+@extend_schema(
+    tags=['AI & System'],
+    summary='Get server AI provider status',
+    description='Checks if an OpenAI-compatible provider is active or if the server is running in deterministic No-AI Development Mode.',
+    responses={200: AIStatusResponseSerializer}
+)
 class AIStatusView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -81,6 +107,21 @@ def get_user_project(user, project_id):
 
 # --- Project CRUD Views ---
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['Projects'],
+        summary='List student projects',
+        description='Returns all SIWES report projects belonging exclusively to the authenticated student.',
+        responses={200: ReportProjectSerializer(many=True)}
+    ),
+    post=extend_schema(
+        tags=['Projects'],
+        summary='Create new report project',
+        description='Initializes a new SIWES report project with student academic, institutional, and placement details.',
+        request=ReportProjectSerializer,
+        responses={201: ReportProjectSerializer}
+    )
+)
 class ProjectListCreateView(generics.ListCreateAPIView):
     permission_classes = (IsAuthenticated,)
     serializer_class = ReportProjectSerializer
@@ -92,6 +133,32 @@ class ProjectListCreateView(generics.ListCreateAPIView):
         serializer.save(user=self.request.user)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=['Projects'],
+        summary='Retrieve project details',
+        description='Returns full details of the project including source documents, logbook entries, report, and defence questions.',
+        responses={200: ReportProjectDetailSerializer}
+    ),
+    put=extend_schema(
+        tags=['Projects'],
+        summary='Update project details',
+        request=ReportProjectSerializer,
+        responses={200: ReportProjectSerializer}
+    ),
+    patch=extend_schema(
+        tags=['Projects'],
+        summary='Partially update project details',
+        request=ReportProjectSerializer,
+        responses={200: ReportProjectSerializer}
+    ),
+    delete=extend_schema(
+        tags=['Projects'],
+        summary='Delete report project',
+        description='Permanently deletes the report project and all associated files and records.',
+        responses={204: None}
+    )
+)
 class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = (IsAuthenticated,)
 
@@ -109,12 +176,24 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
 class DocumentListUploadView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='List uploaded source documents',
+        responses={200: SourceDocumentSerializer(many=True)}
+    )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         docs = project.source_documents.all()
         serializer = SourceDocumentSerializer(docs, many=True)
         return Response(serializer.data)
 
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='Upload document or typed note for extraction',
+        description='Uploads a PDF, JPG, PNG, DOCX, or direct typed note, triggers OCR/extraction, and populates logbook entries.',
+        request=DocumentUploadRequestSerializer,
+        responses={201: SourceDocumentSerializer}
+    )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         
@@ -125,7 +204,6 @@ class DocumentListUploadView(views.APIView):
         if not file_obj and not raw_text:
             return Response({"error": "Either an upload file or typed text must be provided."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # File validation if file is provided
         if file_obj:
             if file_obj.size > 15 * 1024 * 1024:
                 return Response({"error": "File size exceeds the 15MB limit."}, status=status.HTTP_400_BAD_REQUEST)
@@ -150,7 +228,6 @@ class DocumentListUploadView(views.APIView):
                 status='uploaded'
             )
         else:
-            # Typed or pasted note
             doc_type = 'note'
             title = request.data.get('title', 'Manual Log Note')
             doc = SourceDocument.objects.create(
@@ -158,11 +235,10 @@ class DocumentListUploadView(views.APIView):
                 original_filename=title,
                 file_type='note',
                 file_size=len(raw_text.encode('utf-8')),
-                error_message=raw_text, # Passed to document processor
+                error_message=raw_text,
                 status='uploaded'
             )
 
-        # Process document
         process_source_document(doc.id)
         doc.refresh_from_db()
         return Response(SourceDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
@@ -171,6 +247,11 @@ class DocumentListUploadView(views.APIView):
 class DocumentDetailView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='Delete source document',
+        responses={204: None}
+    )
     def delete(self, request, project_id, doc_id):
         project = get_user_project(request.user, project_id)
         doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
@@ -181,12 +262,17 @@ class DocumentDetailView(views.APIView):
 class DocumentReprocessView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='Reprocess document extraction and OCR',
+        request=None,
+        responses={200: SourceDocumentSerializer}
+    )
     def post(self, request, project_id, doc_id):
         project = get_user_project(request.user, project_id)
         doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
-        # Delete old extracted pages before reprocess
         doc.extracted_pages.all().delete()
-        success = process_source_document(doc.id)
+        process_source_document(doc.id)
         doc.refresh_from_db()
         return Response(SourceDocumentSerializer(doc).data)
 
@@ -194,6 +280,13 @@ class DocumentReprocessView(views.APIView):
 class PageUpdateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='Update and verify extracted page text',
+        description='Allows student to correct handwriting recognition discrepancies or adjust page review status.',
+        request=ExtractedPageSerializer,
+        responses={200: ExtractedPageSerializer}
+    )
     def patch(self, request, project_id, page_id):
         project = get_user_project(request.user, project_id)
         page = get_object_or_404(ExtractedPage, id=page_id, document__project=project)
@@ -208,11 +301,22 @@ class PageUpdateView(views.APIView):
 class LogbookEntryListCreateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Logbook Entries'],
+        summary='List logbook entries',
+        responses={200: LogbookEntrySerializer(many=True)}
+    )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         entries = project.logbook_entries.all().order_by('week_number', 'order', 'entry_date', 'id')
         return Response(LogbookEntrySerializer(entries, many=True).data)
 
+    @extend_schema(
+        tags=['Logbook Entries'],
+        summary='Create manual logbook entry',
+        request=LogbookEntrySerializer,
+        responses={201: LogbookEntrySerializer}
+    )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         serializer = LogbookEntrySerializer(data=request.data)
@@ -224,6 +328,12 @@ class LogbookEntryListCreateView(views.APIView):
 class LogbookEntryDetailView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Logbook Entries'],
+        summary='Partially update logbook entry',
+        request=LogbookEntrySerializer,
+        responses={200: LogbookEntrySerializer}
+    )
     def patch(self, request, project_id, entry_id):
         project = get_user_project(request.user, project_id)
         entry = get_object_or_404(LogbookEntry, id=entry_id, project=project)
@@ -232,6 +342,11 @@ class LogbookEntryDetailView(views.APIView):
         serializer.save()
         return Response(serializer.data)
 
+    @extend_schema(
+        tags=['Logbook Entries'],
+        summary='Delete logbook entry',
+        responses={204: None}
+    )
     def delete(self, request, project_id, entry_id):
         project = get_user_project(request.user, project_id)
         entry = get_object_or_404(LogbookEntry, id=entry_id, project=project)
@@ -242,6 +357,12 @@ class LogbookEntryDetailView(views.APIView):
 class LogbookBulkVerifyView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Logbook Entries'],
+        summary='Mark all or selected logbook entries as verified',
+        request=BulkVerifyRequestSerializer,
+        responses={200: dict}
+    )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         entry_ids = request.data.get('entry_ids')
@@ -257,10 +378,14 @@ class LogbookBulkVerifyView(views.APIView):
 class ReportDetailView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Report & Sections'],
+        summary='Retrieve generated report with all sections',
+        responses={200: ReportSerializer}
+    )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         if not hasattr(project, 'report'):
-            # Return empty response or initial skeleton
             return Response({"detail": "Report not yet generated."}, status=status.HTTP_404_NOT_FOUND)
         return Response(ReportSerializer(project.report).data)
 
@@ -268,6 +393,13 @@ class ReportDetailView(views.APIView):
 class ReportGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Report & Sections'],
+        summary='Generate complete 5-chapter SIWES report',
+        description='Builds all 5 chapters, front matter, tables, and back matter using verified logbook entries.',
+        request=ReportGenerateRequestSerializer,
+        responses={200: ReportSerializer}
+    )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         force_all_val = request.data.get('force_all', False)
@@ -279,6 +411,13 @@ class ReportGenerateView(views.APIView):
 class SectionUpdateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Report & Sections'],
+        summary='Save student edits to a section',
+        description='Saves updated section HTML/rich-text and flags section as customized by student.',
+        request=SectionUpdateRequestSerializer,
+        responses={200: ReportSectionSerializer}
+    )
     def patch(self, request, project_id, section_id):
         project = get_user_project(request.user, project_id)
         section = get_object_or_404(ReportSection, id=section_id, report__project=project)
@@ -299,6 +438,12 @@ class SectionUpdateView(views.APIView):
 class SectionRegenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Report & Sections'],
+        summary='Regenerate a single section from template',
+        request=None,
+        responses={200: ReportSectionSerializer}
+    )
     def post(self, request, project_id, section_id):
         project = get_user_project(request.user, project_id)
         section = get_object_or_404(ReportSection, id=section_id, report__project=project)
@@ -311,6 +456,12 @@ class SectionRegenerateView(views.APIView):
 class ExportDocxView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Document Export'],
+        summary='Export report as Microsoft Word (.docx)',
+        description='Generates a formatted A4 document with 1.5" left binding margin and Times New Roman 12pt.',
+        responses={(200, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'): OpenApiTypes.BINARY}
+    )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         if not hasattr(project, 'report'):
@@ -332,6 +483,12 @@ class ExportDocxView(views.APIView):
 class ExportPdfView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Document Export'],
+        summary='Export report as printable PDF (.pdf)',
+        description='Converts the report DOCX to PDF using headless LibreOffice with validation.',
+        responses={(200, 'application/pdf'): OpenApiTypes.BINARY}
+    )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         if not hasattr(project, 'report'):
@@ -357,6 +514,13 @@ class ExportPdfView(views.APIView):
 class DefenceGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Generate grounded defence question bank',
+        description='Generates 15+ oral defence questions and model answers grounded in the student\'s report.',
+        request=None,
+        responses={200: DefenceQuestionSerializer(many=True)}
+    )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         questions = generate_defence_questions(project)
@@ -366,6 +530,11 @@ class DefenceGenerateView(views.APIView):
 class DefenceQuestionListView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='List defence questions for project',
+        responses={200: DefenceQuestionSerializer(many=True)}
+    )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         questions = project.defence_questions.all().order_by('order', 'id')
@@ -375,6 +544,12 @@ class DefenceQuestionListView(views.APIView):
 class DefenceQuestionDetailView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Update question mastery status or revision flag',
+        request=DefenceQuestionUpdateRequestSerializer,
+        responses={200: DefenceQuestionSerializer}
+    )
     def patch(self, request, project_id, question_id):
         project = get_user_project(request.user, project_id)
         question = get_object_or_404(DefenceQuestion, id=question_id, project=project)
@@ -391,6 +566,12 @@ class DefenceQuestionDetailView(views.APIView):
 class DefenceSessionView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(
+        tags=['Defence Preparation'],
+        summary='Record mock defence examination session progress',
+        request=DefenceSessionSerializer,
+        responses={201: DefenceSessionSerializer}
+    )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         serializer = DefenceSessionSerializer(data=request.data)
