@@ -58,6 +58,20 @@ export default function DashboardPage() {
     fetchQuestions,
     generateQuestions: storeGenerateDefence,
     updateQuestion: storeUpdateDefenceQuestion,
+    slides: defenceSlides,
+    script: defenceScript,
+    isLoadingSlides,
+    isLoadingScript,
+    slideshowOpen,
+    slideshowIndex,
+    fetchSlides: storeFetchSlides,
+    regenerateSlides: storeRegenerateSlides,
+    fetchScript: storeFetchScript,
+    regenerateScript: storeRegenerateScript,
+    openSlideshow,
+    closeSlideshow,
+    nextSlide,
+    prevSlide,
   } = useDefenceStore();
 
   const { showToast } = useUIStore();
@@ -66,12 +80,18 @@ export default function DashboardPage() {
   const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'defence' | 'new'>('home');
   const [logbookTab, setLogbookTab] = useState<'entries' | 'docs'>('entries');
   const [reportTab, setReportTab] = useState<'editor' | 'preview' | 'versions' | 'export'>('editor');
+  const [defenceTab, setDefenceTab] = useState<'quiz' | 'slides' | 'script'>('quiz');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
 
   // Multi-file upload progress
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState('');
+
+  // Speech rehearsal timer
+  const [isSpeechTimerRunning, setIsSpeechTimerRunning] = useState(false);
+  const [speechTimerSeconds, setSpeechTimerSeconds] = useState(0);
+  const [showSpeakerNotes, setShowSpeakerNotes] = useState(false);
 
   // Version snapshot note draft
   const [newVersionSummary, setNewVersionSummary] = useState('');
@@ -197,14 +217,48 @@ export default function DashboardPage() {
     }
   }, [user]);
 
-  // Load active project details (logbook, report, defence)
+  // Load active project details (logbook, report, defence, versions, slides, script)
   useEffect(() => {
     if (activeProject?.id) {
       fetchReport(activeProject.id).catch(() => null);
       fetchQuestions(activeProject.id).catch(() => []);
       storeFetchVersions(activeProject.id).catch(() => []);
+      storeFetchSlides(activeProject.id).catch(() => []);
+      storeFetchScript(activeProject.id).catch(() => '');
     }
   }, [activeProject?.id]);
+
+  // Rehearsal stopwatch timer for speech rehearsal
+  useEffect(() => {
+    let interval: any = null;
+    if (isSpeechTimerRunning) {
+      interval = setInterval(() => {
+        setSpeechTimerSeconds((prev) => prev + 1);
+      }, 1000);
+    } else if (!isSpeechTimerRunning && speechTimerSeconds !== 0) {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isSpeechTimerRunning, speechTimerSeconds]);
+
+  // Slideshow keyboard navigation (Arrow keys, Space, Esc)
+  useEffect(() => {
+    if (!slideshowOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSlideshow();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [slideshowOpen, nextSlide, prevSlide, closeSlideshow]);
 
   // Prepopulate student name in wizard
   useEffect(() => {
@@ -366,6 +420,7 @@ export default function DashboardPage() {
     }
   };
 
+  // Handle Logbook File Upload
   // Handle Multi-file Logbook Upload
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!activeProject?.id) {
@@ -541,6 +596,7 @@ export default function DashboardPage() {
     try {
       triggerToast('AI is compiling verified logbook and generating report...');
       await storeGenerateReport(activeProject.id, false);
+      await storeFetchVersions(activeProject.id);
       setCurrentChapterIdx(0);
       triggerToast('Report generated successfully');
     } catch (err: any) {
@@ -584,12 +640,30 @@ export default function DashboardPage() {
       return;
     }
     try {
-      triggerToast(`Reverting to Version ${versionNum}...`);
       await storeRevertVersion(activeProject.id, versionId);
-      triggerToast(`Report reverted to Version ${versionNum}`);
+      triggerToast(`Reverted to Version ${versionNum}`);
     } catch (err: any) {
       triggerToast(err.message || 'Failed to revert version');
     }
+  };
+
+  // Rehearsal Stopwatch Timer Display Formatter
+  const formatTimer = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Copy Speech Script
+  const handleCopyScript = () => {
+    if (!defenceScript) return;
+    navigator.clipboard.writeText(defenceScript);
+    triggerToast('Presentation script copied to clipboard');
+  };
+
+  // Direct Browser Print
+  const handleDirectPrint = () => {
+    window.print();
   };
 
   // Report Editor Formatting Commands
@@ -638,11 +712,6 @@ export default function DashboardPage() {
     } catch (err: any) {
       triggerToast(err.message || 'PDF export failed');
     }
-  };
-
-  // Direct Browser Print
-  const handleDirectPrint = () => {
-    window.print();
   };
 
   // Defence questions filtering
@@ -1266,7 +1335,7 @@ export default function DashboardPage() {
                 <p>{effectiveProject?.title || 'SIWES Technical Report'}</p>
               </div>
 
-              {/* Segmented Subtabs: Editor | Preview | Export */}
+              {/* Segmented Subtabs: Editor | Preview | Versions | Export */}
               <div className="seg" role="tablist" aria-label="Report view">
                 <button
                   role="tab"
@@ -1357,6 +1426,16 @@ export default function DashboardPage() {
                         </span>
                         Regenerate this chapter
                       </button>
+                      <button
+                        className="btn o s"
+                        type="button"
+                        onClick={() => setActiveSheet('addVersion' as any)}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          bookmark_add
+                        </span>
+                        Save snapshot
+                      </button>
                     </div>
 
                     {/* Editor Card */}
@@ -1411,7 +1490,7 @@ export default function DashboardPage() {
                         }}
                       />
                     </div>
-                    <p className="hint">Chapters you edit stay locked when others regenerate.</p>
+                    <p className="hint">Edits are auto-saved. Click "Save snapshot" to preserve a reversion point.</p>
                   </>
                 )
               )}
@@ -1604,7 +1683,7 @@ export default function DashboardPage() {
                     ))
                   ) : (
                     <div className="card empty">
-                      <p>No snapshots yet. Click &quot;Save snapshot&quot; to record a milestone.</p>
+                      <p>No snapshots yet. Click "Save snapshot" to record a milestone.</p>
                     </div>
                   )}
                 </div>
@@ -1613,7 +1692,6 @@ export default function DashboardPage() {
               {/* 4. EXPORT VIEW */}
               {reportTab === 'export' && (
                 <>
-                  {/* Export Options */}
                   <div className="card">
                     <span className="tag">WORD</span>
                     <h3 style={{ fontSize: '20px', margin: '10px 0 6px' }}>Editable report (.docx)</h3>
@@ -1737,84 +1815,334 @@ export default function DashboardPage() {
 
               <div className="lg">
                 <h1>Defence</h1>
-                <p>Practise before the panel does.</p>
+                <p>Rehearse with AI mock quizzes, presentation slides, and speech scripts.</p>
               </div>
 
-              <button
-                className="btn w"
-                type="button"
-                style={{ marginBottom: '16px' }}
-                onClick={() => {
-                  setExamIndex(0);
-                  setExamRevealed(false);
-                  setExamOpen(true);
-                }}
-              >
-                <span className="ms" aria-hidden="true">
-                  play_arrow
-                </span>
-                Start mock defence
-              </button>
-
-              {/* Category Filter Pills */}
-              <div className="pills" role="group" aria-label="Filter questions">
-                {categories.map((c: string) => (
-                  <button
-                    key={c}
-                    type="button"
-                    aria-pressed={selectedCategory === c}
-                    onClick={() => setSelectedCategory(c)}
-                  >
-                    {c}
-                  </button>
-                ))}
+              {/* Defence Subtabs */}
+              <div className="seg" role="tablist" aria-label="Defence mode">
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={defenceTab === 'quiz'}
+                  onClick={() => setDefenceTab('quiz')}
+                >
+                  Mock Questions ({questionsList.length})
+                </button>
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={defenceTab === 'slides'}
+                  onClick={() => setDefenceTab('slides')}
+                >
+                  Slides ({defenceSlides.length || 9})
+                </button>
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={defenceTab === 'script'}
+                  onClick={() => setDefenceTab('script')}
+                >
+                  Oral Script & Timer
+                </button>
               </div>
 
-              {/* Questions List */}
-              {filteredQuestions.map((q: any) => {
-                const isOpen = !!revealedDefenceAnswers[q.id];
-                return (
-                  <article className={`card q ${isOpen ? 'open' : ''}`} key={q.id}>
-                    <span className="chip">{q.category}</span>
-                    <h3>{q.question}</h3>
+              {/* 1. MOCK QUESTIONS SUBTAB */}
+              {defenceTab === 'quiz' && (
+                <>
+                  <div className="row sb" style={{ marginBottom: '14px', gap: '8px' }}>
                     <button
-                      className="tx"
+                      className="btn w"
                       type="button"
-                      aria-expanded={isOpen}
-                      onClick={() =>
-                        setRevealedDefenceAnswers((prev) => ({
-                          ...prev,
-                          [q.id]: !prev[q.id],
-                        }))
-                      }
+                      style={{ flex: 1 }}
+                      onClick={() => {
+                        setExamIndex(0);
+                        setExamRevealed(false);
+                        setExamOpen(true);
+                      }}
                     >
                       <span className="ms" aria-hidden="true">
-                        visibility
+                        play_arrow
                       </span>
-                      How to answer
+                      Start mock defence
                     </button>
-                    <p className="ans">{q.suggested_answer}</p>
-                    <div className="row">
+                    {activeProject?.id && (
                       <button
                         className="btn o s"
                         type="button"
-                        aria-pressed={q.mastery_status === 'confident'}
-                        onClick={() => handleUpdateMastery(q.id, 'confident')}
+                        onClick={async () => {
+                          try {
+                            triggerToast('Regenerating defence questions with AI...');
+                            await storeGenerateDefence(activeProject.id);
+                            triggerToast('Defence questions updated');
+                          } catch (err: any) {
+                            triggerToast(err.message || 'Failed to generate questions');
+                          }
+                        }}
                       >
-                        Confident
+                        <span className="ms" aria-hidden="true">
+                          auto_awesome
+                        </span>
+                        Regenerate
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Category Filter Pills */}
+                  <div className="pills" role="group" aria-label="Filter questions">
+                    {categories.map((c: string) => (
+                      <button
+                        key={c}
+                        type="button"
+                        aria-pressed={selectedCategory === c}
+                        onClick={() => setSelectedCategory(c)}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Questions List */}
+                  {filteredQuestions.map((q: any) => {
+                    const isOpen = !!revealedDefenceAnswers[q.id];
+                    return (
+                      <article className={`card q ${isOpen ? 'open' : ''}`} key={q.id}>
+                        <span className="chip">{q.category}</span>
+                        <h3>{q.question}</h3>
+                        <button
+                          className="tx"
+                          type="button"
+                          aria-expanded={isOpen}
+                          onClick={() =>
+                            setRevealedDefenceAnswers((prev) => ({
+                              ...prev,
+                              [q.id]: !prev[q.id],
+                            }))
+                          }
+                        >
+                          <span className="ms" aria-hidden="true">
+                            visibility
+                          </span>
+                          {isOpen ? 'Hide answer guidance' : 'How to answer'}
+                        </button>
+                        <p className="ans">{q.suggested_answer}</p>
+                        <div className="row">
+                          <button
+                            className="btn o s"
+                            type="button"
+                            aria-pressed={q.mastery_status === 'confident'}
+                            onClick={() => handleUpdateMastery(q.id, 'confident')}
+                          >
+                            Confident
+                          </button>
+                          <button
+                            className="btn o s"
+                            type="button"
+                            aria-pressed={q.mastery_status === 'needs_practice'}
+                            onClick={() => handleUpdateMastery(q.id, 'needs_practice')}
+                          >
+                            Needs practice
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* 2. PRESENTATION SLIDES SUBTAB */}
+              {defenceTab === 'slides' && (
+                <>
+                  <div className="row sb" style={{ marginBottom: '16px', gap: '8px' }}>
+                    <button
+                      className="btn s"
+                      type="button"
+                      style={{ flex: 1 }}
+                      onClick={() => openSlideshow(0)}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        slideshow
+                      </span>
+                      Start slideshow (Projector)
+                    </button>
+                    {activeProject?.id && (
+                      <button
+                        className="btn o s"
+                        type="button"
+                        disabled={isLoadingSlides}
+                        onClick={async () => {
+                          try {
+                            triggerToast('Regenerating presentation slides with AI...');
+                            await storeRegenerateSlides(activeProject.id);
+                            triggerToast('Slides deck regenerated');
+                          } catch (err: any) {
+                            triggerToast(err.message || 'Failed to regenerate slides');
+                          }
+                        }}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          auto_awesome
+                        </span>
+                        Regenerate slides
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="slide-deck">
+                    {(defenceSlides.length > 0 ? defenceSlides : [
+                      {
+                        slide_number: 1,
+                        title: effectiveProject?.title || 'SIWES Technical Defence',
+                        subtitle: `${effectiveProject?.full_name || 'Student'} · ${effectiveProject?.matric_number || 'Matric'}`,
+                        bullets: [
+                          `Host: ${effectiveProject?.organization_name || 'Host Company'}`,
+                          `Department: ${effectiveProject?.department || 'Engineering'}`,
+                          `Institution: ${effectiveProject?.university_name || 'LASUSTECH'}`
+                        ],
+                        speaker_notes: 'Good day Chairman and panel. I am presenting my SIWES technical training report.'
+                      },
+                      {
+                        slide_number: 2,
+                        title: 'Organisation Profile',
+                        subtitle: 'Overview of Technical Operations',
+                        bullets: [
+                          `Company: ${effectiveProject?.organization_name || 'Host Company'}`,
+                          `Unit: ${effectiveProject?.placement_department || 'Operations'}`,
+                          `Core Mandate: ${effectiveProject?.organization_activities || 'Technical engineering operations'}`
+                        ],
+                        speaker_notes: 'The host organization provides critical industrial services where I was attached.'
+                      },
+                      {
+                        slide_number: 3,
+                        title: 'Core Technical Tasks',
+                        subtitle: 'Hands-on Activities Executed',
+                        bullets: [
+                          'Routine preventative maintenance on production equipment',
+                          'System diagnostics, calibration and multimeter testing',
+                          'Safety protocol adherence and workplace documentation'
+                        ],
+                        speaker_notes: 'Highlighting hands-on technical involvement and direct duties.'
+                      }
+                    ]).map((s: any, idx: number) => (
+                      <div className="slide-card" key={s.slide_number || idx}>
+                        <div className="slide-card-header">
+                          <span className="slide-num">SLIDE {s.slide_number || idx + 1}</span>
+                          <button
+                            className="tx"
+                            type="button"
+                            onClick={() => openSlideshow(idx)}
+                          >
+                            <span className="ms" aria-hidden="true">
+                              fullscreen
+                            </span>
+                            Present slide
+                          </button>
+                        </div>
+                        <h3 className="slide-title">{s.title}</h3>
+                        {s.subtitle && <p className="mut" style={{ fontSize: '13px', margin: '-4px 0 10px' }}>{s.subtitle}</p>}
+                        <ul className="slide-bullets">
+                          {(s.bullets || []).map((b: string, bIdx: number) => (
+                            <li key={bIdx}>{b}</li>
+                          ))}
+                        </ul>
+                        {s.speaker_notes && (
+                          <div className="slide-notes">
+                            <b>Speaker Notes:</b> {s.speaker_notes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* 3. ORAL SPEECH SCRIPT & REHEARSAL TIMER SUBTAB */}
+              {defenceTab === 'script' && (
+                <>
+                  {/* Rehearsal Stopwatch Card */}
+                  <div className="rehearsal-timer-card">
+                    <span className="chip" style={{ background: 'rgba(255,255,255,0.15)', color: '#fff' }}>
+                      Rehearsal Stopwatch
+                    </span>
+                    <div className="timer-digits">
+                      {formatTimer(speechTimerSeconds)}
+                    </div>
+                    <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#aab6c8' }}>
+                      Target: 5:00 - 7:00 minutes · Speaking pace: ~130 words/minute
+                    </p>
+                    <div className="row" style={{ justifyContent: 'center', gap: '10px' }}>
+                      <button
+                        className="btn s"
+                        type="button"
+                        onClick={() => setIsSpeechTimerRunning(!isSpeechTimerRunning)}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          {isSpeechTimerRunning ? 'pause' : 'play_arrow'}
+                        </span>
+                        {isSpeechTimerRunning ? 'Pause timer' : 'Start rehearsal'}
                       </button>
                       <button
                         className="btn o s"
                         type="button"
-                        aria-pressed={q.mastery_status === 'needs_practice'}
-                        onClick={() => handleUpdateMastery(q.id, 'needs_practice')}
+                        style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}
+                        onClick={() => {
+                          setIsSpeechTimerRunning(false);
+                          setSpeechTimerSeconds(0);
+                        }}
                       >
-                        Needs practice
+                        <span className="ms" aria-hidden="true">
+                          restart_alt
+                        </span>
+                        Reset
                       </button>
                     </div>
-                  </article>
-                );
-              })}
+                  </div>
+
+                  <div className="row sb" style={{ marginBottom: '14px', gap: '8px' }}>
+                    <button
+                      className="btn o s"
+                      type="button"
+                      onClick={handleCopyScript}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        content_copy
+                      </span>
+                      Copy script
+                    </button>
+                    {activeProject?.id && (
+                      <button
+                        className="btn o s"
+                        type="button"
+                        disabled={isLoadingScript}
+                        onClick={async () => {
+                          try {
+                            triggerToast('Regenerating oral presentation script with AI...');
+                            await storeRegenerateScript(activeProject.id);
+                            triggerToast('Presentation script updated');
+                          } catch (err: any) {
+                            triggerToast(err.message || 'Failed to regenerate script');
+                          }
+                        }}
+                      >
+                        <span className="ms" aria-hidden="true">
+                          auto_awesome
+                        </span>
+                        Regenerate script
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="script-body">
+                    {defenceScript || (
+                      `Good day, Respected Chairman of the Defence Panel, SIWES Coordinator, Departmental Examiners, and colleagues.\n\n` +
+                      `I am ${effectiveProject?.full_name || 'the student'} (Matriculation Number: ${effectiveProject?.matric_number || 'STE/2021/0000'}), standing before you today to defend my SIWES technical training report conducted at ${effectiveProject?.organization_name || 'the host organization'}.\n\n` +
+                      `During my attachment in the ${effectiveProject?.placement_department || 'technical operations unit'}, I had the opportunity to bridge academic classroom theory in ${effectiveProject?.department || 'Engineering'} with direct industrial experience.\n\n` +
+                      `My daily responsibilities included hands-on routine maintenance, system diagnostics, and operating key tools including ${effectiveProject?.tools_used || 'standard testing equipment'}.\n\n` +
+                      `One major technical challenge I resolved was ${effectiveProject?.problems_encountered || 'identifying fault causes and performing corrective repairs'}. Using methodical troubleshooting, I isolated the issue, corrected the anomaly, and verified restored benchmarks with my supervisor.\n\n` +
+                      `In conclusion, the training has given me vital engineering competence, professional accountability, and industrial problem-solving instincts. Thank you, and I look forward to your questions.`
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -2112,6 +2440,112 @@ export default function DashboardPage() {
                 }}
               >
                 {examIndex === questionsList.length - 1 ? 'Finish' : 'Next question'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ======================= FULLSCREEN SLIDESHOW / PROJECTOR ======================= */}
+        {slideshowOpen && (
+          <div className="slideshow-modal" role="dialog" aria-modal="true" aria-label="Slideshow Projector">
+            <div className="slideshow-topbar">
+              <span style={{ fontSize: '14px', fontWeight: 700, color: '#55d6a2', letterSpacing: '0.05em' }}>
+                SLIDE {(slideshowIndex || 0) + 1} OF {defenceSlides.length || 3}
+              </span>
+              <div className="row" style={{ gap: '10px' }}>
+                <button
+                  className="btn o s"
+                  type="button"
+                  style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}
+                  onClick={() => setShowSpeakerNotes(!showSpeakerNotes)}
+                >
+                  <span className="ms" aria-hidden="true">
+                    notes
+                  </span>
+                  {showSpeakerNotes ? 'Hide notes' : 'Speaker notes'}
+                </button>
+                <button
+                  className="ib"
+                  type="button"
+                  aria-label="Exit slideshow"
+                  style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', boxShadow: 'none' }}
+                  onClick={closeSlideshow}
+                >
+                  <span className="ms" aria-hidden="true">
+                    close
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="slideshow-content">
+              {(() => {
+                const currentSlide = (defenceSlides.length > 0 ? defenceSlides : [
+                  {
+                    slide_number: 1,
+                    title: effectiveProject?.title || 'SIWES Technical Defence',
+                    subtitle: `${effectiveProject?.full_name || 'Student'} · ${effectiveProject?.matric_number || 'Matric'}`,
+                    bullets: [
+                      `Host: ${effectiveProject?.organization_name || 'Host Company'}`,
+                      `Department: ${effectiveProject?.department || 'Engineering'}`,
+                      `Institution: ${effectiveProject?.university_name || 'LASUSTECH'}`
+                    ],
+                    speaker_notes: 'Good day Chairman and panel. I am presenting my SIWES technical training report.'
+                  }
+                ])[slideshowIndex] || {};
+
+                return (
+                  <div>
+                    <h1 style={{ fontSize: '32px', fontFamily: 'Fraunces, Georgia, serif', marginBottom: '10px', color: '#fff' }}>
+                      {currentSlide.title || 'Slide Title'}
+                    </h1>
+                    {currentSlide.subtitle && (
+                      <h3 style={{ fontSize: '18px', fontWeight: 500, color: '#55d6a2', marginBottom: '24px' }}>
+                        {currentSlide.subtitle}
+                      </h3>
+                    )}
+                    <ul style={{ fontSize: '19px', lineHeight: 1.8, paddingLeft: '24px', color: '#e2e8f0', margin: '20px 0' }}>
+                      {(currentSlide.bullets || []).map((b: string, idx: number) => (
+                        <li key={idx} style={{ marginBottom: '10px' }}>{b}</li>
+                      ))}
+                    </ul>
+
+                    {showSpeakerNotes && currentSlide.speaker_notes && (
+                      <div style={{ marginTop: '24px', padding: '14px 18px', background: 'rgba(235, 178, 59, 0.15)', borderLeft: '4px solid #ebb23b', borderRadius: '0 12px 12px 0', fontSize: '15px', color: '#fef08a' }}>
+                        <b>Speaker Notes:</b> {currentSlide.speaker_notes}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="slideshow-footer">
+              <button
+                className="btn o s"
+                type="button"
+                style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.3)' }}
+                disabled={slideshowIndex === 0}
+                onClick={prevSlide}
+              >
+                <span className="ms" aria-hidden="true">
+                  arrow_back
+                </span>
+                Previous
+              </button>
+              <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+                Navigate with Left / Right arrow keys or Spacebar
+              </span>
+              <button
+                className="btn s"
+                type="button"
+                disabled={slideshowIndex >= (defenceSlides.length || 3) - 1}
+                onClick={nextSlide}
+              >
+                Next
+                <span className="ms" aria-hidden="true">
+                  arrow_forward
+                </span>
               </button>
             </div>
           </div>
