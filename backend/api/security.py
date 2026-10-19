@@ -143,3 +143,19 @@ def wrap_untrusted_prompt_input(content: str, label: str = "STUDENT_UNTRUSTED_CO
     """
     clean_content = content.replace("<<<", "").replace(">>>", "")
     return f"\n<<<{label}>>>\n{clean_content}\n<<<END_{label}>>>\n"
+
+
+from rest_framework.throttling import ScopedRateThrottle
+
+
+class AuthRateThrottle(ScopedRateThrottle):
+    scope = 'auth'
+
+
+class HeavyGenerationRateThrottle(ScopedRateThrottle):
+    scope = 'heavy_generation'
+
+
+class UploadRateThrottle(ScopedRateThrottle):
+    scope = 'uploads'
+

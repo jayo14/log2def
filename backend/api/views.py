@@ -5,7 +5,10 @@ from rest_framework import generics, status, views
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.exceptions import ValidationError
-from .security import validate_file_content, sanitize_html
+from .security import (
+    validate_file_content, sanitize_html,
+    AuthRateThrottle, HeavyGenerationRateThrottle, UploadRateThrottle
+)
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -43,6 +46,7 @@ from .ai_provider import get_ai_status
 )
 class RegisterView(generics.CreateAPIView):
     permission_classes = (AllowAny,)
+    throttle_classes = (AuthRateThrottle,)
     serializer_class = UserRegistrationSerializer
 
     def post(self, request, *args, **kwargs):
@@ -73,7 +77,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 )
 class LoginView(TokenObtainPairView):
     permission_classes = (AllowAny,)
+    throttle_classes = (AuthRateThrottle,)
     serializer_class = CustomTokenObtainPairSerializer
+
 
 
 @extend_schema(
@@ -177,6 +183,7 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class DocumentListUploadView(views.APIView):
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (UploadRateThrottle,)
 
     @extend_schema(
         tags=['Source Documents'],
@@ -419,6 +426,7 @@ class ReportDetailView(views.APIView):
 
 class ReportGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (HeavyGenerationRateThrottle,)
 
     @extend_schema(
         tags=['Report & Sections'],
@@ -464,6 +472,7 @@ class SectionUpdateView(views.APIView):
 
 class SectionRegenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (HeavyGenerationRateThrottle,)
 
     @extend_schema(
         tags=['Report & Sections'],
@@ -509,6 +518,7 @@ class ExportDocxView(views.APIView):
 
 class ExportPdfView(views.APIView):
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (HeavyGenerationRateThrottle,)
 
     @extend_schema(
         tags=['Document Export'],
@@ -540,6 +550,7 @@ class ExportPdfView(views.APIView):
 
 class DefenceGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (HeavyGenerationRateThrottle,)
 
     @extend_schema(
         tags=['Defence Preparation'],
