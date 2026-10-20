@@ -1465,6 +1465,59 @@
   margin: 2px 0 0;
 }
 
+/* PWA Device-specific Guide & Instructions */
+.pwa-guide-sheet {
+  padding: 4px 0 12px;
+}
+.pwa-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+.pwa-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.pwa-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pwa-step-content {
+  flex: 1;
+}
+.pwa-step-content b {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  display: block;
+}
+.pwa-step-content p {
+  font-size: 12.5px;
+  color: var(--mut);
+  margin: 3px 0 0;
+  line-height: 1.45;
+}
+.pwa-step-content strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* Print Media Styles */
 @media print {
   body, html {

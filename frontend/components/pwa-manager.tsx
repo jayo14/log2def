@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useUIStore } from '@/lib/store/use-ui-store';
+import { detectDeviceOS, isStandaloneApp } from '@/lib/device';
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -21,15 +22,21 @@ export function PWAManager() {
   useEffect(() => {
     // 1. Detect if running as installed standalone PWA
     const checkStandalone = () => {
-      const isStandaloneMode =
-        window.matchMedia('(display-mode: standalone)').matches ||
-        (window.navigator as any).standalone === true ||
-        document.referrer.startsWith('android-app://') ||
-        (typeof localStorage !== 'undefined' && localStorage.getItem('pwa_installed') === 'true');
+      const isStandaloneMode = isStandaloneApp();
       setIsStandalone(isStandaloneMode);
       return isStandaloneMode;
     };
-    checkStandalone();
+    const isInstalled = checkStandalone();
+
+    // Store detected device OS on window
+    const os = detectDeviceOS();
+    (window as any).__deviceOS = os;
+
+    // For iOS, beforeinstallprompt does not exist; mark installable via Add to Home Screen guide if not standalone
+    if (os === 'ios' && !isInstalled) {
+      setIsInstallable(true);
+      window.dispatchEvent(new CustomEvent('pwa-installable'));
+    }
 
     // 2. Register Service Worker in production / client
     if ('serviceWorker' in navigator && typeof window !== 'undefined') {

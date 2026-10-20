@@ -19,6 +19,7 @@ import {
   clearCompletedUploads,
   QueuedUpload,
 } from '@/lib/offline-queue';
+import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
 export default function DashboardPage() {
@@ -105,6 +106,7 @@ export default function DashboardPage() {
   // PWA Offline & Install Prompt states
   const [isOffline, setIsOffline] = useState(false);
   const [canInstallPWA, setCanInstallPWA] = useState(false);
+  const [deviceOS, setDeviceOS] = useState<DeviceOS>('pc');
 
   // Version snapshot note draft
   const [newVersionSummary, setNewVersionSummary] = useState('');
@@ -119,7 +121,7 @@ export default function DashboardPage() {
 
   // Interactive Bottom Sheet Modal state
   const [activeSheet, setActiveSheet] = useState<
-    'me' | 'addEntry' | 'typeNotes' | 'correctText' | 'addVersion' | null
+    'me' | 'addEntry' | 'typeNotes' | 'correctText' | 'addVersion' | 'pwaGuide' | null
   >(null);
   const [correctingDocIdx, setCorrectingDocIdx] = useState<number>(0);
   const [correctingText, setCorrectingText] = useState<string>('');
@@ -291,21 +293,24 @@ export default function DashboardPage() {
       const handleOnline = () => setIsOffline(false);
       const handleOffline = () => setIsOffline(true);
 
-      const isInstalled = () => {
-        return (
-          window.matchMedia('(display-mode: standalone)').matches ||
-          (window.navigator as any).standalone === true ||
-          document.referrer.startsWith('android-app://') ||
-          localStorage.getItem('pwa_installed') === 'true'
-        );
-      };
+      const detectedOS = detectDeviceOS();
+      setDeviceOS(detectedOS);
 
-      if (!isInstalled() && (window as any).__pwaInstallPrompt) {
-        setCanInstallPWA(true);
+      const installed = isStandaloneApp();
+      if (!installed) {
+        if (detectedOS === 'ios') {
+          // iOS Safari doesn't support beforeinstallprompt; installable via Add to Home Screen
+          setCanInstallPWA(true);
+        } else if ((window as any).__pwaInstallPrompt) {
+          setCanInstallPWA(true);
+        } else {
+          // Enable install entrypoint so user can trigger prompt or view step-by-step instructions
+          setCanInstallPWA(true);
+        }
       }
 
       const handleInstallable = () => {
-        if (!isInstalled()) {
+        if (!isStandaloneApp()) {
           setCanInstallPWA(true);
         }
       };
@@ -813,22 +818,32 @@ export default function DashboardPage() {
     window.print();
   };
 
-  // PWA App Installation Trigger
+  // PWA App Installation Trigger with Device OS Detection & Guidance
   const handleInstallApp = async () => {
-    const promptEvent = (window as any).__pwaInstallPrompt;
-    if (!promptEvent) {
-      triggerToast('PWA installation is available via your browser menu');
+    if (deviceOS === 'ios') {
+      setActiveSheet('pwaGuide');
       return;
     }
-    promptEvent.prompt();
-    const { outcome } = await promptEvent.userChoice;
-    if (outcome === 'accepted') {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('pwa_installed', 'true');
+
+    const promptEvent = (window as any).__pwaInstallPrompt;
+    if (!promptEvent) {
+      setActiveSheet('pwaGuide');
+      return;
+    }
+
+    try {
+      promptEvent.prompt();
+      const { outcome } = await promptEvent.userChoice;
+      if (outcome === 'accepted') {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('pwa_installed', 'true');
+        }
+        setCanInstallPWA(false);
+        (window as any).__pwaInstallPrompt = null;
+        triggerToast('Installing Log2Def...');
       }
-      setCanInstallPWA(false);
-      (window as any).__pwaInstallPrompt = null;
-      triggerToast('Installing Log2Def...');
+    } catch {
+      setActiveSheet('pwaGuide');
     }
   };
 
@@ -2836,17 +2851,41 @@ export default function DashboardPage() {
                           <img src="/icons/icon-72.png" alt="Log2Def" />
                         </div>
                         <div className="pwa-install-text">
-                          <h4>Install Log2Def App</h4>
-                          <p>Fast offline access on your device</p>
+                          <h4>
+                            {deviceOS === 'ios'
+                              ? 'Add to Home Screen'
+                              : deviceOS === 'android'
+                              ? 'Install Android App'
+                              : 'Install Desktop App'}
+                          </h4>
+                          <p>
+                            {deviceOS === 'ios'
+                              ? 'Fast full-screen access on iOS Safari'
+                              : deviceOS === 'android'
+                              ? 'Fast offline access on your phone'
+                              : 'Fast standalone window on your PC'}
+                          </p>
                         </div>
                       </div>
-                      <button
-                        className="btn s"
-                        type="button"
-                        onClick={handleInstallApp}
-                      >
-                        Install
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <button
+                          className="btn s"
+                          type="button"
+                          onClick={handleInstallApp}
+                        >
+                          {deviceOS === 'ios' ? 'How to Add' : 'Install'}
+                        </button>
+                        {deviceOS !== 'ios' && !(window as any).__pwaInstallPrompt && (
+                          <button
+                            className="btn o s"
+                            type="button"
+                            style={{ padding: '6px 10px', fontSize: '12px' }}
+                            onClick={() => setActiveSheet('pwaGuide')}
+                          >
+                            Guide
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -2873,6 +2912,164 @@ export default function DashboardPage() {
                     Log out
                   </button>
                 </>
+              )}
+
+              {/* PWA Device-specific Installation & Add to Home Screen Guide */}
+              {activeSheet === 'pwaGuide' && (
+                <div className="pwa-guide-sheet">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                    <div className="pwa-install-icon" style={{ width: '44px', height: '44px' }}>
+                      <img src="/icons/icon-72.png" alt="Log2Def" style={{ width: '30px', height: '30px' }} />
+                    </div>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
+                        {deviceOS === 'ios'
+                          ? 'Add Log2Def to Home Screen'
+                          : deviceOS === 'android'
+                          ? 'Install Log2Def on Android'
+                          : 'Install Log2Def Desktop App'}
+                      </h2>
+                      <p className="mut" style={{ margin: '2px 0 0', fontSize: '12.5px' }}>
+                        {deviceOS === 'ios'
+                          ? 'Apple iOS requires adding via the Safari Share menu'
+                          : deviceOS === 'android'
+                          ? 'Quick installation via your Android browser'
+                          : 'Run Log2Def as a standalone desktop application'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Device selector tabs so users can also switch guide manually */}
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+                    <button
+                      type="button"
+                      className={`btn s ${deviceOS === 'ios' ? '' : 'o'}`}
+                      style={{ padding: '4px 10px', fontSize: '11.5px', flex: 1 }}
+                      onClick={() => setDeviceOS('ios')}
+                    >
+                      iPhone / iPad
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn s ${deviceOS === 'android' ? '' : 'o'}`}
+                      style={{ padding: '4px 10px', fontSize: '11.5px', flex: 1 }}
+                      onClick={() => setDeviceOS('android')}
+                    >
+                      Android
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn s ${deviceOS === 'pc' ? '' : 'o'}`}
+                      style={{ padding: '4px 10px', fontSize: '11.5px', flex: 1 }}
+                      onClick={() => setDeviceOS('pc')}
+                    >
+                      PC / Mac
+                    </button>
+                  </div>
+
+                  {/* Steps */}
+                  <div className="pwa-steps-list">
+                    {deviceOS === 'ios' && (
+                      <>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">1</div>
+                          <div className="pwa-step-content">
+                            <b>Tap the Share button</b>
+                            <p>In Safari, tap the <strong>Share</strong> button (<span className="ms" style={{ verticalAlign: 'middle', fontSize: '15px' }}>ios_share</span>) in the bottom navigation bar.</p>
+                          </div>
+                        </div>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">2</div>
+                          <div className="pwa-step-content">
+                            <b>Select &ldquo;Add to Home Screen&rdquo;</b>
+                            <p>Scroll down the share sheet and tap <strong>Add to Home Screen</strong> (<span className="ms" style={{ verticalAlign: 'middle', fontSize: '15px' }}>add_box</span>).</p>
+                          </div>
+                        </div>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">3</div>
+                          <div className="pwa-step-content">
+                            <b>Tap &ldquo;Add&rdquo;</b>
+                            <p>Tap <strong>Add</strong> in the top-right corner to place Log2Def on your home screen with instant offline loading.</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {deviceOS === 'android' && (
+                      <>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">1</div>
+                          <div className="pwa-step-content">
+                            <b>Open browser menu (⋮)</b>
+                            <p>Tap the three vertical dots menu in the top right corner of Chrome or your browser.</p>
+                          </div>
+                        </div>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">2</div>
+                          <div className="pwa-step-content">
+                            <b>Tap &ldquo;Install app&rdquo;</b>
+                            <p>Select <strong>Install app</strong> or <strong>Add to Home screen</strong> from the dropdown menu.</p>
+                          </div>
+                        </div>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">3</div>
+                          <div className="pwa-step-content">
+                            <b>Confirm Installation</b>
+                            <p>Tap <strong>Install</strong> to add Log2Def to your home screen and app drawer.</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {deviceOS === 'pc' && (
+                      <>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">1</div>
+                          <div className="pwa-step-content">
+                            <b>Click the Install icon in address bar</b>
+                            <p>In Chrome, Edge, or Brave, look at the right end of the URL bar for the <strong>Install</strong> icon (⊕ or 💻).</p>
+                          </div>
+                        </div>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">2</div>
+                          <div className="pwa-step-content">
+                            <b>Or use browser menu (⋮)</b>
+                            <p>Click Menu (⋮) → <strong>Install Log2Def</strong> or <strong>Save and share</strong> → <strong>Install page as app</strong>.</p>
+                          </div>
+                        </div>
+                        <div className="pwa-step-item">
+                          <div className="pwa-step-num">3</div>
+                          <div className="pwa-step-content">
+                            <b>Launch as Desktop App</b>
+                            <p>Click <strong>Install</strong> to open Log2Def in its own independent distraction-free window.</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="row" style={{ marginTop: '16px', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className="btn o w"
+                      onClick={() => {
+                        localStorage.setItem('pwa_installed', 'true');
+                        setCanInstallPWA(false);
+                        setActiveSheet(null);
+                        triggerToast('App marked as installed');
+                      }}
+                    >
+                      I&apos;ve added it
+                    </button>
+                    <button
+                      type="button"
+                      className="btn w"
+                      onClick={() => setActiveSheet(null)}
+                    >
+                      Got it
+                    </button>
+                  </div>
+                </div>
               )}
 
               {/* Save Version Snapshot Sheet */}
