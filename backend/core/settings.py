@@ -177,10 +177,14 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 ]
 
 # AI Provider Configuration
-AI_PROVIDER = os.getenv('AI_PROVIDER', 'openai')
+AI_PROVIDER = os.getenv('AI_PROVIDER', 'gemini')
 AI_API_KEY = os.getenv('AI_API_KEY', '')
 AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
 AI_BASE_URL = os.getenv('AI_BASE_URL', '')
+
+# Google Gemini Flash Configuration
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', os.getenv('AI_API_KEY', ''))
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
 
 # External binary configuration
 LIBREOFFICE_PATH = os.getenv('LIBREOFFICE_PATH', 'libreoffice')

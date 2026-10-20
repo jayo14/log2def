@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import shutil
 import subprocess
 from datetime import datetime
@@ -8,6 +9,79 @@ import pymupdf
 from docx import Document as DocxDocument
 from django.conf import settings
 from .models import SourceDocument, ExtractedPage, LogbookEntry
+from .ai_provider import is_ai_available, generate_vision_completion, AIProviderUnavailableError
+
+
+def run_multimodal_vision_analysis(image_path: str) -> tuple[str, float, dict]:
+    """
+    Analyzes handwritten and scanned logbook pages using Google Gemini Flash Multimodal Vision.
+    Extracts transcribed text, week number, daily entries, tools used, and technical observations.
+    Returns (transcribed_text, confidence_score, structured_dict).
+    Falls back to ("", 0.0, {}) if AI is unavailable or call fails.
+    """
+    if not is_ai_available() or not os.path.exists(image_path):
+        return "", 0.0, {}
+
+    try:
+        with open(image_path, "rb") as f:
+            image_bytes = f.read()
+
+        ext = os.path.splitext(image_path)[1].lower()
+        mime_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }
+        mime_type = mime_map.get(ext, "image/jpeg")
+
+        prompt = (
+            "You are an expert academic OCR and SIWES technical logbook analyzer. "
+            "Examine this handwritten SIWES industrial training logbook page. "
+            "Transcribe all handwritten notes, table entries, and dates accurately.\n\n"
+            "Respond ONLY with a JSON object following this exact schema:\n"
+            "{\n"
+            '  "transcribed_text": "Full verbatim transcription of all text on this page",\n'
+            '  "week_number": 1,\n'
+            '  "dates_covered": "e.g. June 10 - June 14, 2024",\n'
+            '  "entries": [\n'
+            '    {\n'
+            '      "day_of_week": "Monday",\n'
+            '      "activity_summary": "Detailed technical summary of tasks performed, circuits wired, code written, or machines operated",\n'
+            '      "hours_spent": 8\n'
+            '    }\n'
+            '  ],\n'
+            '  "tools_and_equipment": ["Oscilloscope", "CAT6 Cable", "Router", "VS Code"],\n'
+            '  "problems_encountered": ["Short circuit during bench test"],\n'
+            '  "skills_acquired": ["Fiber optic termination"],\n'
+            '  "diagram_detected": false,\n'
+            '  "supervisor_signed": true,\n'
+            '  "confidence": 0.94\n'
+            "}"
+        )
+
+        response_text = generate_vision_completion(
+            prompt=prompt,
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            response_json=True
+        )
+
+        clean_json = response_text.strip()
+        if clean_json.startswith("```json"):
+            clean_json = clean_json[7:]
+        if clean_json.startswith("```"):
+            clean_json = clean_json[3:]
+        if clean_json.endswith("```"):
+            clean_json = clean_json[:-3]
+        clean_json = clean_json.strip()
+
+        data = json.loads(clean_json)
+        transcribed_text = data.get("transcribed_text", "").strip()
+        confidence = float(data.get("confidence", 0.92))
+        return transcribed_text, confidence, data
+    except Exception:
+        return "", 0.0, {}
 
 
 def run_ocr_on_image(image_path: str) -> tuple[str, float]:
@@ -162,21 +236,28 @@ def process_source_document(doc_id: int):
                     temp_img_path = f"{file_path}_p{page_num}.png"
                     pix.save(temp_img_path)
                     
-                    ocr_text, ocr_conf = run_ocr_on_image(temp_img_path)
+                    v_text, v_conf, v_data = run_multimodal_vision_analysis(temp_img_path)
+                    if v_text:
+                        text = v_text
+                        confidence = v_conf
+                        page_status = 'processed'
+                        notes = 'Analyzed with Gemini Flash Multimodal Vision'
+                    else:
+                        ocr_text, ocr_conf = run_ocr_on_image(temp_img_path)
+                        if ocr_text:
+                            text = ocr_text
+                            confidence = ocr_conf
+                            page_status = 'processed'
+                        else:
+                            confidence = 0.20
+                            page_status = 'manual_correction_needed'
+                            notes = 'Page appears to be scanned or handwritten. Please review and input or verify the text.'
+
                     if os.path.exists(temp_img_path):
                         try:
                             os.remove(temp_img_path)
                         except OSError:
                             pass
-
-                    if ocr_text:
-                        text = ocr_text
-                        confidence = ocr_conf
-                        page_status = 'processed'
-                    else:
-                        confidence = 0.20
-                        page_status = 'manual_correction_needed'
-                        notes = 'Page appears to be scanned or handwritten. Please review and input or verify the text.'
 
                 extracted_page = ExtractedPage.objects.create(
                     document=doc,
@@ -197,27 +278,60 @@ def process_source_document(doc_id: int):
             doc.page_count = 1
             doc.save(update_fields=['page_count'])
             
-            ocr_text, ocr_conf = run_ocr_on_image(file_path)
-            if ocr_text:
+            vision_text, vision_conf, vision_data = run_multimodal_vision_analysis(file_path)
+            if vision_text:
                 page_status = 'processed'
-                confidence = ocr_conf
-                notes = ''
+                confidence = vision_conf
+                text = vision_text
+                notes = 'Analyzed with Gemini Flash Multimodal Vision'
             else:
-                page_status = 'manual_correction_needed'
-                confidence = 0.25
-                notes = 'Scanned / handwritten image uploaded. Please verify and transcribe handwritten text.'
+                ocr_text, ocr_conf = run_ocr_on_image(file_path)
+                if ocr_text:
+                    page_status = 'processed'
+                    confidence = ocr_conf
+                    text = ocr_text
+                    notes = ''
+                else:
+                    page_status = 'manual_correction_needed'
+                    confidence = 0.25
+                    text = ''
+                    notes = 'Scanned / handwritten image uploaded. Please verify and transcribe handwritten text.'
 
             extracted_page = ExtractedPage.objects.create(
                 document=doc,
                 page_number=1,
-                extracted_text=ocr_text,
+                extracted_text=text,
                 confidence_score=confidence,
                 status=page_status,
                 notes=notes,
                 is_reviewed=False
             )
-            if ocr_text:
-                extract_logbook_entries_from_text(doc.project, extracted_page, ocr_text)
+            
+            # If Vision extracted structured daily entries, create them with high confidence
+            if vision_data and vision_data.get('entries'):
+                week_num = vision_data.get('week_number') or 1
+                for idx, entry in enumerate(vision_data.get('entries', [])):
+                    summary = entry.get('activity_summary', '').strip()
+                    day = entry.get('day_of_week', f'Day {idx+1}')
+                    if summary:
+                        LogbookEntry.objects.create(
+                            project=doc.project,
+                            source_page=extracted_page,
+                            week_number=week_num,
+                            day_of_week=day,
+                            raw_text=summary,
+                            verified_text=summary,
+                            activity_summary=summary[:120],
+                            order=idx + 1,
+                            is_verified=True
+                        )
+                # Auto-enrich project tools if detected
+                tools = vision_data.get('tools_and_equipment', [])
+                if tools and not doc.project.tools_used:
+                    doc.project.tools_used = ', '.join(tools)
+                    doc.project.save(update_fields=['tools_used'])
+            elif text:
+                extract_logbook_entries_from_text(doc.project, extracted_page, text)
 
         elif doc.file_type == 'docx' and file_path and os.path.exists(file_path):
             doc_obj = DocxDocument(file_path)
