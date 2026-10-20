@@ -158,6 +158,13 @@ export const projectsApi = {
     });
   },
 
+  uploadGuideline: async (id: number | string, formData: FormData) => {
+    return apiRequest(`/projects/${id}/upload-guideline/`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
   // Documents
   uploadDocument: async (projectId: number | string, formData: FormData) => {
     return apiRequest(`/projects/${projectId}/documents/`, {

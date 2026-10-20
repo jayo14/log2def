@@ -252,6 +252,7 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
 class GuidelineUploadView(views.APIView):
     permission_classes = (IsAuthenticated,)
     throttle_classes = (UploadRateThrottle,)
+    serializer_class = ReportProjectSerializer
 
     @extend_schema(
         tags=['Projects'],

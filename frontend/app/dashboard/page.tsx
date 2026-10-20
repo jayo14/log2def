@@ -34,6 +34,7 @@ export default function DashboardPage() {
     fetchProjects,
     fetchActiveProject,
     createProject,
+    uploadGuideline: storeUploadGuideline,
     uploadDocument: storeUploadDocument,
     deleteDocument: storeDeleteDocument,
     reprocessDocument: storeReprocessDocument,
@@ -88,7 +89,7 @@ export default function DashboardPage() {
   const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'defence' | 'new'>('home');
   const [logbookTab, setLogbookTab] = useState<'entries' | 'docs'>('entries');
   const [reportTab, setReportTab] = useState<'editor' | 'preview' | 'versions' | 'export'>('editor');
-  const [defenceTab, setDefenceTab] = useState<'quiz' | 'slides' | 'script'>('quiz');
+  const [defenceTab, setDefenceTab] = useState<'quiz' | 'interview' | 'slides' | 'script'>('interview');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
 
@@ -121,10 +122,31 @@ export default function DashboardPage() {
 
   // Interactive Bottom Sheet Modal state
   const [activeSheet, setActiveSheet] = useState<
-    'me' | 'addEntry' | 'typeNotes' | 'correctText' | 'addVersion' | 'pwaGuide' | null
+    'me' | 'addEntry' | 'typeNotes' | 'correctText' | 'addVersion' | 'pwaGuide' | 'uploadGuideline' | null
   >(null);
   const [correctingDocIdx, setCorrectingDocIdx] = useState<number>(0);
   const [correctingText, setCorrectingText] = useState<string>('');
+
+  // Guideline upload draft
+  const [guidelineInputUniversity, setGuidelineInputUniversity] = useState('Lagos State University of Science and Technology (LASUSTECH)');
+  const [guidelineInputText, setGuidelineInputText] = useState('');
+  const [guidelineInputFile, setGuidelineInputFile] = useState<File | null>(null);
+  const [isUploadingGuideline, setIsUploadingGuideline] = useState(false);
+
+  // Live Voice Defence Simulation states
+  const [interviewQIdx, setInterviewQIdx] = useState(0);
+  const [isSupervisorSpeaking, setIsSupervisorSpeaking] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [studentSpokenAnswer, setStudentSpokenAnswer] = useState('');
+  const [isVoiceMuted, setIsVoiceMuted] = useState(false);
+  const [voiceEvaluation, setVoiceEvaluation] = useState<{
+    score: number;
+    verdict: string;
+    strengths: string;
+    tips: string;
+  } | null>(null);
+  const [isEvaluatingAnswer, setIsEvaluatingAnswer] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
 
   // Manual entry modal form draft
   const [manualWeek, setManualWeek] = useState<number>(3);
@@ -973,6 +995,198 @@ export default function DashboardPage() {
     triggerToast(`Marked ${status.replace('_', ' ')}`);
   };
 
+  // Speech Synthesis: speak text aloud with natural pitch & rate
+  const speakVoice = (text: string, onEnd?: () => void) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (isVoiceMuted) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
+    utterance.lang = 'en-US';
+
+    setIsSupervisorSpeaking(true);
+    utterance.onend = () => {
+      setIsSupervisorSpeaking(false);
+      if (onEnd) onEnd();
+    };
+    utterance.onerror = () => {
+      setIsSupervisorSpeaking(false);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const stopVoiceSpeaking = () => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSupervisorSpeaking(false);
+    }
+  };
+
+  // Toggle Voice Recognition (Web Speech API)
+  const toggleVoiceListening = () => {
+    if (typeof window === 'undefined') return;
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      triggerToast('Speech recognition is not supported in this browser. You can type your answer.');
+      return;
+    }
+
+    if (isVoiceListening) {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+      }
+      setIsVoiceListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsVoiceListening(true);
+        triggerToast('Listening... Speak your defence answer');
+      };
+
+      recognition.onresult = (event: any) => {
+        let currentTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          currentTranscript += event.results[i][0].transcript + ' ';
+        }
+        setStudentSpokenAnswer(currentTranscript.trim());
+      };
+
+      recognition.onerror = (err: any) => {
+        console.warn('Speech recognition error:', err);
+        setIsVoiceListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsVoiceListening(false);
+      };
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      triggerToast('Could not access microphone: ' + (err.message || 'Check permissions'));
+      setIsVoiceListening(false);
+    }
+  };
+
+  // Evaluate Voice Answer
+  const handleEvaluateVoiceAnswer = () => {
+    if (!studentSpokenAnswer.trim()) {
+      triggerToast('Please speak or type your answer first');
+      return;
+    }
+
+    setIsEvaluatingAnswer(true);
+    const currQ = questionsList[interviewQIdx] || questionsList[0];
+    const answerWords = studentSpokenAnswer.toLowerCase().split(/\s+/);
+    const lengthScore = Math.min(100, Math.round((answerWords.length / 25) * 60));
+    
+    // Check keywords from question & suggested answer
+    const suggestedWords = (currQ.suggested_answer || '').toLowerCase().split(/\s+/);
+    let matchedKeywords = 0;
+    for (const w of suggestedWords) {
+      if (w.length > 4 && studentSpokenAnswer.toLowerCase().includes(w)) {
+        matchedKeywords++;
+      }
+    }
+    const keywordScore = Math.min(40, matchedKeywords * 10);
+    const finalScore = Math.min(98, Math.max(55, lengthScore + keywordScore));
+
+    let verdict = 'Strong Defensible Answer';
+    let strengths = 'Good technical articulation and clear personal ownership of the work.';
+    let tips = 'Mention specific safety measures and software/hardware model numbers to earn top marks from the panel.';
+
+    if (finalScore >= 85) {
+      verdict = 'Excellent Oral Defence Response';
+      strengths = 'Thoroughly covers the objectives, tools, and technical methodology.';
+      tips = 'Maintain this steady pacing during the live defence.';
+    } else if (finalScore < 70) {
+      verdict = 'Acceptable — Needs Deeper Technical Details';
+      strengths = 'Addresses the question prompt directly.';
+      tips = 'Expand on your troubleshooting methodology and link tasks back to your academic coursework.';
+    }
+
+    const evalResult = {
+      score: finalScore,
+      verdict,
+      strengths,
+      tips,
+    };
+    setVoiceEvaluation(evalResult);
+    setIsEvaluatingAnswer(false);
+
+    if (!isVoiceMuted) {
+      const verbalFeedback = finalScore >= 80 
+        ? `Good response. Score is ${finalScore} percent. ${strengths}`
+        : `Understood. Score is ${finalScore} percent. ${tips}`;
+      speakVoice(verbalFeedback);
+    }
+  };
+
+  // Next Interview Question
+  const handleNextInterviewQuestion = () => {
+    stopVoiceSpeaking();
+    if (isVoiceListening && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      setIsVoiceListening(false);
+    }
+    setVoiceEvaluation(null);
+    setStudentSpokenAnswer('');
+
+    if (interviewQIdx < questionsList.length - 1) {
+      const nextIdx = interviewQIdx + 1;
+      setInterviewQIdx(nextIdx);
+      const nextQ = questionsList[nextIdx];
+      if (nextQ && !isVoiceMuted) {
+        setTimeout(() => {
+          speakVoice(nextQ.question);
+        }, 300);
+      }
+    } else {
+      triggerToast('Full mock interview session completed!');
+      speakVoice('Congratulations. You have completed the full oral defence rehearsal session.');
+    }
+  };
+
+  // Save / Upload Guideline
+  const handleSaveGuideline = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeProject?.id) {
+      triggerToast('Create a report project first');
+      return;
+    }
+
+    setIsUploadingGuideline(true);
+    try {
+      const formData = new FormData();
+      formData.append('university_name', guidelineInputUniversity);
+      if (guidelineInputFile) {
+        formData.append('file', guidelineInputFile);
+      }
+      if (guidelineInputText.trim()) {
+        formData.append('guideline_text', guidelineInputText.trim());
+      }
+
+      await storeUploadGuideline(activeProject.id, formData);
+      setActiveSheet(null);
+      triggerToast('Department SIWES guidelines applied successfully');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to update guidelines');
+    } finally {
+      setIsUploadingGuideline(false);
+    }
+  };
+
   // Wizard Phases
   const WIZARD_PHASES = [
     {
@@ -993,11 +1207,22 @@ export default function DashboardPage() {
     },
     {
       t: 'Your school',
-      d: 'Defaulted to LASUSTECH. Change it if you study elsewhere.',
+      d: 'Defaulted to LASUSTECH standard. Select your institution or choose custom to supply your guidelines.',
       f: [
-        { id: 'uni', label: 'University', req: false, ph: '' },
-        { id: 'fac', label: 'Faculty or college', req: false, ph: '' },
-        { id: 'guide', label: 'Department guidelines (optional)', req: false, txt: true, ph: 'Anything your SIWES coordinator asked for.' },
+        {
+          id: 'uni',
+          label: 'University',
+          req: true,
+          sel: [
+            'Lagos State University of Science and Technology (LASUSTECH)',
+            'University of Lagos (UNILAG)',
+            'Lagos State University (LASU)',
+            'Federal University of Technology, Akure (FUTA)',
+            'Other University (Custom guidelines)',
+          ],
+        },
+        { id: 'fac', label: 'Faculty or college', req: false, ph: 'e.g. College of Applied Sciences & Technology' },
+        { id: 'guide', label: 'Department guidelines or coordinator instructions', req: false, txt: true, ph: 'Enter specific departmental requirements, chapter formatting rules, or supervisor guidelines.' },
       ],
     },
     {
@@ -1586,6 +1811,32 @@ export default function DashboardPage() {
                 <p>{effectiveProject?.title || 'SIWES Technical Report'}</p>
               </div>
 
+              {/* Institutional Guidelines Status Banner */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '14px', padding: '10px 14px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="guideline-badge">
+                    <span className="ms" style={{ fontSize: '15px' }}>verified</span>
+                    {effectiveProject?.guideline_preset === 'custom' ? 'Custom Guidelines Applied' : 'LASUSTECH Standard Format'}
+                  </span>
+                  <span style={{ fontSize: '12.5px', color: 'var(--mut)' }}>
+                    {effectiveProject?.university_name || 'Lagos State University of Science and Technology'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn o s"
+                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                  onClick={() => {
+                    setGuidelineInputUniversity(effectiveProject?.university_name || 'Lagos State University of Science and Technology (LASUSTECH)');
+                    setGuidelineInputText(effectiveProject?.department_requirements || '');
+                    setActiveSheet('uploadGuideline');
+                  }}
+                >
+                  <span className="ms" style={{ fontSize: '15px' }}>upload_file</span>
+                  {effectiveProject?.guideline_preset === 'custom' ? 'Update Guidelines' : 'Custom Guidelines'}
+                </button>
+              </div>
+
               {/* Segmented Subtabs: Editor | Preview | Versions | Export */}
               <div className="seg" role="tablist" aria-label="Report view">
                 <button
@@ -2090,12 +2341,190 @@ export default function DashboardPage() {
                 <button
                   role="tab"
                   type="button"
+                  aria-selected={defenceTab === 'interview'}
+                  onClick={() => {
+                    setDefenceTab('interview');
+                    const q = questionsList[interviewQIdx] || questionsList[0];
+                    if (q && !isVoiceMuted) {
+                      setTimeout(() => speakVoice(q.question), 250);
+                    }
+                  }}
+                >
+                  <span className="ms" style={{ fontSize: '15px', marginRight: '4px', verticalAlign: 'text-bottom' }}>
+                    record_voice_over
+                  </span>
+                  Voice Simulation
+                </button>
+                <button
+                  role="tab"
+                  type="button"
                   aria-selected={defenceTab === 'script'}
                   onClick={() => setDefenceTab('script')}
                 >
                   Oral Script & Timer
                 </button>
               </div>
+
+              {/* LIVE VOICE DEFENCE SIMULATION SUBTAB */}
+              {defenceTab === 'interview' && (
+                <>
+                  <div className="interview-panel-card">
+                    <div className="supervisor-header">
+                      <div className={`supervisor-avatar ${isSupervisorSpeaking ? 'speaking' : ''}`}>
+                        <span className="ms" style={{ fontSize: '24px' }}>
+                          {isSupervisorSpeaking ? 'record_voice_over' : 'school'}
+                        </span>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <b style={{ fontSize: '15px', color: 'var(--ink)' }}>Supervisor Oral Defence Panel</b>
+                          <button
+                            type="button"
+                            className="ib"
+                            style={{ width: '32px', height: '32px' }}
+                            title={isVoiceMuted ? 'Unmute supervisor voice' : 'Mute supervisor voice'}
+                            onClick={() => setIsVoiceMuted(!isVoiceMuted)}
+                          >
+                            <span className="ms" style={{ fontSize: '18px', color: isVoiceMuted ? '#ef4444' : '#10b981' }}>
+                              {isVoiceMuted ? 'volume_off' : 'volume_up'}
+                            </span>
+                          </button>
+                        </div>
+                        <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: 'var(--mut)' }}>
+                          Question {interviewQIdx + 1} of {questionsList.length} &middot; {questionsList[interviewQIdx]?.category || 'General'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Question Box */}
+                    <div className="interview-question-box">
+                      <span className="chip" style={{ marginBottom: '8px' }}>
+                        {questionsList[interviewQIdx]?.category || 'Defence Question'}
+                      </span>
+                      <h3>&ldquo;{questionsList[interviewQIdx]?.question}&rdquo;</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                        <button
+                          type="button"
+                          className="btn o s"
+                          style={{ padding: '4px 10px', fontSize: '12px' }}
+                          onClick={() => speakVoice(questionsList[interviewQIdx]?.question)}
+                          disabled={isSupervisorSpeaking}
+                        >
+                          <span className="ms" style={{ fontSize: '16px' }}>volume_up</span>
+                          {isSupervisorSpeaking ? 'Speaking...' : 'Replay Question'}
+                        </button>
+                        {isSupervisorSpeaking && (
+                          <div className="voice-wave-container">
+                            <span className="voice-bar active"></span>
+                            <span className="voice-bar active"></span>
+                            <span className="voice-bar active"></span>
+                            <span className="voice-bar active"></span>
+                            <span className="voice-bar active"></span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Student Voice Response Box */}
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink)' }}>
+                          Your Verbal Defence Answer:
+                        </label>
+                        {isVoiceListening && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', fontSize: '12px', fontWeight: 600 }}>
+                            <span className="voice-wave-container" style={{ height: '16px' }}>
+                              <span className="voice-bar active"></span>
+                              <span className="voice-bar active"></span>
+                              <span className="voice-bar active"></span>
+                            </span>
+                            Listening to microphone...
+                          </div>
+                        )}
+                      </div>
+
+                      <textarea
+                        className="interview-transcript-box"
+                        style={{ width: '100%', resize: 'vertical' }}
+                        value={studentSpokenAnswer}
+                        onChange={(e) => setStudentSpokenAnswer(e.target.value)}
+                        placeholder="Click 'Start Voice Answer' below to speak your response into the microphone, or type here directly..."
+                      />
+                    </div>
+
+                    {/* Response Controls */}
+                    <div className="row sb" style={{ gap: '8px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className={`btn ${isVoiceListening ? 'bad' : 's'}`}
+                          style={{
+                            background: isVoiceListening ? '#ef4444' : undefined,
+                            borderColor: isVoiceListening ? '#ef4444' : undefined,
+                          }}
+                          onClick={toggleVoiceListening}
+                        >
+                          <span className="ms">{isVoiceListening ? 'mic_off' : 'mic'}</span>
+                          {isVoiceListening ? 'Stop Listening' : 'Start Voice Answer'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn w s"
+                          onClick={handleEvaluateVoiceAnswer}
+                          disabled={!studentSpokenAnswer.trim() || isEvaluatingAnswer}
+                        >
+                          <span className="ms">grading</span>
+                          {isEvaluatingAnswer ? 'Grading...' : 'Grade Answer'}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn o s"
+                        onClick={handleNextInterviewQuestion}
+                      >
+                        {interviewQIdx < questionsList.length - 1 ? 'Next Question' : 'Complete Session'}
+                        <span className="ms">arrow_forward</span>
+                      </button>
+                    </div>
+
+                    {/* AI Evaluation Box */}
+                    {voiceEvaluation && (
+                      <div className="interview-feedback-box">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: '#175438' }}>
+                            Panel Evaluation & Score
+                          </span>
+                          <span
+                            className="chip"
+                            style={{
+                              background: voiceEvaluation.score >= 80 ? '#10b981' : '#f59e0b',
+                              color: '#fff',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {voiceEvaluation.score}% &middot; {voiceEvaluation.verdict}
+                          </span>
+                        </div>
+                        <p style={{ margin: '0 0 6px', fontSize: '13px', color: 'var(--ink)' }}>
+                          <strong>Strengths:</strong> {voiceEvaluation.strengths}
+                        </p>
+                        <p style={{ margin: '0 0 10px', fontSize: '13px', color: 'var(--mut)' }}>
+                          <strong>Examiner Tip:</strong> {voiceEvaluation.tips}
+                        </p>
+                        <div style={{ background: 'var(--card)', borderRadius: '10px', padding: '10px', border: '1px solid var(--line)' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)', display: 'block', marginBottom: '4px' }}>
+                            Model Academic Defence Answer:
+                          </span>
+                          <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--mut)', lineHeight: 1.45 }}>
+                            {questionsList[interviewQIdx]?.suggested_answer}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
 
               {/* 1. MOCK QUESTIONS SUBTAB */}
               {defenceTab === 'quiz' && (
@@ -3070,6 +3499,86 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 </div>
+              )}
+
+              {/* Upload Department SIWES Guidelines Sheet */}
+              {activeSheet === 'uploadGuideline' && (
+                <form onSubmit={handleSaveGuideline}>
+                  <h2>Department SIWES Guidelines</h2>
+                  <p className="mut" style={{ fontSize: '13.5px', margin: '-6px 0 16px' }}>
+                    Configure institutional presets or upload custom departmental guidelines for report generation.
+                  </p>
+
+                  <div className="f">
+                    <label htmlFor="gl-uni">University / Institution</label>
+                    <select
+                      id="gl-uni"
+                      value={guidelineInputUniversity}
+                      onChange={(e) => setGuidelineInputUniversity(e.target.value)}
+                    >
+                      <option value="Lagos State University of Science and Technology (LASUSTECH)">
+                        Lagos State University of Science and Technology (LASUSTECH) — Preset
+                      </option>
+                      <option value="University of Lagos (UNILAG)">
+                        University of Lagos (UNILAG)
+                      </option>
+                      <option value="Lagos State University (LASU)">
+                        Lagos State University (LASU)
+                      </option>
+                      <option value="Federal University of Technology, Akure (FUTA)">
+                        Federal University of Technology, Akure (FUTA)
+                      </option>
+                      <option value="Other University (Custom Guidelines)">
+                        Other University (Custom Guidelines)
+                      </option>
+                    </select>
+                  </div>
+
+                  <div className="f">
+                    <label htmlFor="gl-file">Upload Guidelines Document (PDF, Word, or TXT)</label>
+                    <input
+                      id="gl-file"
+                      type="file"
+                      accept=".pdf,.docx,.doc,.txt,.md"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setGuidelineInputFile(e.target.files[0]);
+                        }
+                      }}
+                    />
+                    <small style={{ color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                      Upload your departmental SIWES handbook, marking scheme, or chapter rubrics.
+                    </small>
+                  </div>
+
+                  <div className="f">
+                    <label htmlFor="gl-text">Or Paste Specific Department Guidelines & Instructions</label>
+                    <textarea
+                      id="gl-text"
+                      rows={5}
+                      value={guidelineInputText}
+                      onChange={(e) => setGuidelineInputText(e.target.value)}
+                      placeholder="e.g. Chapter 3 must focus on networking protocols. Maximum report length 35 pages. Include detailed block diagrams for all circuits."
+                    />
+                  </div>
+
+                  <div className="row" style={{ gap: '8px' }}>
+                    <button
+                      className="btn o w"
+                      type="button"
+                      onClick={() => setActiveSheet(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="btn w"
+                      type="submit"
+                      disabled={isUploadingGuideline}
+                    >
+                      {isUploadingGuideline ? 'Saving...' : 'Apply Guidelines'}
+                    </button>
+                  </div>
+                </form>
               )}
 
               {/* Save Version Snapshot Sheet */}

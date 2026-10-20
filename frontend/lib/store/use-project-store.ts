@@ -17,6 +17,7 @@ export interface ProjectState {
   deleteProject: (projectId: number | string) => Promise<void>;
 
   // Source documents & extracted pages
+  uploadGuideline: (projectId: number | string, formData: FormData) => Promise<any>;
   uploadDocument: (projectId: number | string, formData: FormData) => Promise<any>;
   deleteDocument: (projectId: number | string, docId: number | string) => Promise<void>;
   reprocessDocument: (projectId: number | string, docId: number | string) => Promise<any>;
@@ -116,6 +117,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }));
     } catch (err: any) {
       set({ error: err.message || 'Failed to delete project' });
+      throw err;
+    }
+  },
+
+  uploadGuideline: async (projectId: number | string, formData: FormData) => {
+    set({ error: null });
+    try {
+      const res = await projectsApi.uploadGuideline(projectId, formData);
+      await get().fetchActiveProject(projectId);
+      return res;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to upload guideline' });
       throw err;
     }
   },
