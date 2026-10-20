@@ -280,20 +280,44 @@ export default function DashboardPage() {
       setIsOffline(!navigator.onLine);
       const handleOnline = () => setIsOffline(false);
       const handleOffline = () => setIsOffline(true);
-      const handleInstallable = () => setCanInstallPWA(true);
+
+      const isInstalled = () => {
+        return (
+          window.matchMedia('(display-mode: standalone)').matches ||
+          (window.navigator as any).standalone === true ||
+          document.referrer.startsWith('android-app://') ||
+          localStorage.getItem('pwa_installed') === 'true'
+        );
+      };
+
+      if (!isInstalled() && (window as any).__pwaInstallPrompt) {
+        setCanInstallPWA(true);
+      }
+
+      const handleInstallable = () => {
+        if (!isInstalled()) {
+          setCanInstallPWA(true);
+        }
+      };
+
+      const handleInstalled = () => {
+        localStorage.setItem('pwa_installed', 'true');
+        setCanInstallPWA(false);
+        (window as any).__pwaInstallPrompt = null;
+      };
 
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
       window.addEventListener('pwa-installable', handleInstallable);
-
-      if ((window as any).__pwaInstallPrompt) {
-        setCanInstallPWA(true);
-      }
+      window.addEventListener('pwa-installed', handleInstalled);
+      window.addEventListener('appinstalled', handleInstalled);
 
       return () => {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
         window.removeEventListener('pwa-installable', handleInstallable);
+        window.removeEventListener('pwa-installed', handleInstalled);
+        window.removeEventListener('appinstalled', handleInstalled);
       };
     }
   }, []);
@@ -704,6 +728,9 @@ export default function DashboardPage() {
     promptEvent.prompt();
     const { outcome } = await promptEvent.userChoice;
     if (outcome === 'accepted') {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('pwa_installed', 'true');
+      }
       setCanInstallPWA(false);
       (window as any).__pwaInstallPrompt = null;
       triggerToast('Installing Log2Def...');

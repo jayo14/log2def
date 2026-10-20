@@ -23,8 +23,11 @@ export function PWAManager() {
     const checkStandalone = () => {
       const isStandaloneMode =
         window.matchMedia('(display-mode: standalone)').matches ||
-        (window.navigator as any).standalone === true;
+        (window.navigator as any).standalone === true ||
+        document.referrer.startsWith('android-app://') ||
+        (typeof localStorage !== 'undefined' && localStorage.getItem('pwa_installed') === 'true');
       setIsStandalone(isStandaloneMode);
+      return isStandaloneMode;
     };
     checkStandalone();
 
@@ -67,8 +70,11 @@ export function PWAManager() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // 4. Capture PWA Install Prompt Event
+    // 4. Capture PWA Install Prompt Event (Only if not installed)
     const handleBeforeInstallPrompt = (e: Event) => {
+      if (checkStandalone()) {
+        return;
+      }
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       setIsInstallable(true);
@@ -80,8 +86,13 @@ export function PWAManager() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
     const handleAppInstalled = () => {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('pwa_installed', 'true');
+      }
       setDeferredPrompt(null);
       setIsInstallable(false);
+      (window as any).__pwaInstallPrompt = null;
+      window.dispatchEvent(new CustomEvent('pwa-installed'));
       showToast('Log2Def installed successfully!', 'success');
     };
 
