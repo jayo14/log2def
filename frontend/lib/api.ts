@@ -1,4 +1,22 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+export function getApiBaseUrl(): string {
+  // 1. If explicitly configured with a public URL, use it
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    const pub = process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/+$/, '');
+    return pub || '/api';
+  }
+
+  // 2. In browser context: use relative '/api' proxy path (forwarded by next.config.ts)
+  if (typeof window !== 'undefined') {
+    return '/api';
+  }
+
+  // 3. In server / SSR context: fallback to backend internal URL
+  return (
+    process.env.BACKEND_INTERNAL_URL ||
+    process.env.BACKEND_API_URL ||
+    'http://127.0.0.1:8000/api'
+  ).trim().replace(/\/+$/, '');
+}
 
 export function getAuthToken(): string | null {
   if (typeof window === 'undefined') return null;
@@ -36,7 +54,9 @@ export async function apiRequest<T = any>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const baseUrl = getApiBaseUrl();
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const response = await fetch(`${baseUrl}${cleanEndpoint}`, {
     ...options,
     headers,
   });
@@ -271,16 +291,16 @@ export const projectsApi = {
 
   // Document Export Download URLs
   getExportDocxUrl: (projectId: number | string) => {
-    return `${API_BASE_URL}/projects/${projectId}/export/docx/`;
+    return `${getApiBaseUrl()}/projects/${projectId}/export/docx/`;
   },
 
   getExportPdfUrl: (projectId: number | string) => {
-    return `${API_BASE_URL}/projects/${projectId}/export/pdf/`;
+    return `${getApiBaseUrl()}/projects/${projectId}/export/pdf/`;
   },
 
   downloadDocx: async (projectId: number | string, filename: string = 'siwes_report.docx') => {
     const token = getAuthToken();
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/export/docx/`, {
+    const res = await fetch(`${getApiBaseUrl()}/projects/${projectId}/export/docx/`, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
@@ -299,7 +319,7 @@ export const projectsApi = {
 
   downloadPdf: async (projectId: number | string, filename: string = 'siwes_report.pdf') => {
     const token = getAuthToken();
-    const res = await fetch(`${API_BASE_URL}/projects/${projectId}/export/pdf/`, {
+    const res = await fetch(`${getApiBaseUrl()}/projects/${projectId}/export/pdf/`, {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },

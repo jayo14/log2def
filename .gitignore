@@ -9,7 +9,15 @@ staticfiles/
 
 # Environment files
 .env
+.env*.local
 backend/.env
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.development
+!.env.example
+!backend/.env.example
+!frontend/.env.example
 
 # Virtual Environment
 .venv/

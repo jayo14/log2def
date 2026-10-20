@@ -15,6 +15,26 @@ const nextConfig: NextConfig = {
       },
     },
   },
+  async rewrites() {
+    // Built-in reverse proxy rewrite: forwards /api/* to the Django backend
+    const backendTarget = (
+      process.env.BACKEND_API_URL ||
+      process.env.BACKEND_INTERNAL_URL ||
+      process.env.NEXT_PUBLIC_BACKEND_URL ||
+      'http://127.0.0.1:8000'
+    ).trim().replace(/\/+$/, '');
+
+    const destination = backendTarget.endsWith('/api')
+      ? `${backendTarget}/:path*`
+      : `${backendTarget}/api/:path*`;
+
+    return [
+      {
+        source: '/api/:path*',
+        destination,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
