@@ -38,6 +38,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -65,9 +66,24 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# Database configuration: support PostgreSQL with SQLite fallback
-DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite')
-if DB_ENGINE == 'postgres' and os.getenv('DB_NAME'):
+# Database configuration: support DATABASE_URL, PostgreSQL, and SQLite fallback
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').strip().lower()
+
+if DATABASE_URL:
+    import urllib.parse as urlparse
+    url = urlparse.urlparse(DATABASE_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': url.path[1:] if url.path.startswith('/') else url.path,
+            'USER': url.username or '',
+            'PASSWORD': url.password or '',
+            'HOST': url.hostname or '',
+            'PORT': url.port or 5432,
+        }
+    }
+elif DB_ENGINE == 'postgres' and os.getenv('DB_NAME'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -106,6 +122,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -192,6 +209,25 @@ TESSERACT_CMD = os.getenv('TESSERACT_CMD', 'tesseract')
 
 # File Upload Limits (15MB)
 MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024
+
+# Reverse Proxy & Cloud Deployment Headers (Render, Railway, Fly, Heroku, AWS)
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+CSRF_TRUSTED_ORIGINS_RAW = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+if CSRF_TRUSTED_ORIGINS_RAW:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in CSRF_TRUSTED_ORIGINS_RAW.split(',') if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'https://*.onrender.com',
+        'https://*.railway.app',
+        'https://*.fly.dev',
+    ]
 
 # Security Hardening & Headers
 SECURE_BROWSER_XSS_FILTER = True

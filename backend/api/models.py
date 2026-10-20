@@ -35,6 +35,9 @@ class ReportProject(models.Model):
     )
     faculty_school = models.CharField(max_length=255, blank=True)
     department_requirements = models.TextField(blank=True)
+    guideline_preset = models.CharField(max_length=64, default='lasustech', blank=True)
+    custom_guideline_file = models.FileField(upload_to='guidelines/', null=True, blank=True)
+    custom_guideline_extracted = models.TextField(blank=True)
 
     # Industrial Placement
     organization_name = models.CharField(max_length=255, blank=True)

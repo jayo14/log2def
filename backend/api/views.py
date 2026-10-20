@@ -249,6 +249,68 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
         return ReportProject.objects.filter(user=self.request.user)
 
 
+class GuidelineUploadView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+    throttle_classes = (UploadRateThrottle,)
+
+    @extend_schema(
+        tags=['Projects'],
+        summary='Upload or update custom department SIWES guidelines',
+        responses={200: ReportProjectSerializer}
+    )
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        file_obj = request.FILES.get('file')
+        raw_text = request.data.get('guideline_text', '').strip()
+        university = request.data.get('university_name', '').strip()
+
+        if university:
+            project.university_name = university
+            if 'lasustech' in university.lower():
+                project.guideline_preset = 'lasustech'
+            else:
+                project.guideline_preset = 'custom'
+
+        extracted_text = ''
+        if file_obj:
+            if file_obj.size > settings.MAX_UPLOAD_SIZE_BYTES:
+                return Response({"detail": "File size exceeds the 15MB upload limit."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            project.custom_guideline_file = file_obj
+            ext = os.path.splitext(file_obj.name)[1].lower()
+
+            if ext == '.pdf':
+                try:
+                    import pymupdf
+                    pdf_doc = pymupdf.open(stream=file_obj.read(), filetype='pdf')
+                    pages_text = [pdf_doc[i].get_text('text').strip() for i in range(len(pdf_doc))]
+                    extracted_text = '\n\n'.join(p for p in pages_text if p)
+                except Exception:
+                    pass
+            elif ext in ('.docx', '.doc'):
+                try:
+                    from docx import Document as DocxDoc
+                    docx_doc = DocxDoc(file_obj)
+                    extracted_text = '\n\n'.join(p.text.strip() for p in docx_doc.paragraphs if p.text.strip())
+                except Exception:
+                    pass
+            elif ext in ('.txt', '.md'):
+                try:
+                    extracted_text = file_obj.read().decode('utf-8', errors='ignore')
+                except Exception:
+                    pass
+        elif raw_text:
+            extracted_text = raw_text
+
+        if extracted_text:
+            project.custom_guideline_extracted = extracted_text[:20000]
+            project.department_requirements = extracted_text[:5000]
+            project.guideline_preset = 'custom'
+        
+        project.save()
+        return Response(ReportProjectSerializer(project).data, status=status.HTTP_200_OK)
+
+
 # --- Source Documents & Pages Views ---
 
 class DocumentListUploadView(views.APIView):

@@ -10,3 +10,6 @@ pypdf>=4.0
 openai>=1.0
 requests>=2.31
 drf-spectacular>=0.28
+gunicorn>=21.2.0
+whitenoise>=6.6.0
+psycopg2-binary>=2.9.9

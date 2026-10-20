@@ -1,18 +1,18 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:16-alpine
-    container_name: log2def_db
-    restart: unless-stopped
     environment:
-      POSTGRES_DB: log2def
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${DB_NAME:-log2def}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-log2def}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,43 +21,24 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: log2def_backend
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      DJANGO_SECRET_KEY: dev-insecure-secret-key-change-in-production
-      DJANGO_DEBUG: "True"
-      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
-      DB_ENGINE: postgres
-      DB_NAME: log2def
-      DB_USER: postgres
-      DB_PASSWORD: postgrespassword
-      DB_HOST: db
-      DB_PORT: 5432
-      AI_PROVIDER: openai
-      AI_API_KEY: ""
-      AI_MODEL: gpt-4o-mini
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-insecure-local-dev-secret-key-log2def-2026}
+      - DJANGO_ALLOWED_HOSTS=*
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-log2def}
+      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - CORS_ALLOW_ALL_ORIGINS=True
+      - PORT=8000
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
-      - backend_media:/app/media
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: log2def_frontend
-    restart: unless-stopped
+      - ./backend/media:/app/media
     depends_on:
-      - backend
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000/api
-    ports:
-      - "3000:3000"
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
-  backend_media:
