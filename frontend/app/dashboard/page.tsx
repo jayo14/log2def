@@ -12,6 +12,13 @@ import {
   useUIStore,
 } from '@/lib/store';
 import { projectsApi } from '@/lib/api';
+import {
+  enqueueUploads,
+  getQueuedUploads,
+  processUploadQueue,
+  clearCompletedUploads,
+  QueuedUpload,
+} from '@/lib/offline-queue';
 import '@/app/dashboard.css';
 
 export default function DashboardPage() {
@@ -84,9 +91,11 @@ export default function DashboardPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
 
-  // Multi-file upload progress
+  // Multi-file upload progress & offline queue
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState('');
+  const [uploadQueue, setUploadQueue] = useState<QueuedUpload[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 
   // Speech rehearsal timer
   const [isSpeechTimerRunning, setIsSpeechTimerRunning] = useState(false);
@@ -221,7 +230,7 @@ export default function DashboardPage() {
     }
   }, [user]);
 
-  // Load active project details (logbook, report, defence, versions, slides, script)
+  // Load active project details (logbook, report, defence, versions, slides, script, upload queue)
   useEffect(() => {
     if (activeProject?.id) {
       fetchReport(activeProject.id).catch(() => null);
@@ -229,6 +238,7 @@ export default function DashboardPage() {
       storeFetchVersions(activeProject.id).catch(() => []);
       storeFetchSlides(activeProject.id).catch(() => []);
       storeFetchScript(activeProject.id).catch(() => '');
+      getQueuedUploads(activeProject.id).then(setUploadQueue).catch(() => []);
     }
   }, [activeProject?.id]);
 
@@ -472,37 +482,122 @@ export default function DashboardPage() {
     }
   };
 
-  // Handle Logbook File Upload
-  // Handle Multi-file Logbook Upload
+  // Auto-resume background upload queue
+  const runAutoResumeQueue = async () => {
+    if (!activeProject?.id || !navigator.onLine) return;
+    const items = await getQueuedUploads(activeProject.id);
+    const pending = items.filter((i) => i.status === 'pending' || i.status === 'failed');
+    if (pending.length === 0) {
+      setUploadQueue(items);
+      return;
+    }
+    setIsUploadingFiles(true);
+    setUploadProgress({ current: 0, total: pending.length });
+    setUploadStatusText(`Uploading & analyzing ${pending.length} logbook file${pending.length > 1 ? 's' : ''}...`);
+    try {
+      const result = await processUploadQueue(
+        async (pId, formData) => {
+          await storeUploadDocument(pId, formData);
+        },
+        activeProject.id,
+        (count) => {
+          setUploadProgress((prev) => ({
+            current: Math.min(prev.total, prev.current + count),
+            total: prev.total,
+          }));
+        }
+      );
+      if (result.processed > 0) {
+        await fetchActiveProject(activeProject.id);
+        setLogbookTab('docs');
+        triggerToast(`Uploaded and processed ${result.processed} logbook photo${result.processed > 1 ? 's' : ''}`);
+      }
+    } catch (err: any) {
+      triggerToast(err.message || 'Upload queue processing failed');
+    } finally {
+      setIsUploadingFiles(false);
+      setUploadStatusText('');
+      setUploadProgress({ current: 0, total: 0 });
+      if (activeProject?.id) {
+        const remaining = await getQueuedUploads(activeProject.id);
+        setUploadQueue(remaining);
+      }
+    }
+  };
+
+  // Auto-resume queue when network restores or SW triggers background sync
+  useEffect(() => {
+    if (!activeProject?.id) return;
+
+    const handleOnlineResume = () => {
+      runAutoResumeQueue();
+    };
+
+    const handleQueueUpdated = () => {
+      getQueuedUploads(activeProject.id).then(setUploadQueue).catch(() => []);
+    };
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SYNC_LOGBOOK_UPLOADS') {
+        runAutoResumeQueue();
+      }
+    };
+
+    window.addEventListener('online', handleOnlineResume);
+    window.addEventListener('log2def-upload-queue-updated', handleQueueUpdated);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnlineResume);
+      window.removeEventListener('log2def-upload-queue-updated', handleQueueUpdated);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+    };
+  }, [activeProject?.id]);
+
+  // Handle Multi-file Logbook Upload (up to 30 files, offline queued with auto-resume)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!activeProject?.id) {
       triggerToast('Create a report project first');
       return;
     }
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const rawFiles = e.target.files;
+    if (!rawFiles || rawFiles.length === 0) return;
 
-    setIsUploadingFiles(true);
-    setUploadStatusText(`Uploading & analyzing ${files.length} logbook file${files.length > 1 ? 's' : ''}...`);
+    let filesArray = Array.from(rawFiles);
+    if (filesArray.length > 30) {
+      triggerToast('Batch limit is 30 files. Uploading the first 30 photos.');
+      filesArray = filesArray.slice(0, 30);
+    }
+
+    if (e.target) e.target.value = '';
 
     try {
-      const formData = new FormData();
-      for (let i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
-      }
-      formData.append('file', files[0]);
+      await enqueueUploads(activeProject.id, filesArray);
+      const currentQueue = await getQueuedUploads(activeProject.id);
+      setUploadQueue(currentQueue);
 
-      await storeUploadDocument(activeProject.id, formData);
-      await fetchActiveProject(activeProject.id);
-      setLogbookTab('docs');
-      triggerToast(`${files.length} file${files.length > 1 ? 's' : ''} uploaded and analyzed`);
+      if (!navigator.onLine) {
+        triggerToast(`${filesArray.length} photo${filesArray.length > 1 ? 's' : ''} queued offline. Will upload automatically when back online.`);
+        return;
+      }
+
+      await runAutoResumeQueue();
     } catch (err: any) {
-      triggerToast(err.message || 'Upload failed');
-    } finally {
-      setIsUploadingFiles(false);
-      setUploadStatusText('');
-      if (e.target) e.target.value = '';
+      triggerToast(err.message || 'Failed to process files');
     }
+  };
+
+  // Clear completed upload queue items
+  const handleClearCompletedUploads = async () => {
+    if (!activeProject?.id) return;
+    await clearCompletedUploads(activeProject.id);
+    const updated = await getQueuedUploads(activeProject.id);
+    setUploadQueue(updated);
+    triggerToast('Cleared uploaded queue items');
   };
 
   // Delete Document
@@ -1207,7 +1302,7 @@ export default function DashboardPage() {
                 </span>
                 <b>Upload logbook pages & photos</b>
                 <span className="mut" style={{ fontSize: '13.5px' }}>
-                  Select multiple photos cover-to-cover (JPG, PNG, PDF, DOCX)
+                  Select up to 30 photos cover-to-cover (JPG, PNG, PDF, DOCX)
                 </span>
                 <input
                   type="file"
@@ -1220,9 +1315,61 @@ export default function DashboardPage() {
               </label>
 
               {isUploadingFiles && (
-                <div className="upload-loading-banner">
-                  <div className="spinner"></div>
-                  <span>{uploadStatusText}</span>
+                <div className="upload-loading-banner" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                    <div className="spinner"></div>
+                    <span style={{ fontWeight: 600 }}>{uploadStatusText}</span>
+                  </div>
+                  {uploadProgress.total > 0 && (
+                    <div className="upload-progress-container">
+                      <div className="upload-progress-track">
+                        <div
+                          className="upload-progress-fill"
+                          style={{
+                            width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginTop: '4px', opacity: 0.8 }}>
+                        <span>Progress: {uploadProgress.current} of {uploadProgress.total} files</span>
+                        <span>{Math.round((uploadProgress.current / uploadProgress.total) * 100)}%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Offline / Pending Upload Queue card */}
+              {!isUploadingFiles && uploadQueue.filter((q) => q.status === 'pending' || q.status === 'failed').length > 0 && (
+                <div className="upload-offline-queue-card">
+                  <div className="upload-offline-header">
+                    <span className="upload-badge">
+                      <span className="ms" style={{ color: isOffline ? '#f59e0b' : '#10b981', fontSize: '18px' }}>
+                        {isOffline ? 'cloud_off' : 'cloud_queue'}
+                      </span>
+                      {uploadQueue.filter((q) => q.status === 'pending' || q.status === 'failed').length} queued photo(s)
+                      {isOffline ? ' (Offline)' : ' ready to resume'}
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn s"
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        onClick={runAutoResumeQueue}
+                        disabled={isOffline}
+                      >
+                        Resume now
+                      </button>
+                      <button
+                        type="button"
+                        className="btn o s"
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        onClick={handleClearCompletedUploads}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
