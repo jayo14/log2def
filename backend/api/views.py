@@ -283,6 +283,9 @@ class DocumentListUploadView(views.APIView):
         if not file_list and not raw_text:
             return Response({"error": "Either an upload file or typed text must be provided."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if len(file_list) > 30:
+            return Response({"error": "Maximum of 30 files can be uploaded per batch."}, status=status.HTTP_400_BAD_REQUEST)
+
         created_docs = []
         if file_list:
             for file_obj in file_list:

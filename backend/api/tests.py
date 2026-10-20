@@ -184,6 +184,46 @@ class Log2DefBackendTests(TestCase):
         # Verify page status is either processed or manual_correction_needed without crash
         self.assertIn(pages[0].status, ['processed', 'manual_correction_needed'])
 
+    def test_bulk_upload_multiple_files_and_limit(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # 1. Bulk upload 3 images
+        img1 = Image.new('RGB', (100, 100), color=(255, 255, 255))
+        img_io1 = io.BytesIO()
+        img1.save(img_io1, format='PNG')
+        f1 = SimpleUploadedFile("page1.png", img_io1.getvalue(), content_type="image/png")
+
+        img2 = Image.new('RGB', (100, 100), color=(255, 255, 255))
+        img_io2 = io.BytesIO()
+        img2.save(img_io2, format='PNG')
+        f2 = SimpleUploadedFile("page2.png", img_io2.getvalue(), content_type="image/png")
+
+        img3 = Image.new('RGB', (100, 100), color=(255, 255, 255))
+        img_io3 = io.BytesIO()
+        img3.save(img_io3, format='PNG')
+        f3 = SimpleUploadedFile("page3.png", img_io3.getvalue(), content_type="image/png")
+
+        resp = self.client.post(
+            f'/api/projects/{self.project1.id}/documents/',
+            {'files': [f1, f2, f3]},
+            format='multipart'
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(resp.data), 3)
+
+        # 2. Rejection when exceeding 30 files
+        too_many_files = []
+        for i in range(31):
+            too_many_files.append(SimpleUploadedFile(f"file_{i}.png", img_io1.getvalue(), content_type="image/png"))
+
+        exceed_resp = self.client.post(
+            f'/api/projects/{self.project1.id}/documents/',
+            {'files': too_many_files},
+            format='multipart'
+        )
+        self.assertEqual(exceed_resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Maximum of 30 files", exceed_resp.data['error'])
+
     def test_report_generation_and_section_editing(self):
         # Add a verified logbook entry
         LogbookEntry.objects.create(
