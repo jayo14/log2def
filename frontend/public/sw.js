@@ -187,3 +187,16 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+// 5. Background Sync: Auto-resume pending logbook uploads when connectivity restores
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-logbook-uploads') {
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window' }).then((clientList) => {
+        for (const client of clientList) {
+          client.postMessage({ type: 'SYNC_LOGBOOK_UPLOADS' });
+        }
+      })
+    );
+  }
+});
