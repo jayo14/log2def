@@ -91,8 +91,10 @@ def run_ocr_on_image(image_path: str) -> tuple[str, float]:
     If OCR is not available, returns empty string and 0.0 confidence.
     """
     tesseract_bin = getattr(settings, 'TESSERACT_CMD', 'tesseract')
-    if not shutil.which(tesseract_bin):
+    resolved_tesseract = (tesseract_bin if os.path.isabs(tesseract_bin) and os.path.exists(tesseract_bin) else None) or shutil.which(tesseract_bin) or shutil.which('tesseract')
+    if not resolved_tesseract:
         return "", 0.0
+    tesseract_bin = resolved_tesseract
 
     try:
         # Preprocess image for OCR using Pillow

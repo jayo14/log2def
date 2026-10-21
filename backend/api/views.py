@@ -278,6 +278,13 @@ class GuidelineUploadView(views.APIView):
                 return Response({"detail": "File size exceeds the 15MB upload limit."}, status=status.HTTP_400_BAD_REQUEST)
             
             project.custom_guideline_file = file_obj
+            try:
+                from .storage import upload_object
+                file_obj.seek(0)
+                upload_object(key=f"guidelines/{file_obj.name}", body=file_obj.read(), content_type=getattr(file_obj, 'content_type', None))
+                file_obj.seek(0)
+            except Exception:
+                pass
             ext = os.path.splitext(file_obj.name)[1].lower()
 
             if ext == '.pdf':
@@ -366,6 +373,13 @@ class DocumentListUploadView(views.APIView):
                     file_size=file_obj.size,
                     status='uploaded'
                 )
+                try:
+                    from .storage import upload_object
+                    if doc.file and os.path.exists(doc.file.path):
+                        with open(doc.file.path, 'rb') as f:
+                            upload_object(key=doc.file.name, body=f.read())
+                except Exception:
+                    pass
                 process_source_document(doc.id)
                 doc.refresh_from_db()
                 created_docs.append(doc)

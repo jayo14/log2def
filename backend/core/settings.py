@@ -67,12 +67,31 @@ TEMPLATES = [
 WSGI_APPLICATION = 'core.wsgi.application'
 
 # Database configuration: support DATABASE_URL, PostgreSQL, and SQLite fallback
-DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
-DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').strip().lower()
+import sys
+
+is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate'])
+
+if is_migration_command:
+    DATABASE_URL = os.getenv('DATABASE_URL_UNPOOLED') or os.getenv('DATABASE_URL', '').strip()
+else:
+    DATABASE_URL = os.getenv('DATABASE_URL_POOLED') or os.getenv('DATABASE_URL', '').strip()
+
+DB_ENGINE = os.getenv('DB_ENGINE', 'postgres' if DATABASE_URL else 'sqlite').strip().lower()
 
 if DATABASE_URL:
     import urllib.parse as urlparse
     url = urlparse.urlparse(DATABASE_URL)
+    query_params = dict(urlparse.parse_qsl(url.query))
+    
+    db_options = {}
+    if 'sslmode' in query_params:
+        db_options['sslmode'] = query_params['sslmode']
+    elif 'neon.tech' in (url.hostname or ''):
+        db_options['sslmode'] = 'require'
+        
+    if 'channel_binding' in query_params:
+        db_options['channel_binding'] = query_params['channel_binding']
+
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -81,6 +100,7 @@ if DATABASE_URL:
             'PASSWORD': url.password or '',
             'HOST': url.hostname or '',
             'PORT': url.port or 5432,
+            'OPTIONS': db_options,
         }
     }
 elif DB_ENGINE == 'postgres' and os.getenv('DB_NAME'):
@@ -203,9 +223,10 @@ AI_BASE_URL = os.getenv('AI_BASE_URL', '')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', os.getenv('AI_API_KEY', ''))
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
 
-# External binary configuration
-LIBREOFFICE_PATH = os.getenv('LIBREOFFICE_PATH', 'libreoffice')
-TESSERACT_CMD = os.getenv('TESSERACT_CMD', 'tesseract')
+# External binary configuration (LibreOffice for PDF exports & Tesseract for OCR)
+import shutil
+LIBREOFFICE_PATH = os.getenv('LIBREOFFICE_PATH') or shutil.which('libreoffice') or '/usr/bin/libreoffice'
+TESSERACT_CMD = os.getenv('TESSERACT_CMD') or shutil.which('tesseract') or '/usr/bin/tesseract'
 
 # File Upload Limits (15MB)
 MAX_UPLOAD_SIZE_BYTES = 15 * 1024 * 1024
@@ -240,4 +261,12 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = os.getenv('DJANGO_SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1')
     if 'insecure' in SECRET_KEY:
         raise RuntimeError("DJANGO_SECRET_KEY must be configured with a secure secret in production mode.")
+
+# Neon Object Storage (S3-compatible) Configuration
+AWS_ENDPOINT_URL_S3 = os.getenv('AWS_ENDPOINT_URL_S3', '').strip()
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID', '').strip()
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', '').strip()
+AWS_REGION = os.getenv('AWS_REGION', 'eu-central-1').strip()
+S3_BUCKET = os.getenv('S3_BUCKET', 'assets').strip()
+
 

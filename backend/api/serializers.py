@@ -78,11 +78,22 @@ class ExtractedPageSerializer(serializers.ModelSerializer):
 
 class SourceDocumentSerializer(serializers.ModelSerializer):
     extracted_pages = ExtractedPageSerializer(many=True, read_only=True)
+    presigned_url = serializers.SerializerMethodField()
 
     class Meta:
         model = SourceDocument
         fields = '__all__'
-        read_only_fields = ('file_size', 'page_count', 'status', 'error_message', 'uploaded_at')
+        read_only_fields = ('file_size', 'page_count', 'status', 'error_message', 'uploaded_at', 'presigned_url')
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_presigned_url(self, obj):
+        if obj.file:
+            from .storage import get_presigned_url
+            try:
+                return get_presigned_url(obj.file.name)
+            except Exception:
+                return None
+        return None
 
 
 class LogbookEntrySerializer(serializers.ModelSerializer):

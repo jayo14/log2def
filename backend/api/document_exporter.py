@@ -288,6 +288,10 @@ def convert_docx_to_pdf(docx_path: str) -> str:
 
     out_dir = str(Path(docx_path).parent)
     libreoffice_bin = getattr(settings, 'LIBREOFFICE_PATH', 'libreoffice')
+    resolved_bin = (libreoffice_bin if os.path.isabs(libreoffice_bin) and os.path.exists(libreoffice_bin) else None) or shutil.which(libreoffice_bin) or shutil.which('libreoffice')
+    if not resolved_bin:
+        raise FileNotFoundError(f"LibreOffice executable not found at '{libreoffice_bin}' or in system PATH.")
+    libreoffice_bin = resolved_bin
 
     cmd = [
         libreoffice_bin,
