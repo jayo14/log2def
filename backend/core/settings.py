@@ -17,7 +17,10 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
+ALLOWED_HOSTS = os.getenv(
+    'DJANGO_ALLOWED_HOSTS',
+    'localhost,127.0.0.1,0.0.0.0,log2def.vercel.app,.vercel.app,.onrender.com,.railway.app,.fly.dev'
+).split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -248,6 +251,8 @@ else:
         'https://*.onrender.com',
         'https://*.railway.app',
         'https://*.fly.dev',
+        'https://log2def.vercel.app',
+        'https://*.vercel.app',
     ]
 
 # Security Hardening & Headers
