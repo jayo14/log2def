@@ -2338,7 +2338,7 @@ export default function DashboardPage() {
                   aria-selected={defenceTab === 'slides'}
                   onClick={() => setDefenceTab('slides')}
                 >
-                  Slides ({defenceSlides.length || 9})
+                  Slides ({defenceSlides.length})
                 </button>
                 <button
                   role="tab"
@@ -2696,41 +2696,13 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="slide-deck">
-                    {(defenceSlides.length > 0 ? defenceSlides : [
-                      {
-                        slide_number: 1,
-                        title: effectiveProject?.title || 'SIWES Technical Defence',
-                        subtitle: `${effectiveProject?.full_name || 'Student'} · ${effectiveProject?.matric_number || 'Matric'}`,
-                        bullets: [
-                          `Host: ${effectiveProject?.organization_name || 'Host Company'}`,
-                          `Department: ${effectiveProject?.department || 'Engineering'}`,
-                          `Institution: ${effectiveProject?.university_name || 'LASUSTECH'}`
-                        ],
-                        speaker_notes: 'Good day Chairman and panel. I am presenting my SIWES technical training report.'
-                      },
-                      {
-                        slide_number: 2,
-                        title: 'Organisation Profile',
-                        subtitle: 'Overview of Technical Operations',
-                        bullets: [
-                          `Company: ${effectiveProject?.organization_name || 'Host Company'}`,
-                          `Unit: ${effectiveProject?.placement_department || 'Operations'}`,
-                          `Core Mandate: ${effectiveProject?.organization_activities || 'Technical engineering operations'}`
-                        ],
-                        speaker_notes: 'The host organization provides critical industrial services where I was attached.'
-                      },
-                      {
-                        slide_number: 3,
-                        title: 'Core Technical Tasks',
-                        subtitle: 'Hands-on Activities Executed',
-                        bullets: [
-                          'Routine preventative maintenance on production equipment',
-                          'System diagnostics, calibration and multimeter testing',
-                          'Safety protocol adherence and workplace documentation'
-                        ],
-                        speaker_notes: 'Highlighting hands-on technical involvement and direct duties.'
-                      }
-                    ]).map((s: any, idx: number) => (
+                    {defenceSlides.length === 0 ? (
+                      <div className="card empty" style={{ marginBottom: '14px' }}>
+                        <div className="ico"><span className="ms" aria-hidden="true">slideshow</span></div>
+                        <h2>No slides yet</h2>
+                        <p>Generate your presentation slides from your report and logbook entries.</p>
+                      </div>
+                    ) : defenceSlides.map((s: any, idx: number) => (
                       <div className="slide-card" key={s.slide_number || idx}>
                         <div className="slide-card-header">
                           <span className="slide-num">SLIDE {s.slide_number || idx + 1}</span>
@@ -2839,16 +2811,15 @@ export default function DashboardPage() {
                     )}
                   </div>
 
-                  <div className="script-body">
-                    {defenceScript || (
-                      `Good day, Respected Chairman of the Defence Panel, SIWES Coordinator, Departmental Examiners, and colleagues.\n\n` +
-                      `I am ${effectiveProject?.full_name || 'the student'} (Matriculation Number: ${effectiveProject?.matric_number || 'STE/2021/0000'}), standing before you today to defend my SIWES technical training report conducted at ${effectiveProject?.organization_name || 'the host organization'}.\n\n` +
-                      `During my attachment in the ${effectiveProject?.placement_department || 'technical operations unit'}, I had the opportunity to bridge academic classroom theory in ${effectiveProject?.department || 'Engineering'} with direct industrial experience.\n\n` +
-                      `My daily responsibilities included hands-on routine maintenance, system diagnostics, and operating key tools including ${effectiveProject?.tools_used || 'standard testing equipment'}.\n\n` +
-                      `One major technical challenge I resolved was ${effectiveProject?.problems_encountered || 'identifying fault causes and performing corrective repairs'}. Using methodical troubleshooting, I isolated the issue, corrected the anomaly, and verified restored benchmarks with my supervisor.\n\n` +
-                      `In conclusion, the training has given me vital engineering competence, professional accountability, and industrial problem-solving instincts. Thank you, and I look forward to your questions.`
-                    )}
-                  </div>
+                  {defenceScript ? (
+                    <div className="script-body">{defenceScript}</div>
+                  ) : (
+                    <div className="card empty">
+                      <div className="ico"><span className="ms" aria-hidden="true">article</span></div>
+                      <h2>No script yet</h2>
+                      <p>Generate your oral presentation script from your report and logbook entries, then rehearse with the timer above.</p>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -3148,7 +3119,7 @@ export default function DashboardPage() {
           <div className="slideshow-modal" role="dialog" aria-modal="true" aria-label="Slideshow Projector">
             <div className="slideshow-topbar">
               <span style={{ fontSize: '14px', fontWeight: 700, color: '#55d6a2', letterSpacing: '0.05em' }}>
-                SLIDE {(slideshowIndex || 0) + 1} OF {defenceSlides.length || 3}
+                SLIDE {slideshowIndex + 1} OF {defenceSlides.length}
               </span>
               <div className="row" style={{ gap: '10px' }}>
                 <button
@@ -3178,19 +3149,7 @@ export default function DashboardPage() {
 
             <div className="slideshow-content">
               {(() => {
-                const currentSlide = (defenceSlides.length > 0 ? defenceSlides : [
-                  {
-                    slide_number: 1,
-                    title: effectiveProject?.title || 'SIWES Technical Defence',
-                    subtitle: `${effectiveProject?.full_name || 'Student'} · ${effectiveProject?.matric_number || 'Matric'}`,
-                    bullets: [
-                      `Host: ${effectiveProject?.organization_name || 'Host Company'}`,
-                      `Department: ${effectiveProject?.department || 'Engineering'}`,
-                      `Institution: ${effectiveProject?.university_name || 'LASUSTECH'}`
-                    ],
-                    speaker_notes: 'Good day Chairman and panel. I am presenting my SIWES technical training report.'
-                  }
-                ])[slideshowIndex] || {};
+                const currentSlide = defenceSlides[slideshowIndex] || {};
 
                 return (
                   <div>
@@ -3237,7 +3196,7 @@ export default function DashboardPage() {
               <button
                 className="btn s"
                 type="button"
-                disabled={slideshowIndex >= (defenceSlides.length || 3) - 1}
+                disabled={slideshowIndex >= defenceSlides.length - 1}
                 onClick={nextSlide}
               >
                 Next
