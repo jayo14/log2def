@@ -1193,7 +1193,7 @@ export default function DashboardPage() {
           id: 'level',
           label: 'Level',
           req: false,
-          sel: ['400 Level (Final Year SIWES)', '300 Level', 'Other'],
+          sel: ['400 Level (Final Year SIWES)', '300 Level', '200 Level', 'Other'],
         },
       ],
     },
