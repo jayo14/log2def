@@ -486,27 +486,16 @@ export default function DashboardPage() {
     if (report?.sections && report.sections.length > idx) {
       return report.sections[idx].content;
     }
-    const host = activeProject?.organization_name || 'your host organisation';
-    const name = activeProject?.full_name || (user?.first_name ? `${user.first_name} ${user.last_name}` : 'Student');
-    const verified = (activeProject?.logbook_entries || []).filter((e: any) => e.is_verified);
-
-    switch (idx) {
-      case 0:
-        return `<p><b>Preliminary pages</b></p><p>Title page, certification, dedication, acknowledgements and contents for ${name}’s SIWES report at ${host}.</p>`;
-      case 1:
-        return `<p><b>Chapter One: Introduction</b></p><p>This report presents the industrial training of ${name} at ${host}.</p>`;
-      case 2:
-        return `<p><b>Chapter Two: Company profile</b></p><p>${host} is the host organisation where the industrial training was completed.</p>`;
-      case 3:
-        return `<p><b>Chapter Three: Activities</b></p>${
-          verified.length > 0
-            ? verified.map((e: any) => `<p>Week ${e.week_number}: ${e.activity_summary || e.verified_text}</p>`).join('')
-            : '<p>Verify a logbook entry to build this chapter.</p>'
-        }`;
-      case 4:
-      default:
-        return `<p><b>Chapters Four and Five</b></p><p>Describe the technical challenges you met, how you handled them, and your recommendations.</p>`;
-    }
+    // No report generated yet — show clear prompt, not fake placeholder content
+    const chapterTitles = [
+      'Preliminary pages',
+      'Chapter One: Introduction',
+      'Chapter Two: Company Profile',
+      'Chapter Three: Training Activities',
+      'Chapters Four & Five: Challenges, Conclusion & Recommendations',
+    ];
+    const title = chapterTitles[idx] || `Chapter ${idx + 1}`;
+    return `<p style="color:#5f6761;font-style:italic;"><strong>${title}</strong> has not been generated yet. Use the <strong>Generate report</strong> button above to build all five chapters from your verified logbook entries.</p>`;
   };
 
   // Auto-resume background upload queue
@@ -977,7 +966,9 @@ export default function DashboardPage() {
     },
   ];
 
-  const questionsList = defenceQuestions.length > 0 ? defenceQuestions : fallbackQuestions;
+  const questionsList = defenceQuestions.length > 0
+    ? defenceQuestions
+    : (!activeProject ? fallbackQuestions : []);  // Only use mock fallback when in preview/no-project mode
   const categories = ['All', ...Array.from(new Set(questionsList.map((q: any) => q.category)))];
   const filteredQuestions = questionsList.filter(
     (q: any) => selectedCategory === 'All' || q.category === selectedCategory
@@ -2540,6 +2531,32 @@ export default function DashboardPage() {
               {/* 1. MOCK QUESTIONS SUBTAB */}
               {defenceTab === 'quiz' && (
                 <>
+                  {/* Empty state: no questions yet and real project loaded */}
+                  {questionsList.length === 0 && activeProject?.id && (
+                    <div className="card empty" style={{ marginBottom: '14px' }}>
+                      <div className="ico">
+                        <span className="ms" aria-hidden="true">quiz</span>
+                      </div>
+                      <h2>No questions yet</h2>
+                      <p>Generate AI-grounded oral defence questions tailored to your logbook and report.</p>
+                      <button
+                        className="btn w"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            triggerToast('Generating defence questions with AI...');
+                            await storeGenerateDefence(activeProject.id);
+                            triggerToast('Defence questions ready');
+                          } catch (err: any) {
+                            triggerToast(err.message || 'Failed to generate questions');
+                          }
+                        }}
+                      >
+                        <span className="ms" aria-hidden="true">auto_awesome</span>
+                        Generate questions
+                      </button>
+                    </div>
+                  )}
                   <div className="row sb" style={{ marginBottom: '14px', gap: '8px' }}>
                     <button
                       className="btn w"
