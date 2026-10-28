@@ -1461,6 +1461,17 @@ export default function DashboardPage() {
                     </button>
                   </div>
 
+                  {/* FAB: Start new report project */}
+                  <button
+                    className="home-fab"
+                    type="button"
+                    onClick={() => navigateTab('new')}
+                    aria-label="Start a new report project"
+                  >
+                    <span className="ms" aria-hidden="true">add</span>
+                    New report project
+                  </button>
+
                   {/* Up Next Section */}
                   <h2 className="sh">Up next</h2>
                   <div className="card" style={{ padding: '4px 16px' }}>
@@ -2970,7 +2981,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               home
             </span>
-            Home
+            <span className="tab-label">Home</span>
           </button>
           <button
             className="tab-btn"
@@ -2981,17 +2992,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               menu_book
             </span>
-            Logbook
-          </button>
-          <button
-            className="fab"
-            type="button"
-            aria-label="New report project"
-            onClick={() => navigateTab('new')}
-          >
-            <span className="ms" aria-hidden="true">
-              add
-            </span>
+            <span className="tab-label">Logbook</span>
           </button>
           <button
             className="tab-btn"
@@ -3002,7 +3003,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               description
             </span>
-            Report
+            <span className="tab-label">Report</span>
           </button>
           <button
             className="tab-btn"
@@ -3013,7 +3014,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               school
             </span>
-            Defence
+            <span className="tab-label">Defence</span>
           </button>
         </nav>
 
