@@ -20,6 +20,7 @@ import {
   QueuedUpload,
 } from '@/lib/offline-queue';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
+import Image from 'next/image';
 import '@/app/dashboard.css';
 
 export default function DashboardPage() {
@@ -1994,7 +1995,7 @@ export default function DashboardPage() {
                         }}
                       />
                     </div>
-                    <p className="hint">Edits are auto-saved. Click "Save snapshot" to preserve a reversion point.</p>
+                    <p className="hint">Edits are auto-saved. Click &ldquo;Save snapshot&rdquo; to preserve a reversion point.</p>
                   </>
                 )
               )}
@@ -2187,7 +2188,7 @@ export default function DashboardPage() {
                     ))
                   ) : (
                     <div className="card empty">
-                      <p>No snapshots yet. Click "Save snapshot" to record a milestone.</p>
+                      <p>No snapshots yet. Click &ldquo;Save snapshot&rdquo; to record a milestone.</p>
                     </div>
                   )}
                 </div>
@@ -3254,7 +3255,7 @@ export default function DashboardPage() {
                     <div className="pwa-install-card">
                       <div className="pwa-install-info">
                         <div className="pwa-install-icon">
-                          <img src="/icons/icon-72.png" alt="Log2Def" />
+                          <Image src="/icons/icon-72.png" alt="Log2Def" width={28} height={28} />
                         </div>
                         <div className="pwa-install-text">
                           <h4>
@@ -3325,7 +3326,7 @@ export default function DashboardPage() {
                 <div className="pwa-guide-sheet">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
                     <div className="pwa-install-icon" style={{ width: '44px', height: '44px' }}>
-                      <img src="/icons/icon-72.png" alt="Log2Def" style={{ width: '30px', height: '30px' }} />
+                      <Image src="/icons/icon-72.png" alt="Log2Def" width={30} height={30} />
                     </div>
                     <div>
                       <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
