@@ -23,8 +23,11 @@ export default function NewProjectWizard() {
     department: '',
     programme: '',
     level: '400',
-    // 2. Institution
-    university_name: 'Lagos State University of Science and Technology (LASUSTECH)',
+    // 2. Institution (prefilled from the university chosen at registration)
+    university_name:
+      user?.preferred_university === 'LASUSTECH'
+        ? 'Lagos State University of Science and Technology (LASUSTECH)'
+        : user?.preferred_university || 'Lagos State University of Science and Technology (LASUSTECH)',
     faculty_school: 'College of Applied Sciences and Technology',
     department_requirements: '',
     // 3. Placement
@@ -249,9 +252,9 @@ export default function NewProjectWizard() {
                   onChange={handleChange}
                   className="w-full px-3.5 py-2.5 rounded-md border border-border text-sm focus:outline-none focus:border-emerald-700 bg-white"
                 >
+                  <option value="200">200 Level</option>
                   <option value="300">300 Level</option>
                   <option value="400">400 Level (Final Year SIWES)</option>
-                  <option value="500">500 Level</option>
                 </select>
               </div>
             </div>
