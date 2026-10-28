@@ -70,12 +70,10 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      if (typeof window !== 'undefined' && university) {
-        localStorage.setItem('log2def_preferred_university', university);
-      }
       await register({
         full_name: fullName.trim(),
         email: email.trim(),
+        preferred_university: university,
         password,
         password_confirm: password,
       });

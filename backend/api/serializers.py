@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession
+    DefenceQuestion, DefenceSession, StudentProfile
 )
 
 
@@ -13,6 +13,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     username = serializers.CharField(required=False, allow_blank=True)
     email = serializers.EmailField(required=True)
     full_name = serializers.CharField(required=False, write_only=True, allow_blank=True)
+    preferred_university = serializers.CharField(
+        required=False, write_only=True, allow_blank=True,
+        help_text="University selected on the registration form, stored on the student profile"
+    )
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     password_confirm = serializers.CharField(write_only=True, required=True)
 
@@ -54,6 +58,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password_confirm')
+        preferred_university = validated_data.pop('preferred_university', '')
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data.get('email', ''),
@@ -61,13 +66,27 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             password=validated_data['password']
         )
+        if preferred_university:
+            StudentProfile.objects.create(
+                user=user, preferred_university=preferred_university
+            )
         return user
 
 
 class UserSerializer(serializers.ModelSerializer):
+    preferred_university = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name')
+        fields = (
+            'id', 'username', 'email', 'first_name', 'last_name',
+            'preferred_university'
+        )
+
+    @extend_schema_field(serializers.CharField(allow_blank=True))
+    def get_preferred_university(self, obj):
+        profile = getattr(obj, 'student_profile', None)
+        return profile.preferred_university if profile else ''
 
 
 class ExtractedPageSerializer(serializers.ModelSerializer):

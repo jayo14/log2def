@@ -6,6 +6,18 @@ import os
 import shutil
 from .security import get_safe_upload_filename
 
+
+class StudentProfile(models.Model):
+    """Extra student attributes that do not fit the stock Django User model."""
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='student_profile')
+    preferred_university = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Profile for {self.user.username}"
+
 class ReportProject(models.Model):
     STATUS_CHOICES = (
         ('draft', 'Draft'),

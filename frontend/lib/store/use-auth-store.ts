@@ -7,6 +7,7 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
+  preferred_university?: string;
 }
 
 interface AuthState {
