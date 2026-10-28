@@ -17,10 +17,21 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = os.getenv(
+raw_allowed_hosts = os.getenv(
     'DJANGO_ALLOWED_HOSTS',
-    'localhost,127.0.0.1,0.0.0.0,log2def.vercel.app,.vercel.app,.onrender.com,.railway.app,.fly.dev'
-).split(',')
+    '*' if DEBUG else 'localhost,127.0.0.1,0.0.0.0,log2def.vercel.app,.vercel.app,.onrender.com,.railway.app,.fly.dev'
+).strip()
+
+if raw_allowed_hosts == '*':
+    ALLOWED_HOSTS = ['*']
+else:
+    parsed_hosts = [h.strip() for h in raw_allowed_hosts.split(',') if h.strip()]
+    # Ensure critical production domains are always permitted even if envvar was incomplete
+    for default_domain in ['.vercel.app', 'log2def.vercel.app', '.onrender.com', 'localhost', '127.0.0.1']:
+        if default_domain not in parsed_hosts:
+            parsed_hosts.append(default_domain)
+    ALLOWED_HOSTS = parsed_hosts
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',

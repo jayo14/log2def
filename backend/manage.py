@@ -6,6 +6,13 @@ import sys
 
 def main():
     """Run administrative tasks."""
+    from pathlib import Path
+    from dotenv import load_dotenv
+
+    base_dir = Path(__file__).resolve().parent
+    load_dotenv(base_dir / '.env')
+    load_dotenv(base_dir.parent / '.env')
+
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
     try:
         from django.core.management import execute_from_command_line

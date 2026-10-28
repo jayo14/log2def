@@ -14,17 +14,25 @@ from .views import (
 )
 
 urlpatterns = [
-    # Auth & System
+    # Auth & System (support both with and without trailing slashes)
     path('auth/register/', RegisterView.as_view(), name='auth-register'),
+    path('auth/register', RegisterView.as_view()),
     path('auth/login/', LoginView.as_view(), name='auth-login'),
+    path('auth/login', LoginView.as_view()),
     path('auth/password-reset/', PasswordResetRequestView.as_view(), name='auth-password-reset'),
+    path('auth/password-reset', PasswordResetRequestView.as_view()),
     path('auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
+    path('auth/password-reset/confirm', PasswordResetConfirmView.as_view()),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='auth-token-refresh'),
+    path('auth/token/refresh', TokenRefreshView.as_view()),
     path('auth/me/', CurrentUserView.as_view(), name='auth-me'),
+    path('auth/me', CurrentUserView.as_view()),
     path('ai/status/', AIStatusView.as_view(), name='ai-status'),
+    path('ai/status', AIStatusView.as_view()),
 
     # Projects
     path('projects/', ProjectListCreateView.as_view(), name='project-list-create'),
+    path('projects', ProjectListCreateView.as_view()),
     path('projects/<int:pk>/', ProjectDetailView.as_view(), name='project-detail'),
     path('projects/<int:project_id>/upload-guideline/', GuidelineUploadView.as_view(), name='project-upload-guideline'),
 

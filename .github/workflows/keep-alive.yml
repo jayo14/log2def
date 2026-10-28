@@ -1,0 +1,25 @@
+name: Render Backend Keep-Alive
+
+on:
+  schedule:
+    # Runs every 10 minutes to prevent Render free-tier container from sleeping
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Health Endpoint
+        run: |
+          URL="${{ secrets.RENDER_BACKEND_URL }}"
+          if [ -z "$URL" ]; then
+            URL="https://log2def.onrender.com"
+          fi
+          HEALTH_URL="${URL%/}/health/"
+          echo "Pinging backend health endpoint: $HEALTH_URL"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$HEALTH_URL")
+          echo "HTTP Status Code: $STATUS"
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Notice: Response status was $STATUS (server might be starting up)."
+          fi

@@ -6,6 +6,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { Navbar } from "@/components/Navbar";
 import { GlobalToast } from "@/components/ui/toast";
 import { PWAManager } from "@/components/pwa-manager";
+import { ServerWarmupIndicator } from "@/components/server-warmup-indicator";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -204,6 +205,7 @@ export default function RootLayout({
           </Suspense>
           <main className="flex-1 flex flex-col">{children}</main>
           <GlobalToast />
+          <ServerWarmupIndicator />
         </AuthProvider>
       </body>
     </html>
