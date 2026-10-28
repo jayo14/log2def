@@ -2961,6 +2961,13 @@ export default function DashboardPage() {
 
         {/* Floating Bottom Tab Bar */}
         <nav className="tb" id="tb" aria-label="Main">
+          <span
+            className="tb-glide"
+            aria-hidden="true"
+            style={{
+              '--i': ['home', 'logbook', 'report', 'defence'].indexOf(currentTab),
+            } as React.CSSProperties}
+          />
           <button
             className="tab-btn"
             type="button"
