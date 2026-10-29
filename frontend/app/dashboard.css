@@ -736,6 +736,73 @@
   }
 }
 
+/* Liquid glass dock — interaction, a11y & fallbacks */
+
+/* Hover: quiet lift of the label without competing with the glide lens */
+.dashboard-root .tb a:not([aria-current='page']):hover,
+.dashboard-root .tb button.tab-btn:not([aria-current='page']):hover {
+  color: var(--ink);
+}
+
+/* Press: glass droplet squash */
+.dashboard-root .tb a:active .ms,
+.dashboard-root .tb button.tab-btn:active .ms {
+  transform: scale(0.86);
+  transition-duration: 0.1s;
+}
+
+/* Keyboard focus ring, readable on both glass body and mint lens */
+.dashboard-root .tb a:focus-visible,
+.dashboard-root .tb button.tab-btn:focus-visible {
+  outline: 2px solid var(--g);
+  outline-offset: -4px;
+  color: var(--g);
+}
+
+/* Graceful fallback when backdrop-filter is unsupported: opaque glass body
+   keeps the tab labels at full contrast instead of relying on blur */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .dashboard-root .tb {
+    background: linear-gradient(
+      168deg,
+      rgba(255, 253, 248, 0.97) 0%,
+      rgba(241, 247, 244, 0.95) 55%,
+      rgba(233, 242, 236, 0.97) 100%
+    );
+  }
+
+  .dashboard-root .tb .tb-glide::before {
+    background: linear-gradient(
+      150deg,
+      #e6f4ec 0%,
+      #cadee0 42%,
+      #d8ede2 72%,
+      #f7fbf8 100%
+    );
+  }
+}
+
+/* Honour reduced-motion: no glide spring, no sheen loop, no squash */
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-root .tb,
+  .dashboard-root .tb .ms,
+  .dashboard-root .tb .tab-label,
+  .dashboard-root .tb .tb-glide {
+    transition: none !important;
+  }
+
+  .dashboard-root .tb .tb-glide::after {
+    animation: none;
+  }
+
+  .dashboard-root .tb a:active .ms,
+  .dashboard-root .tb button.tab-btn:active .ms,
+  .dashboard-root .tb a[aria-current='page'] .ms,
+  .dashboard-root .tb button.tab-btn[aria-current='page'] .ms {
+    transform: none;
+  }
+}
+
 /* Home FAB button on home page */
 .dashboard-root .home-fab {
   width: 100%;
@@ -792,6 +859,51 @@
   background: var(--card);
   color: var(--ink);
   box-shadow: 0 2px 8px rgba(20, 32, 27, 0.12);
+}
+
+/* Never squeeze tab labels: wrap/scroll instead of shrinking to fit */
+.dashboard-root .seg button {
+  white-space: nowrap;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 519px) {
+  .dashboard-root .seg {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dashboard-root .seg::-webkit-scrollbar {
+    display: none;
+  }
+  .dashboard-root .seg button {
+    flex: none;
+  }
+}
+
+/* Utility strip: compact secondary actions (versions, export, voice, timer) */
+.dashboard-root .seg.tools {
+  margin-bottom: 14px;
+  padding: 3px;
+  border-radius: 12px;
+  gap: 2px;
+}
+
+.dashboard-root .seg.tools button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.dashboard-root .seg.tools button .ms {
+  font-size: 15px;
 }
 
 .dashboard-root .pills {

@@ -21,6 +21,7 @@ import {
 } from '@/lib/offline-queue';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import Image from 'next/image';
+import UtilityTabs from '@/components/UtilityTabs';
 import '@/app/dashboard.css';
 
 export default function DashboardPage() {
@@ -1597,7 +1598,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         className="btn s"
-                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        style={{ padding: '8px 14px', fontSize: '12.5px' }}
                         onClick={runAutoResumeQueue}
                         disabled={isOffline}
                       >
@@ -1606,7 +1607,7 @@ export default function DashboardPage() {
                       <button
                         type="button"
                         className="btn o s"
-                        style={{ padding: '4px 10px', fontSize: '12px' }}
+                        style={{ padding: '8px 14px', fontSize: '12.5px' }}
                         onClick={handleClearCompletedUploads}
                       >
                         Clear
@@ -1648,6 +1649,9 @@ export default function DashboardPage() {
                   aria-selected={logbookTab === 'entries'}
                   onClick={() => setLogbookTab('entries')}
                 >
+                  <span className="ms" style={{ fontSize: '16px', marginRight: '4px' }} aria-hidden="true">
+                    checklist
+                  </span>
                   Entries ({totalEntries})
                 </button>
                 <button
@@ -1656,6 +1660,9 @@ export default function DashboardPage() {
                   aria-selected={logbookTab === 'docs'}
                   onClick={() => setLogbookTab('docs')}
                 >
+                  <span className="ms" style={{ fontSize: '16px', marginRight: '4px' }} aria-hidden="true">
+                    folder
+                  </span>
                   Documents ({projectDocuments.length})
                 </button>
               </div>
@@ -1828,7 +1835,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   className="btn o s"
-                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                  style={{ padding: '8px 14px', fontSize: '12.5px' }}
                   onClick={() => {
                     setGuidelineInputUniversity(effectiveProject?.university_name || 'Lagos State University of Science and Technology (LASUSTECH)');
                     setGuidelineInputText(effectiveProject?.department_requirements || '');
@@ -1840,7 +1847,7 @@ export default function DashboardPage() {
                 </button>
               </div>
 
-              {/* Segmented Subtabs: Editor | Preview | Versions | Export */}
+              {/* Primary tabs: Editor | Academic Preview */}
               <div className="seg" role="tablist" aria-label="Report view">
                 <button
                   role="tab"
@@ -1848,6 +1855,9 @@ export default function DashboardPage() {
                   aria-selected={reportTab === 'editor'}
                   onClick={() => setReportTab('editor')}
                 >
+                  <span className="ms" style={{ fontSize: '16px', marginRight: '4px' }} aria-hidden="true">
+                    edit
+                  </span>
                   Editor
                 </button>
                 <button
@@ -1856,25 +1866,28 @@ export default function DashboardPage() {
                   aria-selected={reportTab === 'preview'}
                   onClick={() => setReportTab('preview')}
                 >
+                  <span className="ms" style={{ fontSize: '16px', marginRight: '4px' }} aria-hidden="true">
+                    visibility
+                  </span>
                   Academic Preview
                 </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={reportTab === 'versions'}
-                  onClick={() => setReportTab('versions')}
-                >
-                  Versions ({reportVersions.length})
-                </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={reportTab === 'export'}
-                  onClick={() => setReportTab('export')}
-                >
-                  Export
-                </button>
               </div>
+
+              {/* Secondary utilities: version history & export, kept out of the primary tabs */}
+              <UtilityTabs
+                ariaLabel="Report utilities"
+                items={[
+                  {
+                    key: 'versions',
+                    label: `Versions (${reportVersions.length})`,
+                    icon: 'history',
+                    ariaLabel: `Report versions, ${reportVersions.length} saved`,
+                  },
+                  { key: 'export', label: 'Export', icon: 'ios_share' },
+                ]}
+                activeKey={reportTab === 'versions' || reportTab === 'export' ? reportTab : null}
+                onSelect={(item) => setReportTab(item.key as 'versions' | 'export')}
+              />
 
               {/* 1. EDITOR VIEW */}
               {reportTab === 'editor' && (
@@ -2323,7 +2336,7 @@ export default function DashboardPage() {
                 <p>Rehearse with AI mock quizzes, presentation slides, and speech scripts.</p>
               </div>
 
-              {/* Defence Subtabs */}
+              {/* Primary tabs: Mock Questions | Slides */}
               <div className="seg" role="tablist" aria-label="Defence mode">
                 <button
                   role="tab"
@@ -2331,6 +2344,9 @@ export default function DashboardPage() {
                   aria-selected={defenceTab === 'quiz'}
                   onClick={() => setDefenceTab('quiz')}
                 >
+                  <span className="ms" style={{ fontSize: '16px', marginRight: '4px' }} aria-hidden="true">
+                    quiz
+                  </span>
                   Mock Questions ({questionsList.length})
                 </button>
                 <button
@@ -2339,34 +2355,43 @@ export default function DashboardPage() {
                   aria-selected={defenceTab === 'slides'}
                   onClick={() => setDefenceTab('slides')}
                 >
+                  <span className="ms" style={{ fontSize: '16px', marginRight: '4px' }} aria-hidden="true">
+                    co_present
+                  </span>
                   Slides ({defenceSlides.length})
                 </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={defenceTab === 'interview'}
-                  onClick={() => {
+              </div>
+
+              {/* Secondary utilities: live voice rehearsal & timed script reading */}
+              <UtilityTabs
+                ariaLabel="Defence utilities"
+                items={[
+                  {
+                    key: 'interview',
+                    label: 'Voice Q&A',
+                    icon: 'record_voice_over',
+                    ariaLabel: 'Live voice defence simulation',
+                  },
+                  {
+                    key: 'script',
+                    label: 'Script & Timer',
+                    icon: 'timer',
+                    ariaLabel: 'Oral speech script & rehearsal timer',
+                  },
+                ]}
+                activeKey={defenceTab === 'interview' || defenceTab === 'script' ? defenceTab : null}
+                onSelect={(item) => {
+                  if (item.key === 'interview') {
                     setDefenceTab('interview');
                     const q = questionsList[interviewQIdx] || questionsList[0];
                     if (q && !isVoiceMuted) {
                       setTimeout(() => speakVoice(q.question), 250);
                     }
-                  }}
-                >
-                  <span className="ms" style={{ fontSize: '15px', marginRight: '4px', verticalAlign: 'text-bottom' }}>
-                    record_voice_over
-                  </span>
-                  Voice Simulation
-                </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={defenceTab === 'script'}
-                  onClick={() => setDefenceTab('script')}
-                >
-                  Oral Script & Timer
-                </button>
-              </div>
+                    return;
+                  }
+                  setDefenceTab(item.key as 'script');
+                }}
+              />
 
               {/* LIVE VOICE DEFENCE SIMULATION SUBTAB */}
               {defenceTab === 'interview' && (
@@ -2409,7 +2434,7 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           className="btn o s"
-                          style={{ padding: '4px 10px', fontSize: '12px' }}
+                          style={{ padding: '8px 14px', fontSize: '12.5px' }}
                           onClick={() => speakVoice(questionsList[interviewQIdx]?.question)}
                           disabled={isSupervisorSpeaking}
                         >
@@ -3358,7 +3383,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       className={`btn s ${deviceOS === 'ios' ? '' : 'o'}`}
-                      style={{ padding: '4px 10px', fontSize: '11.5px', flex: 1 }}
+                      style={{ padding: '6px 10px', fontSize: '12px', flex: 1 }}
                       onClick={() => setDeviceOS('ios')}
                     >
                       iPhone / iPad
@@ -3366,7 +3391,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       className={`btn s ${deviceOS === 'android' ? '' : 'o'}`}
-                      style={{ padding: '4px 10px', fontSize: '11.5px', flex: 1 }}
+                      style={{ padding: '6px 10px', fontSize: '12px', flex: 1 }}
                       onClick={() => setDeviceOS('android')}
                     >
                       Android
@@ -3374,7 +3399,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       className={`btn s ${deviceOS === 'pc' ? '' : 'o'}`}
-                      style={{ padding: '4px 10px', fontSize: '11.5px', flex: 1 }}
+                      style={{ padding: '6px 10px', fontSize: '12px', flex: 1 }}
                       onClick={() => setDeviceOS('pc')}
                     >
                       PC / Mac

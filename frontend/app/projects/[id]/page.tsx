@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { projectsApi } from '@/lib/api';
 import { MaterialIcon } from '@/components/ui/material-icon';
+import UtilityTabs from '@/components/UtilityTabs';
 import { TiptapEditor } from '@/components/TiptapEditor';
 import {
   useProjectStore,
@@ -424,7 +425,7 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
               }`}
             >
               <MaterialIcon name="cloud_upload" size={16} />
-              <span>1. Sources & Logbook ({project.source_documents?.length || 0})</span>
+              <span>Sources & Logbook ({project.source_documents?.length || 0})</span>
             </button>
 
             <button
@@ -438,37 +439,25 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
               }`}
             >
               <MaterialIcon name="description" size={16} />
-              <span>2. Report Editor {report ? `(${report.sections?.length || 0} sections)` : ''}</span>
-            </button>
-
-            <button
-              role="tab"
-              aria-selected={activeTab === 'export'}
-              onClick={() => setActiveTab('export')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer ${
-                activeTab === 'export'
-                  ? 'bg-emerald-800 text-white font-semibold'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              <MaterialIcon name="download" size={16} />
-              <span>3. Document Export</span>
-            </button>
-
-            <button
-              role="tab"
-              aria-selected={activeTab === 'defence'}
-              onClick={() => setActiveTab('defence')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none cursor-pointer ${
-                activeTab === 'defence'
-                  ? 'bg-emerald-800 text-white font-semibold'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              <MaterialIcon name="school" size={16} />
-              <span>4. Defence Prep ({defenceQuestions.length})</span>
+              <span>Report Editor {report ? `(${report.sections?.length || 0} sections)` : ''}</span>
             </button>
           </div>
+
+          {/* Utility strip: secondary workspaces kept out of the primary tabs */}
+          <UtilityTabs
+            variant="workspace"
+            ariaLabel="Workspace utilities"
+            items={[
+              { key: 'export', label: 'Document Export', icon: 'download' },
+              {
+                key: 'defence',
+                label: `Defence Prep (${defenceQuestions.length})`,
+                icon: 'school',
+              },
+            ]}
+            activeKey={activeTab === 'export' || activeTab === 'defence' ? activeTab : null}
+            onSelect={(item) => setActiveTab(item.key as 'export' | 'defence')}
+          />
         </div>
       </div>
 
