@@ -58,6 +58,10 @@ def validate_file_content(file_obj) -> str:
     if any(header.startswith(sig) for sig in MAGIC_SIGNATURES['jpeg']):
         return 'image'
 
+    # Check WebP (RIFF....WEBP)
+    if header.startswith(b'RIFF') and len(header) >= 12 and header[8:12] == b'WEBP':
+        return 'image'
+
     # Check DOCX (Zip archive containing word/document.xml)
     if any(header.startswith(sig) for sig in MAGIC_SIGNATURES['docx']):
         try:
@@ -73,7 +77,7 @@ def validate_file_content(file_obj) -> str:
 
     ext = os.path.splitext(file_obj.name)[1].lower()
     raise ValidationError(
-        f"File content does not match allowed document types (PDF, JPG, PNG, DOCX). "
+        f"File content does not match allowed document types (PDF, JPG, PNG, WEBP, DOCX). "
         f"Detected signature does not validate for extension '{ext}'."
     )
 
