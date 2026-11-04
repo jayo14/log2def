@@ -7,6 +7,7 @@ import {
   useProjectStore,
   useReportStore,
 } from '@/lib/store';
+import { getApiBaseUrl } from '@/lib/api';
 import '@/app/dashboard.css';
 
 // Approved Design Constants: 5-Phase Wizard Flow
@@ -329,13 +330,21 @@ export default function DashboardPage() {
 
     if (activeProject.source_documents && activeProject.source_documents.length > 0) {
       setPages(
-        activeProject.source_documents.map((doc: any, i: number) => ({
-          id: doc.id,
-          n: doc.original_filename || `Page ${i + 1}`,
-          pdf: doc.file_type === 'pdf',
-          th: doc.file || '',
-          status: doc.status,
-        }))
+        activeProject.source_documents.map((doc: any, i: number) => {
+          let thumb = doc.presigned_url || '';
+          if (!thumb && doc.file) {
+            thumb = doc.file.startsWith('http')
+              ? doc.file
+              : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${doc.file.startsWith('/') ? '' : '/'}${doc.file}`;
+          }
+          return {
+            id: doc.id,
+            n: doc.original_filename || `Page ${i + 1}`,
+            pdf: doc.file_type === 'pdf',
+            th: thumb,
+            status: doc.status,
+          };
+        })
       );
     }
 
@@ -687,14 +696,14 @@ export default function DashboardPage() {
 
   const checkCompleteness = () => {
     return FLD.map(([key, label]) => {
-      const v = getVal(key);
+      const v = details[key] || '';
       const exists = Boolean(v && v.trim());
       const source =
         fieldSources[key] === 'logbook'
           ? 'your logbook'
-          : details[key]
-          ? 'your details'
-          : 'you added';
+          : fieldSources[key] === 'you added'
+          ? 'you added'
+          : 'your details';
       return { key, label, exists, source, value: v };
     });
   };
@@ -702,10 +711,58 @@ export default function DashboardPage() {
   const isStep4Invalid = () => {
     const items = checkCompleteness();
     const hasMissing = items.some((item) => !item.exists);
-    const st = getVal('start');
-    const en = getVal('end');
+    const st = details.start;
+    const en = details.end;
     const badDate = Boolean(st && en && en <= st);
     return hasMissing || badDate;
+  };
+
+  const handleConfirmField = async (key: string) => {
+    const val = (answers[key] ?? '').trim();
+    if (!val) {
+      showToast('Please enter a value before confirming');
+      return;
+    }
+
+    // Date validation
+    if (key === 'start') {
+      const en = details.end || answers.end;
+      if (en && en <= val) {
+        showToast('Start date must be before end date');
+        return;
+      }
+    }
+    if (key === 'end') {
+      const st = details.start || answers.start;
+      if (st && val <= st) {
+        showToast('End date must be after start date');
+        return;
+      }
+    }
+
+    setDetails((prev) => ({ ...prev, [key]: val }));
+    setFieldSources((prev) => ({ ...prev, [key]: 'you added' }));
+
+    if (activeProject?.id) {
+      try {
+        await updateMissingInfo(activeProject.id, { [key]: val }).catch(() => {});
+        const payload: Record<string, any> = {};
+        if (key === 'co') payload.organization_name = val;
+        if (key === 'addr') payload.organization_address = val;
+        if (key === 'start') payload.training_start_date = val;
+        if (key === 'end') payload.training_end_date = val;
+        if (key === 'matric') payload.matric_number = val;
+        if (key === 'dept') payload.department = val;
+        if (key === 'fac') payload.faculty_school = val;
+        if (key === 'inst') payload.university_name = val;
+        if (key === 'sup') payload.industry_supervisor_name = val;
+        if (key === 'isup') payload.institution_supervisor_name = val;
+        await updateActiveProject(activeProject.id, payload).catch(() => {});
+        showToast('Confirmed and saved');
+      } catch (err) {
+        console.warn('Could not save field to DB:', err);
+      }
+    }
   };
 
   // Step 3 Reading logic: fetches real logbook entries from PostgreSQL database
@@ -900,40 +957,65 @@ export default function DashboardPage() {
   // File uploads directly to Neon S3 storage bucket and DB
   const handleFilesAdded = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const newItems: LogPage[] = [];
 
-    showToast(`Uploading ${files.length} document(s)...`);
+    let projId = activeProject?.id;
+    if (!projId) {
+      try {
+        const list = await fetchProjects();
+        if (list && list.length > 0) {
+          projId = list[0].id;
+        } else {
+          const created = await createProject({
+            title: 'LASUSTECH SIWES Technical Report',
+            department: details.dept || 'Computer Science',
+            faculty_school: details.fac || 'College of Basic Science',
+            university_name: details.inst || 'Lagos State University of Science and Technology',
+          });
+          projId = created.id;
+        }
+      } catch (err) {
+        console.warn('Could not resolve active project for file upload:', err);
+      }
+    }
+
+    const count = files.length;
+    showToast(`Uploading ${count} logbook page${count > 1 ? 's' : ''}...`);
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const isPdf = f.type === 'application/pdf';
       const th = await generateThumbnail(f);
-      newItems.push({
-        n: f.name,
-        pdf: isPdf,
-        th,
-        file: f,
-      });
 
-      if (activeProject?.id) {
+      setPages((prev) => [
+        ...prev,
+        {
+          n: f.name,
+          pdf: isPdf,
+          th,
+          file: f,
+        },
+      ]);
+
+      if (projId) {
         const fd = new FormData();
         fd.append('file', f);
         fd.append('page_index', String(pages.length + i));
         try {
-          await uploadDocument(activeProject.id, fd);
+          await uploadDocument(projId, fd);
         } catch (err: any) {
-          showToast(err.message || 'Upload failed');
+          showToast(`Upload error: ${err.message || 'failed'}`);
         }
       }
     }
 
-    if (activeProject?.id) {
-      await fetchActiveProject(activeProject.id);
-      await fetchLogbookEntries(activeProject.id).catch(() => {});
-    } else {
-      setPages((prev) => [...prev, ...newItems]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (camInputRef.current) camInputRef.current.value = '';
+
+    if (projId) {
+      await fetchActiveProject(projId);
+      await fetchLogbookEntries(projId).catch(() => {});
     }
-    showToast('Upload complete!');
+    showToast('Logbook uploaded successfully!');
   };
 
   // In-app Camera
@@ -1042,18 +1124,38 @@ export default function DashboardPage() {
     c.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `camera_page_${Date.now()}.jpg`, { type: 'image/jpeg' });
-      if (activeProject?.id) {
-        showToast('Saving photo to logbook...');
+      let projId = activeProject?.id;
+      if (!projId) {
+        try {
+          const list = await fetchProjects();
+          if (list && list.length > 0) {
+            projId = list[0].id;
+          } else {
+            const created = await createProject({
+              title: 'LASUSTECH SIWES Technical Report',
+              department: details.dept || 'Computer Science',
+              faculty_school: details.fac || 'College of Basic Science',
+              university_name: details.inst || 'Lagos State University of Science and Technology',
+            });
+            projId = created.id;
+          }
+        } catch (e) {
+          console.error('Could not ensure active project:', e);
+        }
+      }
+
+      if (projId) {
+        showToast('Saving photo to database...');
         const fd = new FormData();
         fd.append('file', file);
         fd.append('page_index', String(retakeIndex >= 0 ? retakeIndex : pages.length));
         try {
-          await uploadDocument(activeProject.id, fd);
-          await fetchActiveProject(activeProject.id);
-          await fetchLogbookEntries(activeProject.id).catch(() => {});
-          showToast('Photo saved to logbook');
+          await uploadDocument(projId, fd);
+          await fetchActiveProject(projId);
+          await fetchLogbookEntries(projId).catch(() => {});
+          showToast('Captured page saved to cloud');
         } catch (err: any) {
-          showToast(err.message || 'Failed to save photo');
+          showToast(err.message || 'Failed to save captured page');
         }
       }
     }, 'image/jpeg', 0.85);
@@ -2830,8 +2932,8 @@ export default function DashboardPage() {
   const renderStep4 = () => {
     const items = checkCompleteness();
     const missing = items.filter((x) => !x.exists);
-    const st = getVal('start');
-    const en = getVal('end');
+    const st = details.start;
+    const en = details.end;
     const dateError = Boolean(st && en && en <= st);
 
     return (
@@ -2860,7 +2962,10 @@ export default function DashboardPage() {
                   <button
                     className="tx"
                     type="button"
-                    onClick={() => setActiveSheet({ type: 'editField', key: x.key, label: x.label })}
+                    onClick={() => {
+                      setAnswers((prev) => ({ ...prev, [x.key]: details[x.key] || '' }));
+                      setDetails((prev) => ({ ...prev, [x.key]: '' }));
+                    }}
                   >
                     Edit
                   </button>
@@ -2871,7 +2976,7 @@ export default function DashboardPage() {
             const isDate = x.key === 'start' || x.key === 'end';
             if (x.key === 'fac') {
               return (
-                <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
+                <div key={x.key} className="f" style={{ margin: '14px 0 16px' }}>
                   <label htmlFor={`a_${x.key}`}>
                     {x.label} <em aria-hidden="true">*</em>
                     <span className="chip w" style={{ marginLeft: '6px' }}>
@@ -2881,24 +2986,48 @@ export default function DashboardPage() {
                       Missing
                     </span>
                   </label>
-                  <select
-                    id={`a_${x.key}`}
-                    value={answers[x.key] || 'College of Basic Science'}
-                    onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
-                    required
-                  >
-                    {COLLEGES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      id={`a_${x.key}`}
+                      value={answers[x.key] || 'College of Basic Science'}
+                      onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
+                      style={{ flex: 1, minWidth: 0 }}
+                      required
+                    >
+                      {COLLEGES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn s"
+                      onClick={() => handleConfirmField(x.key)}
+                      style={{
+                        padding: '0 14px',
+                        height: '46px',
+                        borderRadius: '12px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        flexShrink: 0,
+                        background: 'var(--g)',
+                        color: '#fff',
+                      }}
+                      title="Save and confirm"
+                      aria-label={`Confirm and save ${x.label}`}
+                    >
+                      <span className="ms" style={{ fontSize: '20px' }}>check</span>
+                      <span>Save</span>
+                    </button>
+                  </div>
                 </div>
               );
             }
             if (x.key === 'inst') {
               return (
-                <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
+                <div key={x.key} className="f" style={{ margin: '14px 0 16px' }}>
                   <label htmlFor={`a_${x.key}`}>
                     {x.label} <em aria-hidden="true">*</em>
                     <span className="chip w" style={{ marginLeft: '6px' }}>
@@ -2908,23 +3037,47 @@ export default function DashboardPage() {
                       Missing
                     </span>
                   </label>
-                  <select
-                    id={`a_${x.key}`}
-                    value={answers[x.key] || 'Lagos State University of Science and Technology'}
-                    onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
-                    required
-                  >
-                    {INSTITUTIONS.map((instOption) => (
-                      <option key={instOption} value={instOption}>
-                        {instOption}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      id={`a_${x.key}`}
+                      value={answers[x.key] || 'Lagos State University of Science and Technology'}
+                      onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
+                      style={{ flex: 1, minWidth: 0 }}
+                      required
+                    >
+                      {INSTITUTIONS.map((instOption) => (
+                        <option key={instOption} value={instOption}>
+                          {instOption}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn s"
+                      onClick={() => handleConfirmField(x.key)}
+                      style={{
+                        padding: '0 14px',
+                        height: '46px',
+                        borderRadius: '12px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        flexShrink: 0,
+                        background: 'var(--g)',
+                        color: '#fff',
+                      }}
+                      title="Save and confirm"
+                      aria-label={`Confirm and save ${x.label}`}
+                    >
+                      <span className="ms" style={{ fontSize: '20px' }}>check</span>
+                      <span>Save</span>
+                    </button>
+                  </div>
                 </div>
               );
             }
             return (
-              <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
+              <div key={x.key} className="f" style={{ margin: '14px 0 16px' }}>
                 <label htmlFor={`a_${x.key}`}>
                   {x.label} <em aria-hidden="true">*</em>
                   <span className="chip w" style={{ marginLeft: '6px' }}>
@@ -2934,13 +3087,46 @@ export default function DashboardPage() {
                     Missing
                   </span>
                 </label>
-                <input
-                  id={`a_${x.key}`}
-                  type={isDate ? 'date' : 'text'}
-                  value={answers[x.key] || ''}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
-                  required
-                />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    id={`a_${x.key}`}
+                    type={isDate ? 'date' : 'text'}
+                    placeholder={isDate ? 'dd/mm/yyyy' : `Enter ${x.label.toLowerCase()}`}
+                    value={answers[x.key] || ''}
+                    onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleConfirmField(x.key);
+                      }
+                    }}
+                    style={{ flex: 1, minWidth: 0 }}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="btn s"
+                    disabled={!(answers[x.key]?.trim())}
+                    onClick={() => handleConfirmField(x.key)}
+                    style={{
+                      padding: '0 14px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      flexShrink: 0,
+                      opacity: !(answers[x.key]?.trim()) ? 0.45 : 1,
+                      background: 'var(--g)',
+                      color: '#fff',
+                    }}
+                    title="Confirm and save"
+                    aria-label={`Confirm and save ${x.label}`}
+                  >
+                    <span className="ms" style={{ fontSize: '20px' }}>check</span>
+                    <span>Save</span>
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -3215,17 +3401,22 @@ export default function DashboardPage() {
           id="c4"
           disabled={isStep4Invalid()}
           onClick={async () => {
-            Object.entries(answers).forEach(([k, v]) => {
-              if (v) setDetails((prev) => ({ ...prev, [k]: v }));
-            });
+            const updatedDetails = { ...details };
+            for (const [k, v] of Object.entries(answers)) {
+              if (v && v.trim() && !updatedDetails[k]) {
+                updatedDetails[k] = v.trim();
+              }
+            }
+            setDetails(updatedDetails);
             if (activeProject?.id) {
-              await updateMissingInfo(activeProject.id, answers).catch(() => {});
+              await updateMissingInfo(activeProject.id, updatedDetails).catch(() => {});
               await updateActiveProject(activeProject.id, {
-                organization_address: answers.addr || details.addr || undefined,
-                training_start_date: answers.start || details.start || undefined,
-                training_end_date: answers.end || details.end || undefined,
-                industry_supervisor_name: answers.sup || details.sup || undefined,
-                institution_supervisor_name: answers.isup || details.isup || undefined,
+                organization_name: updatedDetails.co || undefined,
+                organization_address: updatedDetails.addr || undefined,
+                training_start_date: updatedDetails.start || undefined,
+                training_end_date: updatedDetails.end || undefined,
+                industry_supervisor_name: updatedDetails.sup || undefined,
+                institution_supervisor_name: updatedDetails.isup || undefined,
               }).catch(() => {});
             }
             setStep(5);
