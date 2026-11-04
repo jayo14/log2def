@@ -93,8 +93,9 @@ export async function apiRequest<T = any>(
 
   if (!response.ok) {
     let errorDetail = `Request failed with status ${response.status}`;
+    let errJson: any = null;
     try {
-      const errJson = await response.json();
+      errJson = await response.json();
       if (errJson.error) {
         errorDetail = errJson.error;
       } else if (errJson.detail) {
@@ -119,7 +120,10 @@ export async function apiRequest<T = any>(
       // fallback to status text
       errorDetail = response.statusText || errorDetail;
     }
-    throw new Error(errorDetail);
+    const errObj: any = new Error(errorDetail);
+    errObj.status = response.status;
+    errObj.data = errJson;
+    throw errObj;
   }
 
   if (response.status === 204) {
@@ -338,13 +342,45 @@ export const projectsApi = {
     });
   },
 
-  // Document Export Download URLs
+  // Document Export Download URLs & Asynchronous Status
   getExportDocxUrl: (projectId: number | string) => {
     return `${getApiBaseUrl()}/projects/${projectId}/export/docx/`;
   },
 
   getExportPdfUrl: (projectId: number | string) => {
     return `${getApiBaseUrl()}/projects/${projectId}/export/pdf/`;
+  },
+
+  getExportStatus: async (projectId: number | string, format: 'pdf' | 'docx' = 'pdf', trigger: boolean = false) => {
+    return apiRequest<{
+      project_id: number;
+      format: string;
+      status: 'idle' | 'processing' | 'ready' | 'failed';
+      progress_percent: number;
+      download_url: string | null;
+      filename: string | null;
+      error: string | null;
+    }>(`/projects/${projectId}/export/status/?doc_format=${format}&trigger=${trigger}`);
+  },
+
+  downloadWithSignedUrl: async (downloadUrl: string, filename?: string) => {
+    const fullUrl = downloadUrl.startsWith('http') ? downloadUrl : `${getApiBaseUrl()}${downloadUrl.startsWith('/') ? '' : '/'}${downloadUrl}`;
+    const token = getAuthToken();
+    const res = await fetch(fullUrl, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'siwes_report';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
   },
 
   downloadDocx: async (projectId: number | string, filename: string = 'siwes_report.docx') => {
