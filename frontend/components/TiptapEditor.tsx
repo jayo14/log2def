@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import { TableKit } from '@tiptap/extension-table';
 import { MaterialIcon } from '@/components/ui/material-icon';
 
 interface TiptapEditorProps {
@@ -13,7 +14,7 @@ interface TiptapEditorProps {
 
 export function TiptapEditor({ content, onChange, editable = true }: TiptapEditorProps) {
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [StarterKit, TableKit],
     content: content || '',
     editable,
     immediatelyRender: false,
@@ -22,7 +23,7 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[350px] p-4 text-foreground font-serif leading-relaxed',
+        class: 'prose prose-sm max-w-none focus:outline-none min-h-[380px] p-4 text-foreground font-serif leading-relaxed text-justify',
       },
     },
   });
@@ -37,6 +38,8 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
   if (!editor) {
     return null;
   }
+
+  const isInTable = editor.isActive('table');
 
   return (
     <div className="border border-border rounded-lg bg-white overflow-hidden flex flex-col flex-1 shadow-2xs">
@@ -74,7 +77,7 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
           className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('heading', { level: 1 }) ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
-          title="Heading 1"
+          title="Chapter Heading (H1)"
           aria-label="Heading 1"
         >
           <MaterialIcon name="format_h1" size={18} />
@@ -86,7 +89,7 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
           className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('heading', { level: 2 }) ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
-          title="Heading 2"
+          title="Section Heading (H2)"
           aria-label="Heading 2"
         >
           <MaterialIcon name="format_h2" size={18} />
@@ -98,7 +101,7 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
           className={`p-1.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none ${
             editor.isActive('heading', { level: 3 }) ? 'bg-emerald-800 text-white' : 'text-zinc-700 hover:bg-zinc-200'
           }`}
-          title="Heading 3"
+          title="Subsection Heading (H3)"
           aria-label="Heading 3"
         >
           <MaterialIcon name="format_h3" size={18} />
@@ -154,6 +157,65 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
 
         <span className="w-px h-4 bg-zinc-300 mx-1" aria-hidden="true" />
 
+        {/* Table Management Commands */}
+        {!isInTable ? (
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+            className="p-1.5 rounded text-zinc-700 hover:bg-zinc-200 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors flex items-center gap-1 text-xs"
+            title="Insert Table (3x3)"
+            aria-label="Insert Table"
+          >
+            <MaterialIcon name="table_chart" size={18} />
+            <span className="hidden sm:inline font-sans text-xs">Table</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-1 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().addRowAfter().run()}
+              className="p-1 rounded text-emerald-900 hover:bg-emerald-200 text-xs font-sans"
+              title="Add Row Below"
+            >
+              +Row
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().addColumnAfter().run()}
+              className="p-1 rounded text-emerald-900 hover:bg-emerald-200 text-xs font-sans"
+              title="Add Column Right"
+            >
+              +Col
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().deleteRow().run()}
+              className="p-1 rounded text-red-700 hover:bg-red-100 text-xs font-sans"
+              title="Delete Row"
+            >
+              -Row
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().deleteColumn().run()}
+              className="p-1 rounded text-red-700 hover:bg-red-100 text-xs font-sans"
+              title="Delete Column"
+            >
+              -Col
+            </button>
+            <button
+              type="button"
+              onClick={() => editor.chain().focus().deleteTable().run()}
+              className="p-1 rounded text-red-700 hover:bg-red-100 text-xs font-sans"
+              title="Remove Table"
+            >
+              Del Table
+            </button>
+          </div>
+        )}
+
+        <span className="w-px h-4 bg-zinc-300 mx-1" aria-hidden="true" />
+
         <button
           type="button"
           onClick={() => editor.chain().focus().undo().run()}
@@ -178,7 +240,7 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
       </div>
 
       {/* Editor Content Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto bg-white">
         <EditorContent editor={editor} />
       </div>
     </div>
