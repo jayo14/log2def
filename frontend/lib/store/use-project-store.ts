@@ -19,6 +19,7 @@ export interface ProjectState {
   // Source documents & extracted pages
   uploadGuideline: (projectId: number | string, formData: FormData) => Promise<any>;
   uploadDocument: (projectId: number | string, formData: FormData) => Promise<any>;
+  reorderDocuments: (projectId: number | string, order: { id: number; page_index: number }[]) => Promise<any>;
   deleteDocument: (projectId: number | string, docId: number | string) => Promise<void>;
   reprocessDocument: (projectId: number | string, docId: number | string) => Promise<any>;
   updatePage: (projectId: number | string, pageId: number | string, data: any) => Promise<any>;
@@ -141,6 +142,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return doc;
     } catch (err: any) {
       set({ error: err.message || 'Failed to upload document' });
+      throw err;
+    }
+  },
+
+  reorderDocuments: async (projectId: number | string, order: { id: number; page_index: number }[]) => {
+    set({ error: null });
+    try {
+      const res = await projectsApi.reorderDocuments(projectId, order);
+      await get().fetchActiveProject(projectId);
+      return res;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to reorder documents' });
       throw err;
     }
   },

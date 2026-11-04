@@ -193,6 +193,13 @@ export const projectsApi = {
     });
   },
 
+  reorderDocuments: async (projectId: number | string, order: { id: number; page_index: number }[]) => {
+    return apiRequest(`/projects/${projectId}/documents/reorder/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ order }),
+    });
+  },
+
   deleteDocument: async (projectId: number | string, docId: number | string) => {
     return apiRequest(`/projects/${projectId}/documents/${docId}/`, {
       method: 'DELETE',

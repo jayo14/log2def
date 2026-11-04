@@ -18,8 +18,11 @@ import {
   getQueuedUploads,
   processUploadQueue,
   clearCompletedUploads,
+  reorderQueuedUploads,
+  removeQueuedUpload,
   QueuedUpload,
 } from '@/lib/offline-queue';
+import CameraCapture, { CapturedPage } from '@/components/CameraCapture';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import Image from 'next/image';
 import UtilityTabs from '@/components/UtilityTabs';
@@ -39,6 +42,7 @@ export default function DashboardPage() {
     createProject,
     uploadGuideline: storeUploadGuideline,
     uploadDocument: storeUploadDocument,
+    reorderDocuments: storeReorderDocuments,
     deleteDocument: storeDeleteDocument,
     reprocessDocument: storeReprocessDocument,
     updatePage: storeUpdatePage,
@@ -103,6 +107,7 @@ export default function DashboardPage() {
   const [uploadStatusText, setUploadStatusText] = useState('');
   const [uploadQueue, setUploadQueue] = useState<QueuedUpload[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
 
   // Speech rehearsal timer
   const [isSpeechTimerRunning, setIsSpeechTimerRunning] = useState(false);
@@ -459,6 +464,7 @@ export default function DashboardPage() {
   // Project progress computation derived from real data
   const projectEntries = effectiveProject?.logbook_entries || [];
   const projectDocuments = effectiveProject?.source_documents || [];
+  const sortedDocuments = [...projectDocuments].sort((a: any, b: any) => (a.page_index ?? 0) - (b.page_index ?? 0));
   const verifiedCount = projectEntries.filter((e: any) => e.is_verified).length;
   const totalEntries = projectEntries.length;
   const hasReport = !!(report || effectiveProject?.report);
@@ -540,11 +546,14 @@ export default function DashboardPage() {
           await storeUploadDocument(pId, formData);
         },
         activeProject.id,
-        (count) => {
-          setUploadProgress((prev) => ({
-            current: Math.min(prev.total, prev.current + count),
-            total: prev.total,
-          }));
+        {
+          maxConcurrency: 2,
+          onItemCompleted: () => {
+            setUploadProgress((prev) => ({
+              current: Math.min(prev.total, prev.current + 1),
+              total: prev.total,
+            }));
+          },
         }
       );
       if (result.processed > 0) {
@@ -638,6 +647,88 @@ export default function DashboardPage() {
     const updated = await getQueuedUploads(activeProject.id);
     setUploadQueue(updated);
     triggerToast('Cleared uploaded queue items');
+  };
+
+  // Camera capture complete handler
+  const handleCameraCaptureComplete = async (captured: CapturedPage[]) => {
+    setIsCameraOpen(false);
+    if (!activeProject?.id || captured.length === 0) return;
+
+    try {
+      setIsUploadingFiles(true);
+      setUploadStatusText(`Compressing and preparing ${captured.length} photo${captured.length > 1 ? 's' : ''}...`);
+
+      const blobs = captured.map((c) => c.blob);
+      const names = captured.map((c) => `${c.label.toLowerCase().replace(/\s+/g, '_')}.jpg`);
+
+      await enqueueUploads(activeProject.id, blobs, {
+        fileNames: names,
+      });
+
+      const currentQueue = await getQueuedUploads(activeProject.id);
+      setUploadQueue(currentQueue);
+
+      if (!navigator.onLine) {
+        triggerToast(`${captured.length} page${captured.length > 1 ? 's' : ''} saved offline. Will auto-upload when back online.`);
+        setIsUploadingFiles(false);
+        return;
+      }
+
+      await runAutoResumeQueue();
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to queue captured pages');
+      setIsUploadingFiles(false);
+    }
+  };
+
+  // Reorder Queued Upload Item
+  const handleReorderQueueItem = async (index: number, direction: 'up' | 'down') => {
+    if (!activeProject?.id) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= uploadQueue.length) return;
+
+    const newQueue = [...uploadQueue];
+    const temp = newQueue[index];
+    newQueue[index] = newQueue[targetIndex];
+    newQueue[targetIndex] = temp;
+
+    setUploadQueue(newQueue);
+    await reorderQueuedUploads(activeProject.id, newQueue.map((item) => item.id));
+    triggerToast('Queue order updated');
+  };
+
+  // Delete Queued Upload Item
+  const handleDeleteQueueItem = async (id: string) => {
+    await removeQueuedUpload(id);
+    if (activeProject?.id) {
+      const updated = await getQueuedUploads(activeProject.id);
+      setUploadQueue(updated);
+    }
+    triggerToast('Removed from queue');
+  };
+
+  // Reorder Uploaded Source Document
+  const handleReorderDoc = async (index: number, direction: 'up' | 'down') => {
+    if (!activeProject?.id) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= sortedDocuments.length) return;
+
+    const reordered = [...sortedDocuments];
+    const temp = reordered[index];
+    reordered[index] = reordered[targetIndex];
+    reordered[targetIndex] = temp;
+
+    const payload = reordered.map((doc: any, idx: number) => ({
+      id: doc.id,
+      page_index: idx,
+    }));
+
+    try {
+      await storeReorderDocuments(activeProject.id, payload);
+      triggerToast('Document pages reordered');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to reorder documents');
+    }
   };
 
   // Delete Document
@@ -1570,24 +1661,91 @@ export default function DashboardPage() {
                 <p>{effectiveProject?.organization_name || 'Upload handwritten notes & scans'}</p>
               </div>
 
-              {/* Upload Drop Area */}
-              <label className="up">
-                <span className="ms" aria-hidden="true">
-                  cloud_upload
+              {/* Upload & Camera Actions */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
+                <button
+                  type="button"
+                  className="card"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '18px 12px',
+                    textAlign: 'center',
+                    border: '1.5px dashed var(--b, #334155)',
+                    background: 'var(--card-bg, #0f172a)',
+                    cursor: 'pointer',
+                    borderRadius: '12px',
+                  }}
+                  onClick={() => setIsCameraOpen(true)}
+                >
+                  <span className="ms" style={{ fontSize: '32px', color: '#10b981', marginBottom: '6px' }} aria-hidden="true">
+                    photo_camera
+                  </span>
+                  <b style={{ fontSize: '14.5px' }}>Snap with Camera</b>
+                  <span className="mut" style={{ fontSize: '12px', marginTop: '2px' }}>
+                    Continuous rear-camera cover-to-end capture
+                  </span>
+                </button>
+
+                <label
+                  className="card"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '18px 12px',
+                    textAlign: 'center',
+                    border: '1.5px dashed var(--b, #334155)',
+                    background: 'var(--card-bg, #0f172a)',
+                    cursor: 'pointer',
+                    borderRadius: '12px',
+                    margin: 0,
+                  }}
+                >
+                  <span className="ms" style={{ fontSize: '32px', color: '#38bdf8', marginBottom: '6px' }} aria-hidden="true">
+                    cloud_upload
+                  </span>
+                  <b style={{ fontSize: '14.5px' }}>Upload Existing Files</b>
+                  <span className="mut" style={{ fontSize: '12px', marginTop: '2px' }}>
+                    Select JPG, PNG, WebP, PDF or DOCX
+                  </span>
+                  <input
+                    type="file"
+                    id="fi"
+                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,.docx"
+                    aria-label="Upload logbook pages"
+                    onChange={handleFileUpload}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+
+              {/* Formats & Low-Memory Guidance Notice */}
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: '10px',
+                  padding: '10px 14px',
+                  fontSize: '12px',
+                  color: 'var(--text-mut, #94a3b8)',
+                  marginBottom: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span className="ms" style={{ color: '#10b981', fontSize: '18px' }} aria-hidden="true">
+                  verified_user
                 </span>
-                <b>Upload logbook pages & photos</b>
-                <span className="mut" style={{ fontSize: '13.5px' }}>
-                  Select up to 30 photos cover-to-cover (JPG, PNG, PDF, DOCX)
+                <span>
+                  <strong>Mobile-Safe Ingestion:</strong> Formats: JPG, PNG, WebP, PDF, DOCX (Max 15MB each). Images are sequentially compressed client-side to preserve Android phone RAM.
                 </span>
-                <input
-                  type="file"
-                  id="fi"
-                  multiple
-                  accept=".pdf,.jpg,.jpeg,.png,.docx"
-                  aria-label="Upload logbook pages"
-                  onChange={handleFileUpload}
-                />
-              </label>
+              </div>
 
               {isUploadingFiles && (
                 <div className="upload-loading-banner" style={{ flexDirection: 'column', alignItems: 'flex-start' }}>
@@ -1614,36 +1772,111 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* Offline / Pending Upload Queue card */}
-              {!isUploadingFiles && uploadQueue.filter((q) => q.status === 'pending' || q.status === 'failed').length > 0 && (
-                <div className="upload-offline-queue-card">
-                  <div className="upload-offline-header">
+              {/* Offline / Pending Upload Queue card with Reordering */}
+              {!isUploadingFiles && uploadQueue.length > 0 && (
+                <div className="upload-offline-queue-card" style={{ marginBottom: '14px' }}>
+                  <div className="upload-offline-header" style={{ marginBottom: '8px' }}>
                     <span className="upload-badge">
                       <span className="ms" style={{ color: isOffline ? '#f59e0b' : '#10b981', fontSize: '18px' }}>
                         {isOffline ? 'cloud_off' : 'cloud_queue'}
                       </span>
-                      {uploadQueue.filter((q) => q.status === 'pending' || q.status === 'failed').length} queued photo(s)
-                      {isOffline ? ' (Offline)' : ' ready to resume'}
+                      {uploadQueue.filter((q) => q.status === 'pending' || q.status === 'failed').length} queued page(s)
+                      {isOffline ? ' (Saved Offline)' : ' ready to upload'}
                     </span>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
                         type="button"
                         className="btn s"
-                        style={{ padding: '8px 14px', fontSize: '12.5px' }}
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
                         onClick={runAutoResumeQueue}
                         disabled={isOffline}
                       >
-                        Resume now
+                        Resume Upload
                       </button>
                       <button
                         type="button"
                         className="btn o s"
-                        style={{ padding: '8px 14px', fontSize: '12.5px' }}
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
                         onClick={handleClearCompletedUploads}
                       >
                         Clear
                       </button>
                     </div>
+                  </div>
+
+                  {/* Queued Items List with Reordering */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '220px', overflowY: 'auto' }}>
+                    {uploadQueue.map((item, qIdx) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                          {item.thumbnailUrl ? (
+                            <img
+                              src={item.thumbnailUrl}
+                              alt={item.fileName}
+                              style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px' }}
+                            />
+                          ) : (
+                            <span className="ms" style={{ fontSize: '20px', color: '#94a3b8' }}>
+                              description
+                            </span>
+                          )}
+                          <div style={{ overflow: 'hidden' }}>
+                            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>{item.pageIndex === 0 ? 'Cover Page' : `Page ${item.pageIndex + 1}`}</span>
+                              <span style={{ fontSize: '10px', opacity: 0.7 }}>({item.fileName})</span>
+                            </div>
+                            {item.qualityWarning && (
+                              <div style={{ color: '#f59e0b', fontSize: '11px' }}>
+                                ⚠️ {item.qualityWarning}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <button
+                            type="button"
+                            className="ib"
+                            style={{ padding: '2px', minWidth: '24px', height: '24px' }}
+                            disabled={qIdx === 0}
+                            onClick={() => handleReorderQueueItem(qIdx, 'up')}
+                            title="Move Up"
+                          >
+                            <span className="ms" style={{ fontSize: '16px' }}>arrow_upward</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="ib"
+                            style={{ padding: '2px', minWidth: '24px', height: '24px' }}
+                            disabled={qIdx === uploadQueue.length - 1}
+                            onClick={() => handleReorderQueueItem(qIdx, 'down')}
+                            title="Move Down"
+                          >
+                            <span className="ms" style={{ fontSize: '16px' }}>arrow_downward</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="ib"
+                            style={{ padding: '2px', minWidth: '24px', height: '24px', color: '#ef4444' }}
+                            onClick={() => handleDeleteQueueItem(item.id)}
+                            title="Remove"
+                          >
+                            <span className="ms" style={{ fontSize: '16px' }}>close</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1753,23 +1986,59 @@ export default function DashboardPage() {
                   </div>
                 )
               ) : (
-                projectDocuments.length > 0 ? (
-                  projectDocuments.map((d: any, idx: number) => (
+                sortedDocuments.length > 0 ? (
+                  sortedDocuments.map((d: any, idx: number) => (
                     <div className="card" key={d.id || idx}>
-                      <div className="row sb">
-                        <b style={{ fontSize: '15px', wordBreak: 'break-all' }}>
-                          {d.filename || d.file_name || d.title || 'Document'}
-                        </b>
-                        {d.status === 'error' ? (
-                          <span className="chip w">
-                            <span className="ms" aria-hidden="true">
-                              warning
-                            </span>
-                            Check required
+                      <div className="row sb" style={{ alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#10b981',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            {idx === 0 ? 'Cover Page' : `Page ${idx + 1}`}
                           </span>
-                        ) : (
-                          <span className="chip">Extracted</span>
-                        )}
+                          <b style={{ fontSize: '15px', wordBreak: 'break-all' }}>
+                            {d.original_filename || d.filename || d.file_name || d.title || 'Document'}
+                          </b>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <button
+                            type="button"
+                            className="ib"
+                            style={{ padding: '2px', minWidth: '24px', height: '24px' }}
+                            disabled={idx === 0}
+                            onClick={() => handleReorderDoc(idx, 'up')}
+                            title="Move Page Earlier"
+                          >
+                            <span className="ms" style={{ fontSize: '16px' }}>arrow_upward</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="ib"
+                            style={{ padding: '2px', minWidth: '24px', height: '24px' }}
+                            disabled={idx === sortedDocuments.length - 1}
+                            onClick={() => handleReorderDoc(idx, 'down')}
+                            title="Move Page Later"
+                          >
+                            <span className="ms" style={{ fontSize: '16px' }}>arrow_downward</span>
+                          </button>
+                          {d.status === 'error' ? (
+                            <span className="chip w">
+                              <span className="ms" aria-hidden="true">
+                                warning
+                              </span>
+                              Check required
+                            </span>
+                          ) : (
+                            <span className="chip">Extracted</span>
+                          )}
+                        </div>
                       </div>
                       <div className="pg">
                         {d.extracted_pages?.[0]?.extracted_text ||
@@ -3900,6 +4169,15 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+        )}
+
+        {/* In-Browser Continuous Camera Capture Modal */}
+        {isCameraOpen && (
+          <CameraCapture
+            onCaptureComplete={handleCameraCaptureComplete}
+            onCancel={() => setIsCameraOpen(false)}
+            existingPageCount={sortedDocuments.length}
+          />
         )}
 
         {/* Local Toast Notification Pill */}
