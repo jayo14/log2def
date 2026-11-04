@@ -230,6 +230,139 @@ class Log2DefBackendTests(TestCase):
         self.assertEqual(exceed_resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Maximum of 30 files", exceed_resp.data['error'])
 
+    def test_document_upload_idempotency(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        img = Image.new('RGB', (100, 100), color=(200, 200, 200))
+        img_io = io.BytesIO()
+        img.save(img_io, format='PNG')
+
+        client_upload_id = "test-idempotent-uuid-999"
+        f1 = SimpleUploadedFile("cover.png", img_io.getvalue(), content_type="image/png")
+
+        # First upload attempt
+        resp1 = self.client.post(
+            f'/api/projects/{self.project1.id}/documents/',
+            {'file': f1, 'client_upload_id': client_upload_id, 'page_index': 0},
+            format='multipart'
+        )
+        self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
+        doc1_id = resp1.data['id']
+        self.assertEqual(resp1.data['client_upload_id'], client_upload_id)
+        self.assertEqual(resp1.data['page_index'], 0)
+
+        # Retry with identical client_upload_id (network retry / resume)
+        img_io.seek(0)
+        f2 = SimpleUploadedFile("cover.png", img_io.getvalue(), content_type="image/png")
+        resp2 = self.client.post(
+            f'/api/projects/{self.project1.id}/documents/',
+            {'file': f2, 'client_upload_id': client_upload_id, 'page_index': 0},
+            format='multipart'
+        )
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp2.data['id'], doc1_id)
+        # Verify no duplicate document was created
+        self.assertEqual(
+            self.project1.source_documents.filter(client_upload_id=client_upload_id).count(),
+            1
+        )
+
+    def test_document_reorder_endpoint(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        img = Image.new('RGB', (100, 100), color=(255, 255, 255))
+        img_io = io.BytesIO()
+        img.save(img_io, format='PNG')
+
+        doc1 = SourceDocument.objects.create(
+            project=self.project1,
+            original_filename="page_a.png",
+            file_type="image",
+            file_size=100,
+            page_index=0
+        )
+        doc2 = SourceDocument.objects.create(
+            project=self.project1,
+            original_filename="page_b.png",
+            file_type="image",
+            file_size=100,
+            page_index=1
+        )
+        doc3 = SourceDocument.objects.create(
+            project=self.project1,
+            original_filename="page_c.png",
+            file_type="image",
+            file_size=100,
+            page_index=2
+        )
+
+        reorder_payload = {
+            "order": [
+                {"id": doc1.id, "page_index": 2},
+                {"id": doc2.id, "page_index": 0},
+                {"id": doc3.id, "page_index": 1},
+            ]
+        }
+        reorder_resp = self.client.patch(
+            f'/api/projects/{self.project1.id}/documents/reorder/',
+            reorder_payload,
+            format='json'
+        )
+        self.assertEqual(reorder_resp.status_code, status.HTTP_200_OK)
+        doc1.refresh_from_db()
+        doc2.refresh_from_db()
+        doc3.refresh_from_db()
+        self.assertEqual(doc1.page_index, 2)
+        self.assertEqual(doc2.page_index, 0)
+        self.assertEqual(doc3.page_index, 1)
+
+    def test_document_webp_validation(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        webp_img = Image.new('RGB', (120, 120), color=(50, 100, 150))
+        webp_io = io.BytesIO()
+        webp_img.save(webp_io, format='WEBP')
+        webp_file = SimpleUploadedFile("logbook_scan.webp", webp_io.getvalue(), content_type="image/webp")
+
+        resp = self.client.post(
+            f'/api/projects/{self.project1.id}/documents/',
+            {'file': webp_file},
+            format='multipart'
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data['file_type'], 'image')
+
+    def test_document_ownership_enforcement(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        doc = SourceDocument.objects.create(
+            project=self.project1,
+            original_filename="user1_secret.png",
+            file_type="image",
+            file_size=100,
+            page_index=0
+        )
+
+        # Authenticate as user 2
+        login_resp = self.client.post('/api/auth/login/', {
+            'username': 'student2',
+            'password': 'StrongPassword123!'
+        })
+        token2 = login_resp.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token2}')
+
+        # User 2 tries to access User 1's project documents
+        resp_list = self.client.get(f'/api/projects/{self.project1.id}/documents/')
+        self.assertEqual(resp_list.status_code, status.HTTP_404_NOT_FOUND)
+
+        # User 2 tries to download User 1's document
+        resp_download = self.client.get(f'/api/projects/{self.project1.id}/documents/{doc.id}/download/')
+        self.assertEqual(resp_download.status_code, status.HTTP_404_NOT_FOUND)
+
+        # User 2 tries to reorder User 1's document
+        resp_reorder = self.client.patch(
+            f'/api/projects/{self.project1.id}/documents/reorder/',
+            {"order": [{"id": doc.id, "page_index": 5}]},
+            format='json'
+        )
+        self.assertEqual(resp_reorder.status_code, status.HTTP_404_NOT_FOUND)
+
     def test_report_generation_and_section_editing(self):
         # Add a verified logbook entry
         LogbookEntry.objects.create(
