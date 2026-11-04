@@ -336,6 +336,7 @@ class GuidelineUploadView(views.APIView):
 
 # --- Source Documents & Pages Views ---
 
+@require_feature_flag('logbook_bulk_upload')
 class DocumentListUploadView(views.APIView):
     permission_classes = (IsAuthenticated,)
     throttle_classes = (UploadRateThrottle,)
@@ -612,6 +613,7 @@ class ReportDetailView(views.APIView):
         return Response(ReportSerializer(project.report).data)
 
 
+@require_feature_flag('report_generation')
 class ReportGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
     throttle_classes = (HeavyGenerationRateThrottle,)
@@ -631,6 +633,7 @@ class ReportGenerateView(views.APIView):
         return Response(ReportSerializer(report).data)
 
 
+@require_feature_flag('report_editor')
 class SectionUpdateView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -677,6 +680,7 @@ class SectionRegenerateView(views.APIView):
 
 # --- Document Export Views ---
 
+@require_feature_flag('report_docx_export')
 class ExportDocxView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -709,6 +713,7 @@ class ExportDocxView(views.APIView):
         )
 
 
+@require_feature_flag('report_pdf_export')
 class ExportPdfView(views.APIView):
     permission_classes = (IsAuthenticated,)
     throttle_classes = (HeavyGenerationRateThrottle,)

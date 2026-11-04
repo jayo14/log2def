@@ -636,4 +636,22 @@ class Log2DefBackendTests(TestCase):
         finally:
             del os.environ['LOG2DEF_FLAG_DEFENCE_PREPARATION']
 
+    def test_core_mvp_flags_can_be_gated(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        with patch('api.feature_flags.is_feature_enabled', side_effect=lambda flag: False if flag == 'report_docx_export' else True):
+            docx_resp = self.client.get(f'/api/projects/{self.project1.id}/export/docx/')
+            self.assertEqual(docx_resp.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertIn("Feature 'report_docx_export' is disabled", str(docx_resp.data))
+
+        with patch('api.feature_flags.is_feature_enabled', side_effect=lambda flag: False if flag == 'report_pdf_export' else True):
+            pdf_resp = self.client.get(f'/api/projects/{self.project1.id}/export/pdf/')
+            self.assertEqual(pdf_resp.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertIn("Feature 'report_pdf_export' is disabled", str(pdf_resp.data))
+
+        with patch('api.feature_flags.is_feature_enabled', side_effect=lambda flag: False if flag == 'report_generation' else True):
+            gen_resp = self.client.post(f'/api/projects/{self.project1.id}/report/generate/', {})
+            self.assertEqual(gen_resp.status_code, status.HTTP_404_NOT_FOUND)
+            self.assertIn("Feature 'report_generation' is disabled", str(gen_resp.data))
+
 
