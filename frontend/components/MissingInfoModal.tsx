@@ -168,55 +168,116 @@ export default function MissingInfoModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="flex flex-col w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5"
+      style={{
+        backgroundColor: 'rgba(20, 32, 27, 0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90dvh]"
+        style={{
+          background: 'var(--card, #fffefb)',
+          border: '1px solid var(--line, #e6e2d7)',
+          color: 'var(--ink, #14201b)',
+          fontFamily: "'Manrope', system-ui, sans-serif",
+        }}
+      >
         {/* Header */}
-        <header className="px-6 py-4 border-b border-slate-800 bg-slate-950/70 flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="p-1 rounded bg-amber-500/20 text-amber-400">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+        <header
+          className="px-6 py-4 flex items-start justify-between border-b"
+          style={{
+            borderColor: 'var(--line, #e6e2d7)',
+            background: 'var(--paper, #f8f6f1)',
+          }}
+        >
+          <div className="flex items-start gap-3">
+            <span
+              className="w-10 h-10 rounded-2xl flex items-center justify-center flex-none"
+              style={{
+                background: targetKeys.length > 0 ? '#fbefd0' : 'var(--mint, #dcf0e7)',
+                color: targetKeys.length > 0 ? 'var(--amb, #8a5a00)' : 'var(--g, #066b4d)',
+              }}
+            >
+              <span className="ms" style={{ fontSize: '22px' }}>
+                {targetKeys.length > 0 ? 'warning' : 'check_circle'}
               </span>
-              <h2 className="text-base font-semibold text-slate-100">
-                Essential Information Needed
+            </span>
+            <div>
+              <h2
+                style={{
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontSize: '18px',
+                  fontWeight: 600,
+                  margin: 0,
+                  color: 'var(--ink, #14201b)',
+                }}
+              >
+                {targetKeys.length > 0 ? 'Complete Missing Information' : 'Information Complete'}
               </h2>
+              <p style={{ fontSize: '12.5px', color: 'var(--mut, #5f6761)', margin: '3px 0 0' }}>
+                {targetKeys.length > 0
+                  ? `Only ${targetKeys.length} required field${targetKeys.length === 1 ? '' : 's'} needed for your LASUSTECH report.`
+                  : 'All essential information has been verified from your logbook.'}
+              </p>
             </div>
-            <p className="mt-1 text-xs text-slate-400">
-              Only {targetKeys.length} question{targetKeys.length === 1 ? '' : 's'} to unlock your technical report. No big profile forms.
-            </p>
           </div>
+
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800"
+            className="w-9 h-9 rounded-full flex items-center justify-center hover:opacity-80 transition"
+            style={{
+              background: 'transparent',
+              color: 'var(--mut, #5f6761)',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+            aria-label="Close"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <span className="ms" style={{ fontSize: '20px' }}>close</span>
           </button>
         </header>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 overflow-y-auto space-y-4" style={{ flex: 1 }}>
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs">
-              {errorMessage}
+            <div
+              className="p-3 rounded-2xl text-xs flex items-center gap-2"
+              style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c' }}
+            >
+              <span className="ms" style={{ fontSize: '18px' }}>error</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 
           {dateError && (
-            <div className="p-3 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs flex items-center gap-2">
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div
+              className="p-3 rounded-2xl text-xs flex items-center gap-2"
+              style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309' }}
+            >
+              <span className="ms" style={{ fontSize: '18px' }}>warning</span>
               <span>{dateError}</span>
             </div>
           )}
 
           {targetKeys.length === 0 ? (
-            <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-xs text-center">
-              All essential required fields are complete! You can generate your report right away.
+            <div
+              className="p-5 rounded-2xl text-center space-y-2"
+              style={{ background: 'var(--mint, #dcf0e7)', border: '1px solid rgba(6, 107, 77, 0.2)' }}
+            >
+              <span className="ms" style={{ fontSize: '32px', color: 'var(--g, #066b4d)' }}>
+                verified
+              </span>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--g, #066b4d)', margin: 0 }}>
+                All required details are in place!
+              </h3>
+              <p style={{ fontSize: '13px', color: 'var(--gd, #04513a)', margin: 0 }}>
+                You can generate your 12–15 page LASUSTECH technical report directly.
+              </p>
             </div>
           ) : (
             targetKeys.map((key) => {
@@ -227,21 +288,41 @@ export default function MissingInfoModal({
                 type: 'text',
               };
 
+              const isUnclear = uncertainKeys.includes(key);
+
               return (
-                <div key={key} className="space-y-1.5 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/80">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor={`field-${key}`} className="text-xs font-semibold text-slate-200">
+                <div
+                  key={key}
+                  className="p-3.5 rounded-2xl space-y-1.5"
+                  style={{
+                    background: 'var(--paper, #f8f6f1)',
+                    border: '1px solid var(--line, #e6e2d7)',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <label
+                      htmlFor={`field-${key}`}
+                      style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink, #14201b)' }}
+                    >
                       {meta.title}
+                      {missingKeys.includes(key) && (
+                        <span style={{ color: 'var(--red, #b42318)', marginLeft: '3px' }}>*</span>
+                      )}
                     </label>
-                    {uncertainKeys.includes(key) && (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {isUnclear && (
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                        style={{ background: '#fbefd0', color: 'var(--amb, #8a5a00)' }}
+                      >
                         Unclear in logbook
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-snug">
+
+                  <p style={{ fontSize: '11.5px', color: 'var(--mut, #5f6761)', margin: 0 }}>
                     {meta.subtitle}
                   </p>
+
                   <input
                     id={`field-${key}`}
                     type={meta.type || 'text'}
@@ -249,32 +330,63 @@ export default function MissingInfoModal({
                     onChange={(e) => handleInputChange(key, e.target.value)}
                     placeholder={meta.placeholder}
                     required={missingKeys.includes(key)}
-                    className="w-full bg-slate-900 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-lg px-3 py-2 text-xs text-slate-100 outline-none transition"
+                    style={{
+                      width: '100%',
+                      background: 'var(--card, #fffefb)',
+                      border: '1px solid var(--line, #e6e2d7)',
+                      borderRadius: '12px',
+                      padding: '10px 14px',
+                      fontSize: '13.5px',
+                      color: 'var(--ink, #14201b)',
+                      outline: 'none',
+                    }}
                   />
                 </div>
               );
             })
           )}
 
-          {/* Optional notice */}
-          <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800 text-[11px] text-slate-400">
-            💡 <strong>Note:</strong> Optional fields (such as workplace department unit and supervisor names) can stay blank and will never prevent you from generating your report.
+          {/* Gentle reminder */}
+          <div
+            className="p-3 rounded-2xl text-[12px] flex items-start gap-2"
+            style={{
+              background: 'rgba(6, 107, 77, 0.05)',
+              border: '1px solid rgba(6, 107, 77, 0.12)',
+              color: 'var(--mut, #5f6761)',
+            }}
+          >
+            <span className="ms" style={{ fontSize: '16px', color: 'var(--g, #066b4d)' }}>info</span>
+            <span>
+              Log2Def only asks for missing essentials. Optional fields (like company unit) may remain blank without blocking generation.
+            </span>
           </div>
 
-          {/* Footer Controls */}
-          <div className="flex items-center justify-end gap-3 pt-2">
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 pt-3">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white rounded-lg bg-slate-800 hover:bg-slate-700 transition"
+              className="px-5 py-2.5 rounded-full text-xs font-bold transition hover:opacity-80"
+              style={{
+                background: 'var(--card, #fffefb)',
+                border: '1px solid var(--line, #e6e2d7)',
+                color: 'var(--ink, #14201b)',
+                cursor: 'pointer',
+              }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || Boolean(dateError)}
-              className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-2 shadow-sm transition disabled:opacity-40"
+              className="px-6 py-2.5 rounded-full text-xs font-extrabold flex items-center gap-2 shadow-sm transition hover:opacity-90 disabled:opacity-40"
+              style={{
+                background: 'var(--g, #066b4d)',
+                color: '#fff',
+                border: 'none',
+                cursor: isSubmitting || Boolean(dateError) ? 'not-allowed' : 'pointer',
+              }}
             >
               {isSubmitting ? (
                 <>
@@ -282,7 +394,10 @@ export default function MissingInfoModal({
                   <span>Saving...</span>
                 </>
               ) : (
-                <span>Save & Continue</span>
+                <>
+                  <span className="ms" style={{ fontSize: '16px' }}>check</span>
+                  <span>Confirm Details</span>
+                </>
               )}
             </button>
           </div>
