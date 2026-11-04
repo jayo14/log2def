@@ -387,3 +387,10 @@ export const projectsApi = {
     );
   },
 };
+
+// Configuration & System Feature Flags API
+export const configApi = {
+  getFeatureFlags: async () => {
+    return apiRequest<Record<string, boolean>>('/config/flags/');
+  },
+};

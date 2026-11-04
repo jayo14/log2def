@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { projectsApi } from '../api';
+import { useFeatureFlags } from '../feature-flags';
 
 export interface DefenceState {
   questions: any[];
@@ -145,6 +146,10 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
     })),
 
   fetchQuestions: async (projectId: number | string) => {
+    if (!useFeatureFlags.getState().isEnabled('defence_preparation')) {
+      set({ questions: [], isLoadingQuestions: false, error: 'Defence preparation is disabled.' });
+      return [];
+    }
     set({ isLoadingQuestions: true, error: null });
     try {
       const data = await projectsApi.getDefenceQuestions(projectId);
@@ -157,6 +162,10 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
   },
 
   generateQuestions: async (projectId: number | string) => {
+    if (!useFeatureFlags.getState().isEnabled('defence_preparation')) {
+      set({ isGeneratingQuestions: false, error: 'Defence preparation is disabled.' });
+      return [];
+    }
     set({ isGeneratingQuestions: true, error: null });
     try {
       const res = await projectsApi.generateDefenceQuestions(projectId);
@@ -195,6 +204,10 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
   },
 
   fetchSlides: async (projectId: number | string) => {
+    if (!useFeatureFlags.getState().isEnabled('slide_generation')) {
+      set({ slides: [], isLoadingSlides: false, error: 'Slide generation is disabled.' });
+      return [];
+    }
     set({ isLoadingSlides: true, error: null });
     try {
       const data = await projectsApi.getDefenceSlides(projectId);
@@ -208,6 +221,10 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
   },
 
   regenerateSlides: async (projectId: number | string) => {
+    if (!useFeatureFlags.getState().isEnabled('slide_generation')) {
+      set({ isLoadingSlides: false, error: 'Slide generation is disabled.' });
+      return [];
+    }
     set({ isLoadingSlides: true, error: null });
     try {
       const data = await projectsApi.regenerateDefenceSlides(projectId);
@@ -221,6 +238,10 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
   },
 
   fetchScript: async (projectId: number | string) => {
+    if (!useFeatureFlags.getState().isEnabled('defence_preparation')) {
+      set({ script: '', isLoadingScript: false, error: 'Defence preparation is disabled.' });
+      return '';
+    }
     set({ isLoadingScript: true, error: null });
     try {
       const data = await projectsApi.getDefenceScript(projectId);
@@ -234,6 +255,10 @@ export const useDefenceStore = create<DefenceState>((set, get) => ({
   },
 
   regenerateScript: async (projectId: number | string) => {
+    if (!useFeatureFlags.getState().isEnabled('defence_preparation')) {
+      set({ isLoadingScript: false, error: 'Defence preparation is disabled.' });
+      return '';
+    }
     set({ isLoadingScript: true, error: null });
     try {
       const data = await projectsApi.regenerateDefenceScript(projectId);
