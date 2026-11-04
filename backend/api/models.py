@@ -127,12 +127,14 @@ class SourceDocument(models.Model):
     file_type = models.CharField(max_length=32, choices=TYPE_CHOICES)
     file_size = models.IntegerField(default=0)
     page_count = models.IntegerField(default=1)
+    page_index = models.IntegerField(default=0, db_index=True)
+    client_upload_id = models.CharField(max_length=128, blank=True, db_index=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='uploaded')
     error_message = models.TextField(blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['uploaded_at']
+        ordering = ['page_index', 'uploaded_at']
 
     def __str__(self):
         return f"{self.original_filename} ({self.file_type}) - Project {self.project_id}"
@@ -156,6 +158,7 @@ class ExtractedPage(models.Model):
 
     document = models.ForeignKey(SourceDocument, on_delete=models.CASCADE, related_name='extracted_pages')
     page_number = models.IntegerField(default=1)
+    page_index = models.IntegerField(default=0, db_index=True)
     extracted_text = models.TextField(blank=True)
     confidence_score = models.FloatField(default=1.0)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='processed')
