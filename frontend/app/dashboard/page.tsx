@@ -1207,7 +1207,7 @@ export default function DashboardPage() {
     const n = pages.length;
 
     return (
-      <div className="view" id="home-view">
+      <div className="view" id="home-view" suppressHydrationWarning>
         <header className="top">
           <span className="sp" />
           <span className="tt">Home</span>
@@ -1739,9 +1739,18 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // VIEW: SETTINGS
+  // VIEW: SETTINGS — ENHANCED UI
   // ==========================================
   const renderSettingsView = () => {
+    const studentName = details.name || 'John Samuel';
+    const initials = studentName
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'JS';
+
     return (
       <div className="view" id="settings-view">
         <header className="top">
@@ -1750,88 +1759,308 @@ export default function DashboardPage() {
           <span className="sp" />
         </header>
 
-        <div className="lg">
-          <h1>Settings</h1>
+        <div className="lg" style={{ paddingBottom: '12px' }}>
+          <h1>Settings &amp; Profile</h1>
         </div>
 
-        <div className="card">
-          <b>{details.name || 'John Samuel'}</b>
-          <p className="mut" style={{ fontSize: '14px' }}>
-            {user?.email || 'johnayobami77@proton.me'}
-          </p>
-        </div>
-
-        <div className="card">
-          <b>Institution</b>
-          <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
-            {details.inst || 'Lagos State University of Science and Technology'}
-          </p>
-          <b style={{ display: 'block', marginTop: '14px' }}>Faculty or College</b>
-          <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
-            {details.fac || 'College of Applied Sciences and Technology'}
-          </p>
-          <b style={{ display: 'block', marginTop: '14px' }}>Report template</b>
-          <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
-            LASUSTECH technical report, version 1
-          </p>
+        {/* 1. Student Profile Card */}
+        <div className="settings-profile">
+          <div className="settings-avatar" aria-hidden="true">
+            {initials}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: '17px', color: 'var(--fg)', lineHeight: 1.2 }}>
+              {studentName}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+              <span className="chip" style={{ fontSize: '11.5px', padding: '2px 8px' }}>
+                {details.matric || '240303010036'}
+              </span>
+              <span className="mut" style={{ fontSize: '12.5px', wordBreak: 'break-all' }}>
+                {user?.email || 'johnayobami77@proton.me'}
+              </span>
+            </div>
+          </div>
         </div>
 
         <button
           className="btn o w"
           type="button"
-          style={{ marginBottom: '12px' }}
-          onClick={() => {
-            if (typeof window !== 'undefined' && window.confirm('Clear all saved draft entries and start fresh?')) {
+          onClick={() => setActiveSheet({ type: 'editDetails' })}
+          style={{ marginBottom: '18px' }}
+        >
+          <span className="ms" aria-hidden="true">
+            edit
+          </span>
+          Edit Student Details
+        </button>
+
+        {/* 2. Academic & Institutional Affiliation */}
+        <div className="settings-group">
+          <div className="settings-group-title">Academic Affiliation</div>
+          <div className="settings-card">
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  account_balance
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Institution</div>
+                <div className="s-val">{details.inst || 'Lagos State University of Science and Technology'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  school
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Faculty or College</div>
+                <div className="s-val">{details.fac || 'College of Applied Sciences and Technology'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  science
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Department</div>
+                <div className="s-val">{details.dept || 'Computer Science'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  article
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Official SIWES Template</div>
+                <div className="s-val">LASUSTECH Technical Report (Version 1.0)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. SIWES Placement & Supervision */}
+        <div className="settings-group">
+          <div className="settings-group-title">SIWES Placement &amp; Supervision</div>
+          <div className="settings-card">
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  business
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Company / Organisation</div>
+                <div className="s-val">{details.co || 'Mika Labs'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  pin_drop
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Workplace Address</div>
+                <div className="s-val">{details.addr || 'Victoria Island, Lagos'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  engineering
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Attached Department / Unit</div>
+                <div className="s-val">{details.unit || 'Software Development'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  date_range
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Training Period</div>
+                <div className="s-val">
+                  {details.start || '2026-01-12'} to {details.end || '2026-11-04'}
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  badge
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Industry-based Supervisor</div>
+                <div className="s-val">{details.sup || 'Engr. D. Adeleke'}</div>
+              </div>
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  verified_user
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Institution-based Supervisor</div>
+                <div className="s-val">{details.isup || 'Dr. K. Balogun'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Service Pricing & Delivery Specs */}
+        <div className="settings-group">
+          <div className="settings-group-title">Report Services &amp; Pricing</div>
+          <div className="settings-card">
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  file_download
+                </span>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div className="s-label">Digital Download (PDF &amp; Word DOCX)</div>
+                <div className="s-val">NGN 2,000</div>
+              </div>
+              {hasPaidDigital && (
+                <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)' }}>
+                  Unlocked
+                </span>
+              )}
+            </div>
+
+            <div className="settings-row">
+              <div className="s-icon">
+                <span className="ms" aria-hidden="true">
+                  local_shipping
+                </span>
+              </div>
+              <div>
+                <div className="s-label">Printed &amp; Spiral Binding Delivery</div>
+                <div className="s-val">NGN 4,000 (LASUSTECH Campus drop-off)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Direct WhatsApp Support */}
+        <div className="settings-group">
+          <div className="settings-group-title">Direct SIWES Helpdesk</div>
+          <div className="settings-card" style={{ padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <span className="ms" style={{ color: '#25d366', fontSize: '26px' }}>
+                support_agent
+              </span>
+              <div>
+                <b style={{ fontSize: '15px' }}>Official WhatsApp Support</b>
+                <p className="mut" style={{ fontSize: '13px', margin: '2px 0 0' }}>
+                  Available for report inquiries, payments, and delivery follow-ups.
+                </p>
+              </div>
+            </div>
+            <a
+              href="https://wa.me/2348096044860?text=Hello%20Log2Def%20Support%2C%20I%20need%20assistance%20with%20my%20SIWES%20technical%20report"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-wa"
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            >
+              <span className="ms" aria-hidden="true">
+                chat
+              </span>
+              Chat on WhatsApp (+234 809 604 4860)
+            </a>
+          </div>
+        </div>
+
+        {/* 6. Storage & Account Actions */}
+        <div className="settings-group">
+          <div className="settings-group-title">Account &amp; Storage</div>
+          <button
+            className="btn o w"
+            type="button"
+            style={{ marginBottom: '10px' }}
+            onClick={() => {
+              if (typeof window !== 'undefined' && window.confirm('Clear all saved draft entries and start fresh?')) {
+                try {
+                  localStorage.removeItem('log2def_dashboard_state');
+                } catch {}
+                setDetails({
+                  name: userFullName,
+                  inst: 'Lagos State University of Science and Technology',
+                  fac: 'College of Applied Sciences and Technology',
+                  dept: '',
+                  matric: '',
+                  co: '',
+                  addr: '',
+                  unit: '',
+                  start: '',
+                  end: '',
+                  sup: '',
+                  isup: '',
+                });
+                setPages([]);
+                setEntries([]);
+                setAnswers({});
+                setFieldSources({});
+                setChapterEdits({});
+                setStep(1);
+                setGenState(0);
+                setInFlow(false);
+                setHasPaidDigital(false);
+                setPaymentSuccess(null);
+                showToast('Saved draft cleared');
+              }
+            }}
+          >
+            <span className="ms" aria-hidden="true">
+              restart_alt
+            </span>
+            Clear draft &amp; start over
+          </button>
+
+          <button
+            className="btn o w"
+            type="button"
+            onClick={() => {
+              showToast('Logged out');
               try {
                 localStorage.removeItem('log2def_dashboard_state');
               } catch {}
-              setDetails({
-                name: userFullName,
-                inst: 'Lagos State University of Science and Technology',
-                fac: 'College of Applied Sciences and Technology',
-                dept: '',
-                matric: '',
-                co: '',
-                addr: '',
-                unit: '',
-                start: '',
-                end: '',
-                sup: '',
-                isup: '',
-              });
-              setPages([]);
-              setEntries([]);
-              setAnswers({});
-              setFieldSources({});
-              setChapterEdits({});
-              setStep(1);
-              setGenState(0);
-              setInFlow(false);
-              setHasPaidDigital(false);
-              setPaymentSuccess(null);
-              showToast('Saved draft cleared');
-            }
-          }}
-        >
-          <span className="ms" aria-hidden="true">
-            restart_alt
-          </span>
-          Clear draft &amp; start over
-        </button>
+              logout();
+            }}
+          >
+            <span className="ms" aria-hidden="true">
+              logout
+            </span>
+            Log out
+          </button>
+        </div>
 
-        <button
-          className="btn o w"
-          type="button"
-          onClick={() => {
-            showToast('Logged out');
-            try {
-              localStorage.removeItem('log2def_dashboard_state');
-            } catch {}
-            logout();
-          }}
-        >
-          Log out
-        </button>
+        <p className="mut" style={{ textAlign: 'center', fontSize: '12px', marginTop: '20px', paddingBottom: '20px' }}>
+          Log2Def v1.2 · Built for LASUSTECH SIWES Students
+        </p>
       </div>
     );
   };
@@ -2635,8 +2864,8 @@ export default function DashboardPage() {
         <h1 className="wt" id="wh" tabIndex={-1}>
           Ready to generate
         </h1>
-        <p className="wd" style={{ marginBottom: '16px' }}>
-          We’ll compile your verified placement data into an institutional technical report:
+        <p className="wd" style={{ marginBottom: '16px', fontWeight: 600 }}>
+          We’ll use:
         </p>
 
         <div className="gen-checklist">
@@ -2649,7 +2878,7 @@ export default function DashboardPage() {
             </div>
             <div className="gi-content">
               <div className="gi-title">{n || 9} logbook pages read</div>
-              <div className="gi-desc">Cover to final page extracted & sequenced</div>
+              <div className="gi-desc">Cover to final page extracted &amp; sequenced</div>
             </div>
             <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
               check_circle
@@ -2682,7 +2911,7 @@ export default function DashboardPage() {
             <div className="gi-content">
               <div className="gi-title">Your details complete</div>
               <div className="gi-desc">
-                {details.name || 'John Samuel'} · {details.dept || 'Computer Engineering'}, {details.fac || 'College of Applied Sciences and Technology'}
+                {details.name || 'John Samuel'} · {details.matric || '240303010036'}, {details.dept || 'Computer Science'}
               </div>
             </div>
             <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
@@ -2699,7 +2928,7 @@ export default function DashboardPage() {
             </div>
             <div className="gi-content">
               <div className="gi-title">LASUSTECH technical report</div>
-              <div className="gi-desc">Approved institutional template (Version 1.0)</div>
+              <div className="gi-desc">Template version 1</div>
             </div>
             <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
               check_circle
@@ -2715,7 +2944,7 @@ export default function DashboardPage() {
             </div>
             <div className="gi-content">
               <div className="gi-title">Times New Roman 12pt</div>
-              <div className="gi-desc">1.5 spacing · Academic justification · 12–15 pages target</div>
+              <div className="gi-desc">1.5 spacing, 12–15 pages</div>
             </div>
             <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
               check_circle
@@ -3061,8 +3290,21 @@ export default function DashboardPage() {
     return null;
   };
 
+  if (!isHydrated) {
+    return (
+      <div className="dashboard-root" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <span className="ms" style={{ fontSize: '32px', color: 'var(--g)', animation: 'spin 1.2s linear infinite' }}>
+            sync
+          </span>
+          <p style={{ marginTop: '12px', fontSize: '14px', color: 'var(--mut)', fontWeight: 600 }}>Loading Log2Def…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="dashboard-root">
+    <div className="dashboard-root" suppressHydrationWarning>
       <div className={`app ${inFlow ? 'wz nt' : ''} ${isScrolled ? 'sc' : ''}`} id="app">
         {/* Main Viewport Container */}
         <div className="scr" id="scr" ref={scrRef} onScroll={handleScroll} tabIndex={-1}>
