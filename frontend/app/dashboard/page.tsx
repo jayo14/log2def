@@ -122,6 +122,7 @@ export default function DashboardPage() {
   const [currentTab, setCurrentTab] = useState<'home' | 'logbooks' | 'reports' | 'settings'>('home');
   const [inFlow, setInFlow] = useState<boolean>(false);
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
+  const [isHydrated, setIsHydrated] = useState<boolean>(false);
 
   // Logbook screen sub-view: 'pages' | 'report'
   const [logbookView, setLogbookView] = useState<'pages' | 'report'>('pages');
@@ -270,48 +271,372 @@ export default function DashboardPage() {
     if (activeProject) {
       setDetails((prev) => ({
         ...prev,
-        matric: activeProject.matric_number || prev.matric,
-        dept: activeProject.department || prev.dept,
-        fac: activeProject.faculty_school || prev.fac,
-        inst: activeProject.university_name || prev.inst,
-        co: activeProject.organization_name || prev.co,
-        addr: activeProject.organization_address || prev.addr,
-        start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : prev.start,
-        end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : prev.end,
-        sup: activeProject.industry_supervisor_name || prev.sup,
-        isup: activeProject.institution_supervisor_name || prev.isup,
+        matric: prev.matric || activeProject.matric_number || '',
+        dept: prev.dept || activeProject.department || '',
+        fac: prev.fac || activeProject.faculty_school || 'College of Applied Sciences and Technology',
+        inst: prev.inst || activeProject.university_name || 'Lagos State University of Science and Technology',
+        co: prev.co || activeProject.organization_name || '',
+        addr: prev.addr || activeProject.organization_address || '',
+        start: prev.start || (activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : ''),
+        end: prev.end || (activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : ''),
+        sup: prev.sup || activeProject.industry_supervisor_name || '',
+        isup: prev.isup || activeProject.institution_supervisor_name || '',
       }));
     }
   }, [activeProject]);
 
-  // Handle URL hash navigation (#home, #logbooks, #reports, #settings, #flow)
+  // 1. Initial hydration: restore state from localStorage and synchronize with URL parameters
   useEffect(() => {
-    const handleHash = () => {
-      const h = window.location.hash.replace('#/', '').replace('#', '');
-      if (h === 'report') {
-        setCurrentTab('logbooks');
-        setLogbookView('report');
-        setInFlow(false);
-      } else if (h === 'flow') {
-        setInFlow(true);
-      } else if (h === 'logbooks') {
-        setCurrentTab('logbooks');
-        setInFlow(false);
-      } else if (h === 'reports') {
-        setCurrentTab('reports');
-        setInFlow(false);
-      } else if (h === 'settings') {
-        setCurrentTab('settings');
-        setInFlow(false);
+    if (typeof window === 'undefined') return;
+
+    let restoredInFlow = false;
+    let restoredStep = 1;
+    let restoredTab: 'home' | 'logbooks' | 'reports' | 'settings' = 'home';
+    let restoredView: 'pages' | 'report' = 'pages';
+    let restoredGenState: 0 | 1 | 2 = 0;
+    let restoredCheckout: 'digital' | 'delivery' | null = null;
+    let restoredPaymentSuccess: any = null;
+
+    // A. Read saved state from localStorage
+    try {
+      const raw = localStorage.getItem('log2def_dashboard_state');
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.details && typeof saved.details === 'object') {
+          setDetails((prev) => ({
+            ...prev,
+            ...saved.details,
+            name: saved.details.name?.trim() || prev.name,
+          }));
+        }
+        if (saved.fieldSources) setFieldSources(saved.fieldSources);
+        if (saved.answers) setAnswers(saved.answers);
+        if (saved.method) setMethod(saved.method);
+        if (Array.isArray(saved.pages) && saved.pages.length > 0) {
+          setPages(saved.pages);
+        }
+        if (typeof saved.readDone === 'boolean') setReadDone(saved.readDone);
+        if (Array.isArray(saved.entries) && saved.entries.length > 0) {
+          setEntries(saved.entries);
+        }
+        if (typeof saved.step === 'number') restoredStep = saved.step;
+        if (typeof saved.inFlow === 'boolean') restoredInFlow = saved.inFlow;
+        if (saved.currentTab) restoredTab = saved.currentTab;
+        if (saved.logbookView) restoredView = saved.logbookView;
+        if (typeof saved.genState === 'number') restoredGenState = saved.genState;
+        if (saved.chapterEdits) setChapterEdits(saved.chapterEdits);
+        if (typeof saved.currentSectionIdx === 'number') setCurrentSectionIdx(saved.currentSectionIdx);
+        if (saved.editorTab) setEditorTab(saved.editorTab);
+        if (typeof saved.hasPaidDigital === 'boolean') setHasPaidDigital(saved.hasPaidDigital);
+        if (saved.paymentSuccess) restoredPaymentSuccess = saved.paymentSuccess;
+        if (saved.deliveryData) setDeliveryData((prev) => ({ ...prev, ...saved.deliveryData }));
+      }
+    } catch (e) {
+      console.warn('Could not read state from localStorage:', e);
+    }
+
+    // B. Parse URL parameters and hash to determine the active screen/phase
+    const searchParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.replace('#/', '').replace('#', '').toLowerCase();
+
+    const paramStep = searchParams.get('step');
+    const paramTab = searchParams.get('tab');
+    const paramView = searchParams.get('view');
+    const paramStatus = searchParams.get('status');
+    const paramCheckout = searchParams.get('checkout');
+
+    if (paramStep) {
+      if (paramStep === 'success' || paramStep === 'ready') {
+        restoredInFlow = true;
+        restoredStep = 5;
+        restoredGenState = 2;
       } else {
+        const s = parseInt(paramStep, 10);
+        if (s >= 1 && s <= 5) {
+          restoredStep = s;
+          restoredInFlow = true;
+        }
+      }
+    } else if (hash.startsWith('step-')) {
+      if (hash === 'step-success') {
+        restoredInFlow = true;
+        restoredStep = 5;
+        restoredGenState = 2;
+      } else {
+        const s = parseInt(hash.replace('step-', ''), 10);
+        if (s >= 1 && s <= 5) {
+          restoredStep = s;
+          restoredInFlow = true;
+        }
+      }
+    }
+
+    if (paramStatus === 'ready' || paramStatus === 'success' || hash === 'step-success' || hash === 'generated') {
+      restoredInFlow = true;
+      restoredStep = 5;
+      restoredGenState = 2;
+    }
+
+    if (paramTab === 'home' || hash === 'home' || hash === 'home-view') {
+      restoredTab = 'home';
+      restoredInFlow = false;
+    } else if (paramTab === 'reports' || hash === 'reports' || hash === 'reports-view') {
+      restoredTab = 'reports';
+      restoredInFlow = false;
+    } else if (paramTab === 'settings' || hash === 'settings' || hash === 'settings-view') {
+      restoredTab = 'settings';
+      restoredInFlow = false;
+    } else if (paramTab === 'logbooks' || hash === 'logbooks' || hash === 'logbook-pages' || hash === 'report' || hash === 'technical-report') {
+      restoredTab = 'logbooks';
+      restoredInFlow = false;
+      if (paramView === 'report' || hash === 'report' || hash === 'technical-report') {
+        restoredView = 'report';
+      } else {
+        restoredView = 'pages';
+      }
+    }
+
+    if (paramCheckout === 'digital' || hash === 'checkout-digital') {
+      restoredCheckout = 'digital';
+    } else if (paramCheckout === 'delivery' || hash === 'checkout-delivery') {
+      restoredCheckout = 'delivery';
+    }
+
+    if (paramStatus === 'paid' || hash === 'payment-success') {
+      if (!restoredPaymentSuccess) {
+        restoredPaymentSuccess = {
+          type: 'digital',
+          txRef: `L2D_PAID_${Date.now().toString().slice(-6)}`,
+        };
+      }
+    } else if (paramStatus === 'delivery-confirmed' || hash === 'delivery-success') {
+      if (!restoredPaymentSuccess) {
+        restoredPaymentSuccess = {
+          type: 'delivery',
+          txRef: `L2D_DEL_${Date.now().toString().slice(-6)}`,
+        };
+      }
+    }
+
+    setStep(restoredStep);
+    setInFlow(restoredInFlow);
+    setCurrentTab(restoredTab);
+    setLogbookView(restoredView);
+    setGenState(restoredGenState);
+    if (restoredCheckout) setCheckoutModal(restoredCheckout);
+    if (restoredPaymentSuccess) setPaymentSuccess(restoredPaymentSuccess);
+
+    setIsHydrated(true);
+  }, []);
+
+  // 2. Auto-save all state changes to localStorage so contents never clear upon refresh
+  useEffect(() => {
+    if (!isHydrated || typeof window === 'undefined') return;
+
+    const stateToSave = {
+      details,
+      fieldSources,
+      answers,
+      method,
+      pages: pages.map((p) => ({
+        n: p.n,
+        pdf: p.pdf,
+        th: p.th && p.th.length < 50000 ? p.th : '',
+        q: p.q,
+      })),
+      readDone,
+      entries,
+      step,
+      inFlow,
+      currentTab,
+      logbookView,
+      genState,
+      chapterEdits,
+      currentSectionIdx,
+      editorTab,
+      hasPaidDigital,
+      paymentSuccess,
+      deliveryData,
+    };
+
+    try {
+      localStorage.setItem('log2def_dashboard_state', JSON.stringify(stateToSave));
+    } catch {
+      try {
+        const lightweight = {
+          ...stateToSave,
+          pages: pages.map((p) => ({ n: p.n, pdf: p.pdf, q: p.q })),
+        };
+        localStorage.setItem('log2def_dashboard_state', JSON.stringify(lightweight));
+      } catch {
+        // storage quota full
+      }
+    }
+  }, [
+    isHydrated,
+    details,
+    fieldSources,
+    answers,
+    method,
+    pages,
+    readDone,
+    entries,
+    step,
+    inFlow,
+    currentTab,
+    logbookView,
+    genState,
+    chapterEdits,
+    currentSectionIdx,
+    editorTab,
+    hasPaidDigital,
+    paymentSuccess,
+    deliveryData,
+  ]);
+
+  // 3. Keep the URL search parameters and hash updated across all phases, screens, and modals
+  useEffect(() => {
+    if (!isHydrated || typeof window === 'undefined') return;
+
+    const path = window.location.pathname;
+    const params = new URLSearchParams();
+    let hash = '';
+
+    if (checkoutModal === 'digital') {
+      params.set('checkout', 'digital');
+      hash = '#checkout-digital';
+    } else if (checkoutModal === 'delivery') {
+      params.set('checkout', 'delivery');
+      hash = '#checkout-delivery';
+    } else if (paymentSuccess?.type === 'digital') {
+      params.set('status', 'paid');
+      hash = '#payment-success';
+    } else if (paymentSuccess?.type === 'delivery') {
+      params.set('status', 'delivery-confirmed');
+      hash = '#delivery-success';
+    } else if (inFlow) {
+      if (step === 5 && genState === 2) {
+        params.set('step', '5');
+        params.set('status', 'ready');
+        hash = '#step-success';
+      } else {
+        params.set('step', String(step));
+        hash = `#step-${step}`;
+      }
+    } else {
+      if (currentTab === 'logbooks') {
+        params.set('tab', 'logbooks');
+        if (logbookView === 'report') {
+          params.set('view', 'report');
+          hash = '#technical-report';
+        } else {
+          params.set('view', 'pages');
+          hash = '#logbook-pages';
+        }
+      } else if (currentTab === 'reports') {
+        params.set('tab', 'reports');
+        hash = '#reports-view';
+      } else if (currentTab === 'settings') {
+        params.set('tab', 'settings');
+        hash = '#settings-view';
+      } else {
+        params.set('tab', 'home');
+        hash = '#home-view';
+      }
+    }
+
+    const paramStr = params.toString();
+    const newUrl = `${path}${paramStr ? '?' + paramStr : ''}${hash}`;
+    const currentFull = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+
+    if (currentFull !== newUrl) {
+      window.history.replaceState({ tab: currentTab, step, inFlow, logbookView }, '', newUrl);
+    }
+  }, [
+    isHydrated,
+    inFlow,
+    step,
+    currentTab,
+    logbookView,
+    genState,
+    checkoutModal,
+    paymentSuccess,
+  ]);
+
+  // 4. Handle browser Back/Forward and manual hash navigation
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash.replace('#/', '').replace('#', '').toLowerCase();
+
+      const paramStep = searchParams.get('step');
+      const paramTab = searchParams.get('tab');
+      const paramView = searchParams.get('view');
+      const paramStatus = searchParams.get('status');
+      const paramCheckout = searchParams.get('checkout');
+
+      if (paramStep) {
+        if (paramStep === 'success' || paramStep === 'ready') {
+          setInFlow(true);
+          setStep(5);
+          setGenState(2);
+        } else {
+          const s = parseInt(paramStep, 10);
+          if (s >= 1 && s <= 5) {
+            setStep(s);
+            setInFlow(true);
+          }
+        }
+      } else if (hash.startsWith('step-')) {
+        if (hash === 'step-success') {
+          setInFlow(true);
+          setStep(5);
+          setGenState(2);
+        } else {
+          const s = parseInt(hash.replace('step-', ''), 10);
+          if (s >= 1 && s <= 5) {
+            setStep(s);
+            setInFlow(true);
+          }
+        }
+      }
+
+      if (hash === 'step-success' || hash === 'generated' || paramStatus === 'ready' || paramStatus === 'success') {
+        setInFlow(true);
+        setStep(5);
+        setGenState(2);
+      }
+
+      if (paramTab === 'home' || hash === 'home' || hash === 'home-view') {
         setCurrentTab('home');
         setInFlow(false);
+      } else if (paramTab === 'reports' || hash === 'reports' || hash === 'reports-view') {
+        setCurrentTab('reports');
+        setInFlow(false);
+      } else if (paramTab === 'settings' || hash === 'settings' || hash === 'settings-view') {
+        setCurrentTab('settings');
+        setInFlow(false);
+      } else if (paramTab === 'logbooks' || hash === 'logbooks' || hash === 'logbook-pages' || hash === 'report' || hash === 'technical-report') {
+        setCurrentTab('logbooks');
+        setInFlow(false);
+        setLogbookView(paramView === 'report' || hash === 'report' || hash === 'technical-report' ? 'report' : 'pages');
+      }
+
+      if (paramCheckout === 'digital' || hash === 'checkout-digital') {
+        setCheckoutModal('digital');
+      } else if (paramCheckout === 'delivery' || hash === 'checkout-delivery') {
+        setCheckoutModal('delivery');
+      } else {
+        setCheckoutModal(null);
       }
     };
 
-    handleHash();
-    window.addEventListener('hashchange', handleHash);
-    return () => window.removeEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
   }, []);
 
   // Update document title based on view
@@ -855,14 +1180,12 @@ export default function DashboardPage() {
   const switchTab = (tab: 'home' | 'logbooks' | 'reports' | 'settings') => {
     setCurrentTab(tab);
     setInFlow(false);
-    window.location.hash = `#/${tab}`;
     if (scrRef.current) scrRef.current.scrollTop = 0;
   };
 
   const goToFlow = (targetStep = 1) => {
     setStep(targetStep);
     setInFlow(true);
-    window.location.hash = '#/flow';
     if (scrRef.current) scrRef.current.scrollTop = 0;
   };
 
@@ -884,7 +1207,7 @@ export default function DashboardPage() {
     const n = pages.length;
 
     return (
-      <div className="view">
+      <div className="view" id="home-view">
         <header className="top">
           <span className="sp" />
           <span className="tt">Home</span>
@@ -1244,7 +1567,7 @@ export default function DashboardPage() {
     const st = !readDone ? (reading ? 'Reading' : 'Not read yet') : un ? `${un} to check` : 'Reviewed';
 
     return (
-      <div className="view">
+      <div className="view" id={logbookView === 'report' ? 'technical-report' : 'logbook-pages'}>
         <header className="top">
           <span className="sp" />
           <span className="tt">Logbooks</span>
@@ -1363,7 +1686,7 @@ export default function DashboardPage() {
     const layout = computeLayout();
 
     return (
-      <div className="view">
+      <div className="view" id="reports-view">
         <header className="top">
           <span className="sp" />
           <span className="tt">Reports</span>
@@ -1420,7 +1743,7 @@ export default function DashboardPage() {
   // ==========================================
   const renderSettingsView = () => {
     return (
-      <div className="view">
+      <div className="view" id="settings-view">
         <header className="top">
           <span className="sp" />
           <span className="tt">Settings</span>
@@ -1456,8 +1779,54 @@ export default function DashboardPage() {
         <button
           className="btn o w"
           type="button"
+          style={{ marginBottom: '12px' }}
+          onClick={() => {
+            if (typeof window !== 'undefined' && window.confirm('Clear all saved draft entries and start fresh?')) {
+              try {
+                localStorage.removeItem('log2def_dashboard_state');
+              } catch {}
+              setDetails({
+                name: userFullName,
+                inst: 'Lagos State University of Science and Technology',
+                fac: 'College of Applied Sciences and Technology',
+                dept: '',
+                matric: '',
+                co: '',
+                addr: '',
+                unit: '',
+                start: '',
+                end: '',
+                sup: '',
+                isup: '',
+              });
+              setPages([]);
+              setEntries([]);
+              setAnswers({});
+              setFieldSources({});
+              setChapterEdits({});
+              setStep(1);
+              setGenState(0);
+              setInFlow(false);
+              setHasPaidDigital(false);
+              setPaymentSuccess(null);
+              showToast('Saved draft cleared');
+            }
+          }}
+        >
+          <span className="ms" aria-hidden="true">
+            restart_alt
+          </span>
+          Clear draft &amp; start over
+        </button>
+
+        <button
+          className="btn o w"
+          type="button"
           onClick={() => {
             showToast('Logged out');
+            try {
+              localStorage.removeItem('log2def_dashboard_state');
+            } catch {}
             logout();
           }}
         >
@@ -1475,7 +1844,7 @@ export default function DashboardPage() {
 
     return (
       <form id="sf" noValidate onSubmit={handleStep1Submit}>
-        <div className="view">
+        <div className="view" id="step-1">
           <h1 className="wt" id="wh" tabIndex={-1}>
             {isPhotos ? 'Photos first' : 'Your details'}
           </h1>
@@ -1758,7 +2127,7 @@ export default function DashboardPage() {
     const n = pages.length;
 
     return (
-      <div className="view">
+      <div className="view" id="step-2">
         <h1 className="wt" id="wh" tabIndex={-1}>
           Your logbook
         </h1>
@@ -1881,7 +2250,7 @@ export default function DashboardPage() {
     if (reading) {
       const n = Math.max(pages.length, 1);
       return (
-        <div className="view">
+        <div className="view" id="step-3">
           <div className="card big">
             <div className="ok">
               <span className="ms" aria-hidden="true">
@@ -1920,7 +2289,7 @@ export default function DashboardPage() {
     const rest = entries.filter((e) => !(e.u && !e.ok));
 
     return (
-      <div className="view">
+      <div className="view" id="step-3">
         <h1 className="wt" id="wh" tabIndex={-1}>
           Check what we read
         </h1>
@@ -2044,7 +2413,7 @@ export default function DashboardPage() {
     const dateError = Boolean(st && en && en <= st);
 
     return (
-      <div className="view">
+      <div className="view" id="step-4">
         <h1 className="wt" id="wh" tabIndex={-1}>
           {missing.length ? 'Complete your details' : 'All details found'}
         </h1>
@@ -2175,7 +2544,7 @@ export default function DashboardPage() {
 
     if (genState === 1) {
       return (
-        <div className="view">
+        <div className="view" id="step-5">
           <h1 className="wt" id="wh" tabIndex={-1}>
             Building your report
           </h1>
@@ -2207,7 +2576,7 @@ export default function DashboardPage() {
 
     if (genState === 2) {
       return (
-        <div className="view">
+        <div className="view" id="step-success">
           <div className="card big">
             <div className="ok">
               <span className="ms" aria-hidden="true">
@@ -2228,7 +2597,6 @@ export default function DashboardPage() {
                   setInFlow(false);
                   setCurrentTab('logbooks');
                   setLogbookView('report');
-                  window.location.hash = '#/logbooks';
                   if (scrRef.current) scrRef.current.scrollTop = 0;
                 }}
               >
@@ -2243,7 +2611,7 @@ export default function DashboardPage() {
                 onClick={() => {
                   setInFlow(false);
                   setCurrentTab('home');
-                  window.location.hash = '#/home';
+                  if (scrRef.current) scrRef.current.scrollTop = 0;
                 }}
               >
                 Back to Dashboard
@@ -2255,7 +2623,7 @@ export default function DashboardPage() {
     }
 
     return (
-      <div className="view">
+      <div className="view" id="step-5">
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
           <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)', fontWeight: 800 }}>
             <span className="ms" style={{ fontSize: '16px' }} aria-hidden="true">
@@ -2472,7 +2840,6 @@ export default function DashboardPage() {
           setInFlow(false);
           setCurrentTab('logbooks');
           setLogbookView('report');
-          window.location.hash = '#/logbooks';
           if (scrRef.current) scrRef.current.scrollTop = 0;
         }}
         style={{ flex: 1 }}
@@ -2500,7 +2867,7 @@ export default function DashboardPage() {
             <label htmlFor="et">What your logbook says</label>
             <textarea
               id="et"
-              defaultValue={entry?.t}
+              value={entry?.t || ''}
               onChange={(e) => {
                 const val = e.target.value;
                 setEntries((prev) => {
@@ -2537,7 +2904,7 @@ export default function DashboardPage() {
               <select
                 id="fv"
                 aria-label={activeSheet.label}
-                defaultValue={getVal(activeSheet.key) || 'College of Applied Sciences and Technology'}
+                value={getVal(activeSheet.key) || 'College of Applied Sciences and Technology'}
                 onChange={(e) => {
                   const val = e.target.value.trim();
                   setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
@@ -2558,7 +2925,7 @@ export default function DashboardPage() {
               <select
                 id="fv"
                 aria-label={activeSheet.label}
-                defaultValue={
+                value={
                   getVal(activeSheet.key) === 'Lagos State University of Science and Technology'
                     ? 'Lagos State University of Science and Technology'
                     : 'Other'
@@ -2584,7 +2951,7 @@ export default function DashboardPage() {
                 id="fv"
                 aria-label={activeSheet.label}
                 type={isDate ? 'date' : 'text'}
-                defaultValue={getVal(activeSheet.key)}
+                value={getVal(activeSheet.key) || ''}
                 onChange={(e) => {
                   const val = e.target.value.trim();
                   setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
@@ -2622,7 +2989,7 @@ export default function DashboardPage() {
                   <label htmlFor={`d_${key}`}>{label}</label>
                   <select
                     id={`d_${key}`}
-                    defaultValue={details[key] || 'College of Applied Sciences and Technology'}
+                    value={details[key] || 'College of Applied Sciences and Technology'}
                     onChange={(e) => {
                       const val = e.target.value.trim();
                       setDetails((prev) => ({ ...prev, [key]: val }));
@@ -2643,7 +3010,7 @@ export default function DashboardPage() {
                   <label htmlFor={`d_${key}`}>{label}</label>
                   <select
                     id={`d_${key}`}
-                    defaultValue={
+                    value={
                       details[key] === 'Lagos State University of Science and Technology'
                         ? 'Lagos State University of Science and Technology'
                         : 'Other'
@@ -2668,7 +3035,7 @@ export default function DashboardPage() {
                 <input
                   id={`d_${key}`}
                   type={key === 'start' || key === 'end' ? 'date' : 'text'}
-                  defaultValue={details[key] || ''}
+                  value={details[key] || ''}
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     setDetails((prev) => ({ ...prev, [key]: val }));
@@ -2709,7 +3076,7 @@ export default function DashboardPage() {
                     type="button"
                     onClick={() => {
                       setInFlow(false);
-                      window.location.hash = '#/home';
+                      setCurrentTab('home');
                       showToast('Progress saved');
                     }}
                     aria-label="Save and close"
@@ -2897,7 +3264,7 @@ export default function DashboardPage() {
         {/* CHECKOUT MODAL 1: DIGITAL REPORT (NGN 2,000)             */}
         {/* ======================================================== */}
         {checkoutModal === 'digital' && (
-          <div id="layer">
+          <div id="checkout-digital">
             <div className="bd" onClick={() => !isProcessingPayment && setCheckoutModal(null)} />
             <div
               className="sht"
@@ -3020,7 +3387,7 @@ export default function DashboardPage() {
         {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 4000) */}
         {/* ======================================================== */}
         {checkoutModal === 'delivery' && (
-          <div id="layer">
+          <div id="checkout-delivery">
             <div className="bd" onClick={() => !isProcessingPayment && setCheckoutModal(null)} />
             <div
               className="sht"
@@ -3152,7 +3519,7 @@ export default function DashboardPage() {
         {/* PAYMENT SUCCESS SCREEN: DIGITAL (DOWNLOAD UNLOCKED)      */}
         {/* ======================================================== */}
         {paymentSuccess?.type === 'digital' && (
-          <div id="layer">
+          <div id="payment-success">
             <div className="bd" onClick={() => setPaymentSuccess(null)} />
             <div
               className="sht"
@@ -3221,7 +3588,7 @@ export default function DashboardPage() {
         {/* PAYMENT SUCCESS SCREEN: PHYSICAL DELIVERY CONFIRMED      */}
         {/* ======================================================== */}
         {paymentSuccess?.type === 'delivery' && (
-          <div id="layer">
+          <div id="delivery-success">
             <div className="bd" onClick={() => setPaymentSuccess(null)} />
             <div
               className="sht"
