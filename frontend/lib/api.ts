@@ -1,3 +1,33 @@
+export interface FieldCompleteness {
+  field: string;
+  label: string;
+  status: 'Found' | 'Missing' | 'Uncertain';
+  confidence: number;
+  value: any;
+  required: boolean;
+  provenance?: {
+    status: 'RECORDED' | 'INFERRED' | 'MISSING';
+    source_page_id?: number | null;
+    source_page_num?: number | null;
+    reasoning?: string | null;
+  };
+}
+
+export interface CompletenessResult {
+  is_complete: boolean;
+  can_generate: boolean;
+  overall_score: number;
+  missing_required_fields: string[];
+  uncertain_fields: string[];
+  field_status: Record<string, FieldCompleteness>;
+  blocking_reasons: string[];
+  date_validation: {
+    is_valid: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+}
+
 export function getApiBaseUrl(): string {
   // 1. If explicitly configured with a public URL, use it
   if (process.env.NEXT_PUBLIC_API_URL) {
@@ -248,6 +278,18 @@ export const projectsApi = {
     return apiRequest(`/projects/${projectId}/logbook-entries/bulk-verify/`, {
       method: 'POST',
       body: JSON.stringify({ entry_ids: entryIds }),
+    });
+  },
+
+  // Completeness & Missing Information
+  getCompleteness: async (projectId: number | string) => {
+    return apiRequest<CompletenessResult>(`/projects/${projectId}/completeness/`);
+  },
+
+  updateMissingInfo: async (projectId: number | string, data: Record<string, any>) => {
+    return apiRequest<{ success: boolean; message: string; project: any }>(`/projects/${projectId}/missing-info/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
     });
   },
 

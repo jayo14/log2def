@@ -1,16 +1,20 @@
 import { create } from 'zustand';
-import { projectsApi, authApi } from '../api';
+import { projectsApi, authApi, CompletenessResult } from '../api';
 
 export interface ProjectState {
   projects: any[];
   activeProject: any | null;
+  completeness: CompletenessResult | null;
   isLoadingProjects: boolean;
   isLoadingActiveProject: boolean;
+  isLoadingCompleteness: boolean;
   aiStatus: any | null;
   error: string | null;
 
   fetchProjects: () => Promise<any[]>;
   fetchActiveProject: (projectId: number | string) => Promise<any>;
+  fetchCompleteness: (projectId: number | string) => Promise<CompletenessResult>;
+  updateMissingInfo: (projectId: number | string, data: Record<string, any>) => Promise<any>;
   fetchAiStatus: () => Promise<any>;
   createProject: (data: any) => Promise<any>;
   updateActiveProject: (projectId: number | string, data: any) => Promise<any>;
@@ -38,12 +42,14 @@ export interface ProjectState {
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProject: null,
+  completeness: null,
   isLoadingProjects: false,
   isLoadingActiveProject: false,
+  isLoadingCompleteness: false,
   aiStatus: null,
   error: null,
 
-  clearActiveProject: () => set({ activeProject: null, error: null }),
+  clearActiveProject: () => set({ activeProject: null, completeness: null, error: null }),
   setError: (error) => set({ error }),
 
   fetchProjects: async () => {
@@ -66,6 +72,31 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return data;
     } catch (err: any) {
       set({ error: err.message || 'Failed to load project details', isLoadingActiveProject: false });
+      throw err;
+    }
+  },
+
+  fetchCompleteness: async (projectId: number | string) => {
+    set({ isLoadingCompleteness: true, error: null });
+    try {
+      const data = await projectsApi.getCompleteness(projectId);
+      set({ completeness: data, isLoadingCompleteness: false });
+      return data;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to check completeness', isLoadingCompleteness: false });
+      throw err;
+    }
+  },
+
+  updateMissingInfo: async (projectId: number | string, data: Record<string, any>) => {
+    set({ error: null });
+    try {
+      const res = await projectsApi.updateMissingInfo(projectId, data);
+      await get().fetchActiveProject(projectId);
+      await get().fetchCompleteness(projectId);
+      return res;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to update missing information' });
       throw err;
     }
   },
