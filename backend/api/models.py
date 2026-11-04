@@ -151,9 +151,13 @@ class SourceDocument(models.Model):
 class ExtractedPage(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pending Review'),
+        ('ocr_in_progress', 'OCR In Progress'),
+        ('structuring', 'Structuring Logbook Data'),
         ('processed', 'Processed'),
+        ('completed', 'Completed'),
         ('flagged_illegible', 'Flagged Illegible'),
         ('manual_correction_needed', 'Manual Correction Needed'),
+        ('error', 'Processing Error'),
     )
 
     document = models.ForeignKey(SourceDocument, on_delete=models.CASCADE, related_name='extracted_pages')
@@ -164,6 +168,11 @@ class ExtractedPage(models.Model):
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='processed')
     is_reviewed = models.BooleanField(default=False)
     notes = models.TextField(blank=True)
+    retry_count = models.IntegerField(default=0)
+    error_reason = models.TextField(blank=True)
+    low_confidence_segments = models.JSONField(default=list, blank=True)
+    supervisor_signature_detected = models.BooleanField(default=False)
+    supervisor_signature_confidence = models.FloatField(default=0.0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -174,6 +183,10 @@ class ExtractedPage(models.Model):
 
 
 class LogbookEntry(models.Model):
+    PROVENANCE_RECORDED = 'RECORDED'
+    PROVENANCE_INFERRED = 'INFERRED'
+    PROVENANCE_MISSING = 'MISSING'
+
     project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='logbook_entries')
     source_page = models.ForeignKey(
         ExtractedPage, 
@@ -190,6 +203,11 @@ class LogbookEntry(models.Model):
     verified_text = models.TextField(blank=True)
     activity_summary = models.CharField(max_length=500, blank=True)
     tools_used = models.CharField(max_length=500, blank=True)
+    equipment_used = models.CharField(max_length=500, blank=True)
+    technical_area = models.CharField(max_length=255, blank=True)
+    has_supervisor_signature = models.BooleanField(default=False)
+    confidence_scores = models.JSONField(default=dict, blank=True)
+    field_provenance = models.JSONField(default=dict, blank=True)
     is_verified = models.BooleanField(default=False)
     is_flagged = models.BooleanField(default=False)
     order = models.IntegerField(default=0)
