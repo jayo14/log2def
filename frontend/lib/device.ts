@@ -10,18 +10,21 @@ export interface DeviceInfo {
   browser: 'safari' | 'chrome' | 'edge' | 'firefox' | 'other';
 }
 
-export function detectDeviceOS(): DeviceOS {
-  if (typeof window === 'undefined') return 'pc';
-  const ua = window.navigator.userAgent || '';
+export function detectDeviceOS(customUa?: string): DeviceOS {
+  if (typeof window === 'undefined' && !customUa) return 'pc';
+  const ua = customUa || (typeof window !== 'undefined' ? window.navigator.userAgent : '') || '';
   const platform =
-    (window.navigator as any).userAgentData?.platform ||
-    (window.navigator as any).platform ||
+    (typeof window !== 'undefined' &&
+      ((window.navigator as any).userAgentData?.platform ||
+        (window.navigator as any).platform)) ||
     '';
 
   // iOS check (iPhone, iPad, iPod, or iPadOS 13+ masquerading as Macintosh with multi-touch)
   const isIOS =
-    /iPad|iPhone|iPod/.test(ua) ||
-    (/Macintosh|MacIntel/.test(platform) && window.navigator.maxTouchPoints > 1);
+    /iPad|iPhone|iPod/i.test(ua) ||
+    (/Macintosh|MacIntel/i.test(platform) &&
+      typeof window !== 'undefined' &&
+      window.navigator.maxTouchPoints > 1);
 
   if (isIOS) return 'ios';
 
@@ -35,10 +38,9 @@ export function detectDeviceOS(): DeviceOS {
 export function isStandaloneApp(): boolean {
   if (typeof window === 'undefined') return false;
   return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (window.navigator as any).standalone === true ||
-    document.referrer.startsWith('android-app://') ||
-    (typeof localStorage !== 'undefined' && localStorage.getItem('pwa_installed') === 'true')
+    Boolean(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+    Boolean((window.navigator as any)?.standalone === true) ||
+    Boolean(typeof document !== 'undefined' && document.referrer?.startsWith('android-app://'))
   );
 }
 

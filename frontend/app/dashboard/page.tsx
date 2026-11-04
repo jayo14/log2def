@@ -8,6 +8,7 @@ import {
   useReportStore,
 } from '@/lib/store';
 import { getApiBaseUrl } from '@/lib/api';
+import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
 // Approved Design Constants: 5-Phase Wizard Flow
@@ -218,6 +219,12 @@ export default function DashboardPage() {
     notes: '',
   });
 
+  // OS-Aware PWA Installation state
+  const [deviceOS, setDeviceOS] = useState<DeviceOS>('pc');
+  const [isInstalled, setIsInstalled] = useState<boolean>(true); // default true before hydration
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+
   useEffect(() => {
     try {
       const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
@@ -265,6 +272,56 @@ export default function DashboardPage() {
       setToastMessage('');
     }, 2300);
   }, []);
+
+  // Detect OS and listen for PWA install eligibility
+  useEffect(() => {
+    const os = detectDeviceOS();
+    setDeviceOS(os);
+    const standalone = isStandaloneApp();
+    setIsInstalled(standalone);
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstalled(false);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      setShowInstallModal(false);
+      try {
+        localStorage.setItem('pwa_installed', 'true');
+      } catch {}
+      showToast('Log2Def installed successfully!');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, [showToast]);
+
+  const handleInstallClick = () => {
+    if (deviceOS === 'android' && deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choice: any) => {
+        if (choice?.outcome === 'accepted') {
+          setIsInstalled(true);
+          try {
+            localStorage.setItem('pwa_installed', 'true');
+          } catch {}
+          showToast('Log2Def installed successfully!');
+        }
+        setDeferredPrompt(null);
+      });
+    } else {
+      setShowInstallModal(true);
+    }
+  };
 
   // Sync user info on mount
   useEffect(() => {
@@ -1388,19 +1445,178 @@ export default function DashboardPage() {
         <header className="top">
           <span className="sp" />
           <span className="tt">Home</span>
-          <span className="sp" />
+          {!isInstalled ? (
+            <button
+              type="button"
+              className="ib"
+              onClick={handleInstallClick}
+              title={
+                deviceOS === 'ios'
+                  ? 'Install on iPhone / iPad'
+                  : deviceOS === 'android'
+                  ? 'Install Android App'
+                  : 'Install Log2Def App'
+              }
+              aria-label="Install App"
+            >
+              <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }}>
+                {deviceOS === 'ios' ? 'phone_iphone' : deviceOS === 'android' ? 'android' : 'download'}
+              </span>
+            </button>
+          ) : (
+            <span className="sp" />
+          )}
         </header>
 
         <div className="lg">
-          <p style={{ margin: '0 0 4px', fontWeight: 700, color: 'var(--mut)' }}>
-            Hi, {details.name ? details.name.split(' ')[0] : 'John'}
-          </p>
-          <h1>
-            Logbook in.
-            <br />
-            Report out.
-          </h1>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+            <div>
+              <p style={{ margin: '0 0 4px', fontWeight: 700, color: 'var(--mut)' }}>
+                Hi, {details.name ? details.name.split(' ')[0] : 'John'}
+              </p>
+              <h1>
+                Logbook in.
+                <br />
+                Report out.
+              </h1>
+            </div>
+            {!isInstalled && (
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '20px',
+                  background: 'var(--mint)',
+                  color: 'var(--gd)',
+                  border: '1px solid rgba(6,107,77,0.2)',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  marginTop: '4px',
+                }}
+                title={
+                  deviceOS === 'ios'
+                    ? 'Install Log2Def on your iPhone or iPad'
+                    : deviceOS === 'android'
+                    ? 'Install Log2Def Android App'
+                    : 'Install Log2Def App'
+                }
+              >
+                <span className="ms" style={{ fontSize: '18px', color: 'var(--g)' }}>
+                  {deviceOS === 'ios' ? 'phone_iphone' : deviceOS === 'android' ? 'android' : 'download'}
+                </span>
+                <span>
+                  {deviceOS === 'ios'
+                    ? 'Install'
+                    : deviceOS === 'android'
+                    ? 'Install'
+                    : 'Install'}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* OS-Aware Install Button / Banner */}
+        {!isInstalled && (
+          <div
+            className="install-card"
+            style={{
+              marginBottom: '16px',
+              padding: '12px 14px',
+              background: 'var(--card)',
+              border: '1px solid var(--line)',
+              borderRadius: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              boxShadow: '0 2px 8px rgba(20, 32, 27, 0.04)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+              <span
+                className="ms"
+                style={{
+                  color: 'var(--g)',
+                  fontSize: '22px',
+                  background: 'var(--mint)',
+                  padding: '7px',
+                  borderRadius: '12px',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {deviceOS === 'ios' ? 'phone_iphone' : deviceOS === 'android' ? 'android' : 'download'}
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    color: 'var(--ink)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {deviceOS === 'ios'
+                    ? 'Install on iPhone / iPad'
+                    : deviceOS === 'android'
+                    ? 'Install Android App'
+                    : 'Install Log2Def App'}
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '11px',
+                    color: 'var(--mut)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {deviceOS === 'ios'
+                    ? 'Tap Share → Add to Home Screen'
+                    : deviceOS === 'android'
+                    ? '1-tap install & offline access'
+                    : 'Get the native app experience'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleInstallClick}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '8px 14px',
+                background: 'var(--g)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '999px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                flexShrink: 0,
+                boxShadow: '0 2px 4px rgba(6,107,77,0.2)',
+              }}
+            >
+              <span className="ms" style={{ fontSize: '15px' }}>
+                {deviceOS === 'ios' ? 'ios_share' : 'download'}
+              </span>
+              Install
+            </button>
+          </div>
+        )}
 
         {/* Hero Card */}
         <section className="hero" aria-label="Your report">
@@ -4315,6 +4531,285 @@ export default function DashboardPage() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* OS-AWARE INSTALL GUIDANCE MODAL / SHEET                  */}
+        {/* ======================================================== */}
+        {showInstallModal && (
+          <div id="install-modal">
+            <div className="bd" onClick={() => setShowInstallModal(false)} />
+            <div
+              className="sht"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Install Log2Def"
+              tabIndex={-1}
+            >
+              <div className="hd" />
+              <div style={{ textAlign: 'center', padding: '6px 0 16px' }}>
+                <div
+                  style={{
+                    width: '52px',
+                    height: '52px',
+                    borderRadius: '16px',
+                    background: 'var(--mint)',
+                    color: 'var(--g)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    margin: '0 auto 12px',
+                  }}
+                >
+                  <span className="ms" style={{ fontSize: '28px' }}>
+                    {deviceOS === 'ios' ? 'phone_iphone' : deviceOS === 'android' ? 'android' : 'download'}
+                  </span>
+                </div>
+                <h2 style={{ fontSize: '20px', margin: '0 0 6px' }}>
+                  {deviceOS === 'ios'
+                    ? 'Install on iPhone or iPad'
+                    : deviceOS === 'android'
+                    ? 'Install on Android'
+                    : 'Install Log2Def App'}
+                </h2>
+                <p style={{ color: 'var(--mut)', fontSize: '13px' }}>
+                  {deviceOS === 'ios'
+                    ? 'Install Log2Def to your home screen for quick, full-screen access anytime.'
+                    : deviceOS === 'android'
+                    ? 'Add Log2Def to your home screen for an instant app experience.'
+                    : 'Install Log2Def as a standalone desktop app on your computer.'}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                {deviceOS === 'ios' ? (
+                  <>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: 'var(--card)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'var(--g)',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        1
+                      </span>
+                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                        Tap the <b>Share</b> button{' '}
+                        <span className="ms" style={{ fontSize: '16px', verticalAlign: 'middle', color: 'var(--g)' }}>
+                          ios_share
+                        </span>{' '}
+                        at the bottom of Safari.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: 'var(--card)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'var(--g)',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        2
+                      </span>
+                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                        Scroll down and select <b>Add to Home Screen</b>{' '}
+                        <span className="ms" style={{ fontSize: '16px', verticalAlign: 'middle', color: 'var(--g)' }}>
+                          add_box
+                        </span>
+                        .
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: 'var(--card)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'var(--g)',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        3
+                      </span>
+                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                        Tap <b>Add</b> in the top right corner. All done!
+                      </div>
+                    </div>
+                  </>
+                ) : deviceOS === 'android' ? (
+                  <>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: 'var(--card)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'var(--g)',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        1
+                      </span>
+                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                        Tap the <b>Menu (three dots ⋮)</b> at the top-right of Chrome.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: 'var(--card)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'var(--g)',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        2
+                      </span>
+                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                        Select <b>Install app</b> or <b>Add to Home screen</b>.
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: 'var(--card)',
+                        borderRadius: '14px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '50%',
+                          background: 'var(--g)',
+                          color: '#fff',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          flexShrink: 0,
+                        }}
+                      >
+                        3
+                      </span>
+                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
+                        Tap <b>Install</b> to confirm and launch from your app drawer!
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      padding: '14px',
+                      background: 'var(--card)',
+                      borderRadius: '14px',
+                      border: '1px solid var(--line)',
+                      fontSize: '13px',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Click the <b>Install</b> icon in your browser’s address bar (or browser menu &rarr; <b>Install Log2Def</b>) to install as a desktop app.
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="btn w"
+                onClick={() => setShowInstallModal(false)}
+              >
+                Got it
+              </button>
             </div>
           </div>
         )}
