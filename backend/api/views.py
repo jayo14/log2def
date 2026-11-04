@@ -3,7 +3,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
 from django.http import FileResponse, Http404
-from rest_framework import generics, status, views
+from rest_framework import generics, status, views, serializers
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.exceptions import ValidationError
@@ -51,7 +51,13 @@ from .feature_flags import get_all_feature_flags, is_feature_enabled, require_fe
 @extend_schema(
     tags=['Configuration'],
     summary='Get all feature flags',
-    description='Returns runtime status of all system feature flags.'
+    description='Returns runtime status of all system feature flags.',
+    responses={
+        200: OpenApiResponse(
+            description="Dictionary of feature flags mapping flag name to boolean status",
+            response=OpenApiTypes.OBJECT
+        )
+    }
 )
 class FeatureFlagsView(views.APIView):
     permission_classes = (AllowAny,)
