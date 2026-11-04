@@ -13,19 +13,18 @@ from typing import Dict, Any, List
 
 
 REQUIRED_STUDENT_FIELDS = [
-    ('full_name', 'Full name', True),
-    ('matric_number', 'Matriculation number', True),
-    ('university_name', 'Institution', True),
-    ('faculty', 'Faculty / School', True),
-    ('department', 'Department', True),
-    ('organization_name', 'SIWES company / organisation', True),
-    ('company_address', 'Company address', True),
-    ('training_start_date', 'Training start date', True),
-    ('training_end_date', 'Training end date', True),
+    ('full_name', 'Full name', True, ['full_name']),
+    ('matric_number', 'Matriculation number', True, ['matric_number']),
+    ('university_name', 'Institution', True, ['university_name', 'institution']),
+    ('department', 'Department', True, ['department']),
+    ('organization_name', 'SIWES company / organisation', True, ['organization_name', 'company_name']),
+    ('organization_address', 'Company address', True, ['organization_address', 'company_address']),
+    ('training_start_date', 'Training start date', True, ['training_start_date', 'start_date']),
+    ('training_end_date', 'Training end date', True, ['training_end_date', 'end_date']),
     # Optional fields that may stay blank
-    ('department_unit', 'Department / unit at company', False),
-    ('industry_supervisor', 'Industry supervisor', False),
-    ('institution_supervisor', 'Institution supervisor', False),
+    ('placement_department', 'Department / unit at company', False, ['placement_department', 'department_unit']),
+    ('industry_supervisor_name', 'Industry supervisor', False, ['industry_supervisor_name', 'industry_supervisor']),
+    ('academic_supervisor_name', 'Institution supervisor', False, ['academic_supervisor_name', 'institution_supervisor']),
 ]
 
 
@@ -88,14 +87,19 @@ def check_project_completeness(project) -> Dict[str, Any]:
     uncertain_fields: List[str] = []
 
     # 1. Check basic student & company fields
-    for field_key, field_label, is_required in REQUIRED_STUDENT_FIELDS:
-        val = getattr(project, field_key, None)
+    for field_key, field_label, is_required, aliases in REQUIRED_STUDENT_FIELDS:
+        val = None
+        for alias in aliases:
+            v = getattr(project, alias, None)
+            if v:
+                val = v
+                break
+
         status = "Missing"
         confidence = 1.0
 
         if val:
             if isinstance(val, str) and val.strip():
-                # Check for uncertain markers in extracted text
                 if any(marker in val for marker in ['[?]', '[unclear]', '???']):
                     status = "Uncertain"
                     confidence = 0.50

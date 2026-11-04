@@ -752,6 +752,7 @@ class MissingInfoUpdateView(views.APIView):
         tags=['Projects'],
         summary='Update missing information targeted fields',
         description='Updates specific missing required fields (e.g. company address, training dates, department unit) without sending a full profile form.',
+        request=OpenApiTypes.OBJECT,
         responses={200: OpenApiResponse(response=OpenApiTypes.OBJECT), 400: OpenApiResponse(description="Validation error")}
     )
     def patch(self, request, project_id):

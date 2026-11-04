@@ -187,8 +187,8 @@ class Log2DefBackendTests(TestCase):
         doc = SourceDocument.objects.get(id=doc_id)
         pages = doc.extracted_pages.all()
         self.assertEqual(len(pages), 1)
-        # Verify page status is either processed or manual_correction_needed without crash
-        self.assertIn(pages[0].status, ['processed', 'manual_correction_needed'])
+        # Verify page status is either processed, manual_correction_needed or flagged_illegible without crash
+        self.assertIn(pages[0].status, ['processed', 'manual_correction_needed', 'flagged_illegible'])
 
     def test_bulk_upload_multiple_files_and_limit(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
@@ -362,6 +362,161 @@ class Log2DefBackendTests(TestCase):
             format='json'
         )
         self.assertEqual(resp_reorder.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_anti_fabrication_temptation_fixtures(self):
+        from .document_processor import validate_structured_entry_anti_fabrication
+
+        # Minimalistic OCR source text
+        source_text = "Mon: Replaced ethernet cable and crimped RJ45 connectors in server room."
+
+        # Candidate entry attempting to tempt invention with hallucinated buzzwords
+        tempting_candidate = {
+            "week_number": 1,
+            "day_of_week": "Monday",
+            "activity_summary": "Architected Kubernetes cluster with Docker on AWS EKS",
+            "tools_used": "Docker, Kubernetes, AWS EKS, RJ45, Ethernet Crimper",
+            "equipment_used": "Cisco Catalyst 9300, Server Rack",
+            "technical_area": "Cloud Native Infrastructure",
+            "has_supervisor_signature": False,
+        }
+
+        result = validate_structured_entry_anti_fabrication(
+            source_text=source_text,
+            entry_data=tempting_candidate,
+            page_id=1,
+            page_num=1
+        )
+
+        # 1. Verify fabricated tools (Docker, Kubernetes, AWS EKS) are discarded
+        self.assertNotIn("Docker", result["tools_used"])
+        self.assertNotIn("Kubernetes", result["tools_used"])
+        self.assertNotIn("AWS EKS", result["tools_used"])
+        # Legitimate tools with textual support (RJ45, Ethernet) are retained
+        self.assertIn("RJ45", result["tools_used"])
+        self.assertIn("Ethernet Crimper", result["tools_used"])
+
+        # 2. Verify unsupported equipment is discarded
+        self.assertNotIn("Cisco Catalyst 9300", result["equipment_used"])
+        self.assertIn("Server Rack", result["equipment_used"])  # "server" supported
+
+        # 3. Verify entry was flagged due to attempted fabrication
+        self.assertTrue(result["is_flagged"])
+        self.assertTrue(any("fabricated" in n.lower() for n in result["flag_notes"]))
+
+    def test_field_provenance_and_recording_logic(self):
+        from .document_processor import validate_structured_entry_anti_fabrication
+
+        source_text = "Tues: Configured VLAN 20 on switch. Used Cisco CLI. Signed by supervisor."
+        entry_data = {
+            "week_number": 2,
+            "day_of_week": "Tuesday",
+            "activity_summary": "Configured VLAN 20 on switch",
+            "tools_used": "Cisco CLI",
+            "equipment_used": "",
+            "technical_area": "Network Switching",
+            "has_supervisor_signature": True,
+        }
+
+        result = validate_structured_entry_anti_fabrication(
+            source_text=source_text,
+            entry_data=entry_data,
+            page_id=42,
+            page_num=3
+        )
+
+        prov = result["field_provenance"]
+        # Explicit RECORDED fields with source page
+        self.assertEqual(prov["activity_summary"]["status"], "RECORDED")
+        self.assertEqual(prov["activity_summary"]["source_page_id"], 42)
+        self.assertEqual(prov["tools_used"]["status"], "RECORDED")
+
+        # Explicit MISSING fields
+        self.assertEqual(prov["equipment_used"]["status"], "MISSING")
+
+        # Explicit INFERRED field with stored reasoning
+        self.assertEqual(prov["technical_area"]["status"], "INFERRED")
+        self.assertIsNotNone(prov["technical_area"]["reasoning"])
+        self.assertIn("Inferred", prov["technical_area"]["reasoning"])
+
+        # Supervisor signature status
+        self.assertEqual(prov["supervisor_signature"]["status"], "RECORDED")
+
+    def test_date_validation_rules(self):
+        from .completeness import validate_training_dates
+
+        # 1. Invalid: Start date >= End date
+        inv_res = validate_training_dates(date(2024, 6, 1), date(2024, 5, 1))
+        self.assertFalse(inv_res["is_valid"])
+        self.assertTrue(any("must be before" in e for e in inv_res["errors"]))
+
+        # 2. Valid date range
+        val_res = validate_training_dates(date(2024, 3, 1), date(2024, 8, 31))
+        self.assertTrue(val_res["is_valid"])
+        self.assertEqual(len(val_res["errors"]), 0)
+
+        # 3. Logbook entry date outside training range produces warning
+        entries = [{"entry_date": date(2025, 1, 15)}]
+        warn_res = validate_training_dates(date(2024, 3, 1), date(2024, 8, 31), logbook_entries=entries)
+        self.assertTrue(warn_res["is_valid"])
+        self.assertTrue(any("outside the official training period" in w for w in warn_res["warnings"]))
+
+    def test_completeness_and_generation_block_flow(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # 1. Create a project missing required fields (no address, no end date, no entries)
+        incomplete_proj = ReportProject.objects.create(
+            user=self.user1,
+            title='Incomplete Project',
+            full_name='Student Incomplete',
+            matric_number='STE/2021/9999',
+            department='Computer Engineering',
+            university_name='LASUSTECH',
+            organization_name='Test Firm Ltd',
+            # organization_address missing!
+            # training_end_date missing!
+            training_start_date=date(2024, 3, 1),
+        )
+
+        # 2. Check completeness endpoint
+        comp_resp = self.client.get(f'/api/projects/{incomplete_proj.id}/completeness/')
+        self.assertEqual(comp_resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(comp_resp.data['can_generate'])
+        self.assertIn('organization_address', comp_resp.data['missing_required_fields'])
+        self.assertIn('training_end_date', comp_resp.data['missing_required_fields'])
+        self.assertIn('logbook_entries', comp_resp.data['missing_required_fields'])
+
+        # 3. Attempting report generation must be blocked with HTTP 400
+        gen_blocked = self.client.post(f'/api/projects/{incomplete_proj.id}/report/generate/', {})
+        self.assertEqual(gen_blocked.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("essential required information is missing", gen_blocked.data['error'])
+
+        # 4. Use targeted missing-info patch endpoint to supply missing fields
+        patch_resp = self.client.patch(
+            f'/api/projects/{incomplete_proj.id}/missing-info/',
+            {
+                'organization_address': '12 Marina Street, Lagos Island',
+                'training_end_date': '2024-08-30',
+            },
+            format='json'
+        )
+        self.assertEqual(patch_resp.status_code, status.HTTP_200_OK)
+        incomplete_proj.refresh_from_db()
+        self.assertEqual(incomplete_proj.organization_address, '12 Marina Street, Lagos Island')
+
+        # 5. Add a verified logbook entry
+        LogbookEntry.objects.create(
+            project=incomplete_proj,
+            week_number=1,
+            day_of_week='Monday',
+            raw_text='Orientation and safety briefing',
+            verified_text='Orientation and safety briefing',
+            activity_summary='Orientation and safety briefing',
+            is_verified=True
+        )
+
+        # 6. Completeness is now satisfied -> generation succeeds
+        gen_ok = self.client.post(f'/api/projects/{incomplete_proj.id}/report/generate/', {})
+        self.assertEqual(gen_ok.status_code, status.HTTP_200_OK)
 
     def test_report_generation_and_section_editing(self):
         # Add a verified logbook entry
