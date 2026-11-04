@@ -156,3 +156,82 @@
 .material-symbols-rounded.filled {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* Academic Table Styles in Editor & Preview */
+.ProseMirror table,
+.academic-page table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 1rem 0;
+  overflow: hidden;
+}
+
+.ProseMirror td,
+.ProseMirror th,
+.academic-page td,
+.academic-page th {
+  min-width: 1em;
+  border: 1px solid #d1d5db;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  font-family: 'Times New Roman', Times, serif;
+}
+
+.ProseMirror th,
+.academic-page th {
+  font-weight: bold;
+  text-align: left;
+  background-color: #f3f4f6;
+}
+
+.ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(16, 185, 129, 0.15);
+  pointer-events: none;
+}
+
+/* Paginated Academic A4 Page Simulation */
+.academic-a4-sheet {
+  background: white;
+  width: 100%;
+  max-width: 820px;
+  min-height: 1120px;
+  margin: 0 auto 2rem auto;
+  padding: 38mm 25mm 25mm 38mm; /* 1.5in left binding margin, 1in right/top/bottom */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e5e7eb;
+  position: relative;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #111827;
+  text-align: justify;
+}
+
+.academic-a4-sheet .academic-page-footer {
+  position: absolute;
+  bottom: 15mm;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 11pt;
+  font-family: 'Times New Roman', Times, serif;
+  color: #374151;
+}
+
+@media print {
+  .academic-a4-sheet {
+    box-shadow: none;
+    border: none;
+    margin: 0;
+    max-width: none;
+    width: 100%;
+    page-break-after: always;
+  }
+}
