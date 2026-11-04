@@ -388,15 +388,17 @@ export default function DashboardPage() {
     currentWorkflowStep = 6;
   }
 
-  // 6 Steps definition for the Journey Tracker
-  const JOURNEY_STEPS = [
-    { num: 1, label: 'Details', icon: 'badge', tab: 'new' as const },
-    { num: 2, label: 'Upload', icon: 'photo_camera', tab: 'logbook' as const },
-    { num: 3, label: 'Extract', icon: 'auto_stories', tab: 'logbook' as const },
-    { num: 4, label: 'Complete', icon: 'fact_check', tab: 'logbook' as const },
-    { num: 5, label: 'Generate', icon: 'auto_awesome', tab: 'report' as const },
-    { num: 6, label: 'Export', icon: 'download', tab: 'report' as const },
-  ];
+  const progressPct = effectiveProject
+    ? Math.round(
+        ((hasDetails ? 1 : 0) +
+          (hasUploads ? 1 : 0) +
+          (verifiedCount > 0 ? 1 : 0) +
+          (isComplete ? 1 : 0) +
+          (hasReport ? 1 : 0)) /
+          5 *
+          100
+      )
+    : 0;
 
   // Up Next CTA based on workflow step
   const getUpNextAction = () => {
@@ -856,47 +858,7 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              {/* 6-Step Journey Indicator */}
-              <div className="journey-container">
-                <div className="journey-header">
-                  <span className="journey-title">Continuous Report Workflow</span>
-                  <span className="journey-badge">
-                    <span className="ms" style={{ fontSize: '14px' }}>school</span>
-                    LASUSTECH Standard
-                  </span>
-                </div>
-
-                <div className="journey-steps">
-                  {JOURNEY_STEPS.map((s) => {
-                    const isDone = s.num < currentWorkflowStep;
-                    const isActive = s.num === currentWorkflowStep;
-
-                    return (
-                      <button
-                        key={s.num}
-                        type="button"
-                        className={`journey-step-btn ${isDone ? 'completed' : ''} ${isActive ? 'active' : ''}`}
-                        onClick={() => {
-                          if (s.num === 1) navigateTab('new');
-                          else if (s.num === 2 || s.num === 3 || s.num === 4) navigateTab('logbook');
-                          else navigateTab('report');
-                        }}
-                      >
-                        <div className="journey-step-bubble">
-                          {isDone ? (
-                            <span className="ms" style={{ fontSize: '16px' }}>check</span>
-                          ) : (
-                            s.num
-                          )}
-                        </div>
-                        <span className="journey-step-label">{s.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Hero Card */}
+              {/* Hero Card / Empty State */}
               {!effectiveProject ? (
                 <div className="card empty">
                   <div className="ico">
@@ -917,16 +879,23 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <>
+                  {/* Hero Card */}
                   <section className="hero" aria-label="Current project">
+                    <div
+                      className="ring"
+                      style={{ '--p': `${progressPct}%` } as React.CSSProperties}
+                    >
+                      <b>{progressPct}%</b>
+                    </div>
                     <span
                       className="chip"
                       style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}
                     >
-                      {hasReport ? 'Report ready to download' : `Step ${currentWorkflowStep} of 6`}
+                      {hasReport ? 'Report ready' : `Step ${currentWorkflowStep} of 6`}
                     </span>
-                    <h2>{effectiveProject.organization_name || effectiveProject.title}</h2>
+                    <h2 style={{ maxWidth: '11em' }}>{effectiveProject.organization_name || effectiveProject.title}</h2>
                     <p>
-                      {sortedDocuments.length} pages uploaded • {verifiedCount} of {totalEntries} entries verified
+                      {verifiedCount} of {totalEntries} entries verified • {sortedDocuments.length} page{sortedDocuments.length === 1 ? '' : 's'}
                     </p>
                     <button
                       className="btn"
@@ -941,9 +910,25 @@ export default function DashboardPage() {
                     </button>
                   </section>
 
-                  {/* Up Next Card */}
-                  <h2 className="sh">Recommended action</h2>
-                  <div className="card" style={{ padding: '6px 16px' }}>
+                  {/* Quick Actions */}
+                  <div className="qa">
+                    <button type="button" onClick={() => navigateTab('new')}>
+                      <span className="ms" aria-hidden="true">edit_note</span>
+                      Details
+                    </button>
+                    <button type="button" onClick={() => navigateTab('logbook')}>
+                      <span className="ms" aria-hidden="true">upload_file</span>
+                      Logbook
+                    </button>
+                    <button type="button" onClick={() => navigateTab('report')}>
+                      <span className="ms" aria-hidden="true">auto_awesome</span>
+                      Report
+                    </button>
+                  </div>
+
+                  {/* Up Next Section */}
+                  <h2 className="sh">Up next</h2>
+                  <div className="card" style={{ padding: '4px 16px' }}>
                     <div
                       className="lr"
                       role="button"
@@ -979,13 +964,24 @@ export default function DashboardPage() {
                           <span className="ms" aria-hidden="true">download</span>
                         </span>
                         <span style={{ flex: 1 }}>
-                          <b>Download Word (.docx) & PDF</b>
+                          <b>Export Word and PDF</b>
                           <small>LASUSTECH 1.5&rdquo; binding margin format</small>
                         </span>
                         <span className="ms mut" aria-hidden="true">chevron_right</span>
                       </div>
                     )}
                   </div>
+
+                  {/* Secondary Action */}
+                  <button
+                    className="home-fab"
+                    type="button"
+                    onClick={() => navigateTab('new')}
+                    aria-label="Start a new report"
+                  >
+                    <span className="ms" aria-hidden="true">add</span>
+                    New report
+                  </button>
                 </>
               )}
             </div>
