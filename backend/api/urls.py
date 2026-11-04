@@ -9,7 +9,7 @@ from .views import (
     TemplateListView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
     ReportVersionListView, ReportVersionRevertView,
-    ExportDocxView, ExportPdfView,
+    ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
     DefenceSlidesView, DefenceScriptView
 )
@@ -70,7 +70,13 @@ urlpatterns = [
 
     # Document Export
     path('projects/<int:project_id>/export/docx/', ExportDocxView.as_view(), name='export-docx'),
+    path('projects/<int:project_id>/export/docx', ExportDocxView.as_view()),
     path('projects/<int:project_id>/export/pdf/', ExportPdfView.as_view(), name='export-pdf'),
+    path('projects/<int:project_id>/export/pdf', ExportPdfView.as_view()),
+    path('projects/<int:project_id>/export/status/', ExportStatusView.as_view(), name='export-status'),
+    path('projects/<int:project_id>/export/status', ExportStatusView.as_view()),
+    path('projects/<int:project_id>/export/download/', ExportDownloadView.as_view(), name='export-download'),
+    path('projects/<int:project_id>/export/download', ExportDownloadView.as_view()),
 
     # Defence Preparation
     path('projects/<int:project_id>/defence/generate/', DefenceGenerateView.as_view(), name='defence-generate'),

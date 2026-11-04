@@ -1,6 +1,8 @@
 import os
+import re
 import sys
 import threading
+from pathlib import Path
 from django.db import transaction
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -24,6 +26,7 @@ from .models import (
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
     DefenceQuestion, DefenceSession
 )
+from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from .serializers import (
     UserRegistrationSerializer, UserSerializer,
     ReportProjectSerializer, ReportProjectDetailSerializer,
@@ -36,6 +39,7 @@ from .serializers import (
     DocumentUploadRequestSerializer, DocumentReorderRequestSerializer,
     ReportGenerateRequestSerializer,
     BulkVerifyRequestSerializer, SectionUpdateRequestSerializer,
+    ExportStatusRequestSerializer, ExportStatusResponseSerializer,
     DefenceQuestionUpdateRequestSerializer, AIStatusResponseSerializer,
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 )
@@ -822,14 +826,36 @@ class SectionUpdateView(views.APIView):
     @extend_schema(
         tags=['Report & Sections'],
         summary='Save student edits to a section',
-        description='Saves updated section HTML/rich-text and flags section as customized by student.',
+        description='Saves updated section HTML/rich-text and flags section as customized by student with optimistic concurrency control.',
         request=SectionUpdateRequestSerializer,
-        responses={200: ReportSectionSerializer}
+        responses={200: ReportSectionSerializer, 409: OpenApiResponse(description="Concurrent edit conflict")}
     )
     def patch(self, request, project_id, section_id):
         project = get_user_project(request.user, project_id)
         section = get_object_or_404(ReportSection, id=section_id, report__project=project)
         
+        expected_updated_at = request.data.get('expected_updated_at')
+        force_overwrite = request.data.get('force_overwrite', False)
+        if isinstance(force_overwrite, str):
+            force_overwrite = force_overwrite.lower() in ('true', '1')
+
+        if expected_updated_at and not force_overwrite and section.updated_at:
+            try:
+                import datetime
+                cleaned_ts = str(expected_updated_at).replace('Z', '+00:00')
+                client_dt = datetime.datetime.fromisoformat(cleaned_ts)
+                diff = abs((section.updated_at - client_dt).total_seconds())
+                if diff > 1.5:
+                    return Response({
+                        "error": "Conflict detected: This section was modified on another device or session.",
+                        "conflict": True,
+                        "current_content": section.content,
+                        "current_title": section.title,
+                        "current_updated_at": section.updated_at.isoformat(),
+                    }, status=status.HTTP_409_CONFLICT)
+            except Exception:
+                pass
+
         content = request.data.get('content')
         if content is not None:
             section.content = sanitize_html(content)
@@ -860,7 +886,201 @@ class SectionRegenerateView(views.APIView):
         return Response(ReportSectionSerializer(updated_section).data)
 
 
-# --- Document Export Views ---
+# --- Document Export Views & Async Job Pipeline ---
+
+EXPORT_JOBS = {}  # In-memory job registry for async export polling: (project_id, fmt) -> dict
+
+
+def run_export_background(project_id: int, fmt: str):
+    """
+    Background worker thread for asynchronous PDF/DOCX generation.
+    """
+    key = (project_id, fmt)
+    EXPORT_JOBS[key] = {'status': 'processing', 'progress_percent': 35, 'error': None}
+    try:
+        from .models import ReportProject
+        project = ReportProject.objects.filter(id=project_id).first()
+        if not project or not hasattr(project, 'report'):
+            EXPORT_JOBS[key] = {'status': 'failed', 'progress_percent': 0, 'error': 'Report not generated'}
+            return
+
+        if fmt == 'docx':
+            path = generate_docx_report(project.report)
+            EXPORT_JOBS[key] = {'status': 'ready', 'progress_percent': 100, 'error': None, 'path': path}
+        else:
+            res = export_report_documents(project.report)
+            EXPORT_JOBS[key] = {'status': 'ready', 'progress_percent': 100, 'error': None, 'path': res['pdf_path']}
+    except Exception as exc:
+        EXPORT_JOBS[key] = {'status': 'failed', 'progress_percent': 0, 'error': str(exc)}
+
+
+class ExportStatusView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def perform_content_negotiation(self, request, force=False):
+        # Override to prevent DRF treating query parameter ?format=docx/pdf as media renderer
+        renderers = self.get_renderers()
+        return (renderers[0], renderers[0].media_type)
+
+    @extend_schema(
+        tags=['Document Export'],
+        summary='Check asynchronous export status and generate signed download link',
+        description='Polls asynchronous export progress for DOCX or PDF and returns signed download link.',
+        request=ExportStatusRequestSerializer,
+        responses={200: ExportStatusResponseSerializer}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        if not hasattr(project, 'report'):
+            return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        fmt = request.query_params.get('format', 'pdf').lower()
+        if fmt not in ['pdf', 'docx']:
+            return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check feature flags
+        if fmt == 'pdf' and not is_feature_enabled('report_pdf_export'):
+            return Response({"detail": "PDF export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
+        if fmt == 'docx' and not is_feature_enabled('report_docx_export'):
+            return Response({"detail": "DOCX export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
+
+        trigger = request.query_params.get('trigger', 'false').lower() in ('true', '1')
+        key = (project.id, fmt)
+
+        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
+        expected_filename = f"{clean_title}_v{project.report.version}.{fmt}"
+        export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
+        file_path = export_dir / expected_filename
+
+        job = EXPORT_JOBS.get(key)
+
+        if file_path.exists() and (not trigger or (job and job.get('status') == 'ready')):
+            signer = TimestampSigner(salt='report-export-download')
+            token = signer.sign(f"{project.id}:{request.user.id}:{fmt}")
+            download_url = f"/api/projects/{project.id}/export/download/?format={fmt}&token={token}"
+            return Response({
+                "project_id": project.id,
+                "format": fmt,
+                "status": "ready",
+                "progress_percent": 100,
+                "download_url": download_url,
+                "filename": expected_filename,
+                "error": None
+            })
+
+        if trigger and (not job or job.get('status') in ['failed', 'ready', 'idle']):
+            t = threading.Thread(target=run_export_background, args=(project.id, fmt), daemon=True)
+            t.start()
+            return Response({
+                "project_id": project.id,
+                "format": fmt,
+                "status": "processing",
+                "progress_percent": 30,
+                "download_url": None,
+                "filename": expected_filename,
+                "error": None
+            })
+
+        if job:
+            status_val = job.get('status', 'processing')
+            signer = TimestampSigner(salt='report-export-download')
+            token = signer.sign(f"{project.id}:{request.user.id}:{fmt}")
+            dl = f"/api/projects/{project.id}/export/download/?format={fmt}&token={token}" if status_val == 'ready' else None
+            return Response({
+                "project_id": project.id,
+                "format": fmt,
+                "status": status_val,
+                "progress_percent": job.get('progress_percent', 50),
+                "download_url": dl,
+                "filename": expected_filename,
+                "error": job.get('error')
+            })
+
+        return Response({
+            "project_id": project.id,
+            "format": fmt,
+            "status": "idle",
+            "progress_percent": 0,
+            "download_url": None,
+            "filename": expected_filename,
+            "error": None
+        })
+
+
+class ExportDownloadView(views.APIView):
+    permission_classes = ()  # Allows token-based authorized access without Authorization header
+
+    def perform_content_negotiation(self, request, force=False):
+        # Override to prevent DRF treating query parameter ?format=docx/pdf as media renderer
+        renderers = self.get_renderers()
+        return (renderers[0], renderers[0].media_type)
+
+    @extend_schema(
+        tags=['Document Export'],
+        summary='Download exported report file via authorized session or signed URL token',
+        responses={(200, 'application/octet-stream'): OpenApiTypes.BINARY}
+    )
+    def get(self, request, project_id):
+        token = request.query_params.get('token')
+        fmt = request.query_params.get('format', 'pdf').lower()
+        if fmt not in ['pdf', 'docx']:
+            return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = None
+        if token:
+            signer = TimestampSigner(salt='report-export-download')
+            try:
+                unsigned = signer.unsign(token, max_age=3600)
+                tok_project_id, tok_user_id, tok_fmt = unsigned.split(':')
+                if int(tok_project_id) != int(project_id) or tok_fmt != fmt:
+                    return Response({"error": "Invalid export download token."}, status=status.HTTP_403_FORBIDDEN)
+                from django.contrib.auth.models import User
+                user = User.objects.filter(id=int(tok_user_id)).first()
+                if not user:
+                    return Response({"error": "User no longer exists."}, status=status.HTTP_403_FORBIDDEN)
+            except (SignatureExpired, BadSignature, ValueError):
+                return Response({"error": "Expired or invalid download link."}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            if not request.user or not request.user.is_authenticated:
+                return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
+            user = request.user
+
+        project = get_user_project(user, project_id)
+        if not hasattr(project, 'report'):
+            raise Http404("Report not found.")
+
+        if fmt == 'pdf' and not is_feature_enabled('report_pdf_export'):
+            return Response({"detail": "PDF export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
+        if fmt == 'docx' and not is_feature_enabled('report_docx_export'):
+            return Response({"detail": "DOCX export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
+
+        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
+        expected_filename = f"{clean_title}_v{project.report.version}.{fmt}"
+        export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
+        file_path = export_dir / expected_filename
+
+        if not file_path.exists():
+            if fmt == 'docx':
+                generate_docx_report(project.report)
+            else:
+                export_report_documents(project.report)
+
+        if not file_path.exists():
+            raise Http404(f"Exported file {expected_filename} not found.")
+
+        resolved_path = os.path.realpath(str(file_path))
+        media_root = os.path.realpath(settings.MEDIA_ROOT)
+        if not resolved_path.startswith(media_root):
+            raise Http404("Access denied: Invalid export path.")
+
+        content_type = 'application/pdf' if fmt == 'pdf' else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        return FileResponse(
+            open(resolved_path, 'rb'),
+            as_attachment=True,
+            filename=expected_filename,
+            content_type=content_type
+        )
+
 
 @require_feature_flag('report_docx_export')
 class ExportDocxView(views.APIView):

@@ -244,6 +244,31 @@ class BulkVerifyRequestSerializer(serializers.Serializer):
 class SectionUpdateRequestSerializer(serializers.Serializer):
     content = serializers.CharField(required=False, help_text="Updated HTML / rich-text content for the section")
     title = serializers.CharField(required=False, help_text="Updated title for the section")
+    expected_updated_at = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Timestamp of client section version for optimistic concurrency control"
+    )
+    force_overwrite = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Set to true to explicitly overwrite concurrent modifications"
+    )
+
+
+class ExportStatusRequestSerializer(serializers.Serializer):
+    format = serializers.ChoiceField(choices=['pdf', 'docx'], default='pdf', help_text="Export document format")
+    trigger = serializers.BooleanField(required=False, default=False, help_text="Start export job if not already running")
+
+
+class ExportStatusResponseSerializer(serializers.Serializer):
+    project_id = serializers.IntegerField()
+    format = serializers.CharField()
+    status = serializers.ChoiceField(choices=['idle', 'processing', 'ready', 'failed'])
+    progress_percent = serializers.IntegerField()
+    download_url = serializers.CharField(allow_null=True)
+    filename = serializers.CharField(allow_null=True)
+    error = serializers.CharField(allow_null=True)
 
 
 class DefenceQuestionUpdateRequestSerializer(serializers.Serializer):
