@@ -9,14 +9,13 @@ import {
 } from '@/lib/store';
 import '@/app/dashboard.css';
 
-// Approved Design Constants from new-dashboard.html
+// Approved Design Constants: 5-Phase Wizard Flow
 const SN = [
   'Your details',
   'Logbook',
   'Review',
   'Missing info',
   'Generate',
-  'Edit and download',
 ];
 
 const GS = [
@@ -73,6 +72,15 @@ const INSTITUTIONS = [
   'Other',
 ];
 
+const CAMPUS_LOCATIONS = [
+  'LASUSTECH Ikorodu Main Campus — First Gate',
+  'LASUSTECH Ikorodu Main Campus — Senate Building',
+  'LASUSTECH Ikorodu Main Campus — College of Engineering',
+  'LASUSTECH Ikorodu Main Campus — Student Union Building (SUB)',
+  'LASUSTECH Ikorodu Main Campus — College of Basic Science',
+  'Off-Campus / Hostels / Residence Address (Specify below)',
+];
+
 interface LogPage {
   n: string;
   pdf: boolean;
@@ -110,12 +118,15 @@ export default function DashboardPage() {
     generateReport: storeGenerateReport,
   } = useReportStore();
 
-  // Primary navigation tab
+  // Primary navigation tab: 'home' | 'logbooks' | 'reports' | 'settings'
   const [currentTab, setCurrentTab] = useState<'home' | 'logbooks' | 'reports' | 'settings'>('home');
   const [inFlow, setInFlow] = useState<boolean>(false);
   const [isScrolled, setIsScrolled] = useState<boolean>(false);
 
-  // Flow & Project state matching 'P' from new-dashboard.html
+  // Logbook screen sub-view: 'pages' | 'report'
+  const [logbookView, setLogbookView] = useState<'pages' | 'report'>('pages');
+
+  // Wizard Flow step: 1 to 5
   const [step, setStep] = useState<number>(1);
   const [method, setMethod] = useState<'manual' | 'photos'>('manual');
 
@@ -147,26 +158,62 @@ export default function DashboardPage() {
 
   const [entries, setEntries] = useState<LogEntry[]>([]);
 
-  // Step 5 report generation state
+  // Step 5 report generation state: 0: not started, 1: generating, 2: ready
   const [genState, setGenState] = useState<0 | 1 | 2>(0);
   const [genProgress, setGenProgress] = useState<number>(0);
 
-  // Step 6 report editor / preview state
+  // Report editor / preview state (Housed in Logbook screen)
   const [editorTab, setEditorTab] = useState<'edit' | 'prev'>('edit');
   const [currentSectionIdx, setCurrentSectionIdx] = useState<number>(0);
   const [chapterEdits, setChapterEdits] = useState<Record<number, string>>({});
   const [saveStatusText, setSaveStatusText] = useState<'saved' | 'saving'>('saved');
 
-  // Download state: '' | 'run' | 'done'
-  const [downloadState, setDownloadState] = useState<'' | 'run' | 'done'>('');
-  const [downloadFormat, setDownloadFormat] = useState<'PDF' | 'Word'>('PDF');
+  // Payment & Checkout State
+  const [checkoutModal, setCheckoutModal] = useState<'digital' | 'delivery' | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer' | 'ussd'>('card');
+  const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
+  const [hasPaidDigital, setHasPaidDigital] = useState<boolean>(false);
 
-  // Bottom sheet modal state
+  const [paymentSuccess, setPaymentSuccess] = useState<{
+    type: 'digital' | 'delivery';
+    txRef: string;
+    deliveryDetails?: {
+      location: string;
+      customAddress: string;
+      date: string;
+      recipient: string;
+      phone: string;
+    };
+  } | null>(null);
+
+  // Delivery form state (for NGN 4,000 physical print & binding delivery)
+  const [deliveryData, setDeliveryData] = useState({
+    recipientName: '',
+    phone: '',
+    campusLocation: CAMPUS_LOCATIONS[0],
+    customAddress: '',
+    deliveryDate: '',
+    notes: '',
+  });
+
+  useEffect(() => {
+    try {
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+      setDeliveryData(prev => ({
+        ...prev,
+        recipientName: prev.recipientName || userFullName,
+        deliveryDate: prev.deliveryDate || tomorrow,
+      }));
+    } catch {
+      // fallback
+    }
+  }, [userFullName]);
+
+  // Bottom sheet modal state for editing details & entries
   const [activeSheet, setActiveSheet] = useState<
     | { type: 'editWeek'; index: number }
     | { type: 'editField'; key: string; label: string }
     | { type: 'editDetails' }
-    | { type: 'download' }
     | null
   >(null);
 
@@ -188,7 +235,7 @@ export default function DashboardPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const camInputRef = useRef<HTMLInputElement>(null);
 
-  // Show Toast
+  // Show Toast helper
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -197,12 +244,13 @@ export default function DashboardPage() {
     }, 2300);
   }, []);
 
-  // Sync user info into details on mount
+  // Sync user info on mount
   useEffect(() => {
     if (user) {
       const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
       if (name) {
         setDetails((prev) => ({ ...prev, name }));
+        setDeliveryData((prev) => ({ ...prev, recipientName: name }));
       }
     }
   }, [user]);
@@ -236,13 +284,14 @@ export default function DashboardPage() {
     }
   }, [activeProject]);
 
-  // Handle URL hash navigation (#home, #logbooks, #reports, #settings, #flow, #report)
+  // Handle URL hash navigation (#home, #logbooks, #reports, #settings, #flow)
   useEffect(() => {
     const handleHash = () => {
       const h = window.location.hash.replace('#/', '').replace('#', '');
       if (h === 'report') {
-        setStep(6);
-        setInFlow(true);
+        setCurrentTab('logbooks');
+        setLogbookView('report');
+        setInFlow(false);
       } else if (h === 'flow') {
         setInFlow(true);
       } else if (h === 'logbooks') {
@@ -265,17 +314,17 @@ export default function DashboardPage() {
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
 
-  // Update title based on active view
+  // Update document title based on view
   useEffect(() => {
     let t = 'Home';
-    if (inFlow) t = 'New report';
-    else if (currentTab === 'logbooks') t = 'Logbooks';
+    if (inFlow) t = `Step ${step} of 5 · ${SN[step - 1]}`;
+    else if (currentTab === 'logbooks') t = logbookView === 'report' ? 'Technical Report' : 'Logbooks';
     else if (currentTab === 'reports') t = 'Reports';
     else if (currentTab === 'settings') t = 'Settings';
     document.title = `Log2Def: ${t}`;
-  }, [inFlow, currentTab]);
+  }, [inFlow, step, currentTab, logbookView]);
 
-  // Scroll handler for top bar border & title reveal
+  // Scroll handler for top bar border reveal
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const top = e.currentTarget.scrollTop;
     setIsScrolled(top > 10);
@@ -283,10 +332,9 @@ export default function DashboardPage() {
 
   const hasStarted = Boolean(details.co || pages.length || step > 1);
 
-  // Get field value from details or answers
+  // Field helpers
   const getVal = (k: string) => details[k] || answers[k] || '';
 
-  // Check completeness of fields
   const checkCompleteness = () => {
     return FLD.map(([key, label]) => {
       const v = getVal(key);
@@ -301,7 +349,6 @@ export default function DashboardPage() {
     });
   };
 
-  // Step 4 date & completeness validation
   const isStep4Invalid = () => {
     const items = checkCompleteness();
     const hasMissing = items.some((item) => !item.exists);
@@ -311,7 +358,7 @@ export default function DashboardPage() {
     return hasMissing || badDate;
   };
 
-  // Generate Entries (Heuristic / OCR mock)
+  // Populate mock OCR entries if empty
   const populateEntries = () => {
     const sampleEntries: LogEntry[] = [
       {
@@ -342,11 +389,11 @@ export default function DashboardPage() {
       },
       {
         w: 4,
-        t: 'Worked on a team project, a company dashbord. Fixed layout bugs.',
+        t: 'Worked on a team project, a company dashboard. Fixed layout bugs.',
         area: 'Frontend Web Development',
         tools: 'HTML, CSS',
         u: 1,
-        ph: 'dashbord',
+        ph: 'dashboard',
       },
       {
         w: 5,
@@ -368,7 +415,7 @@ export default function DashboardPage() {
     }
   };
 
-  // Start reading progress
+  // Step 3 Reading simulation
   const startReading = () => {
     setReading(true);
     setReadProgress(0);
@@ -388,7 +435,7 @@ export default function DashboardPage() {
     }, intervalTime);
   };
 
-  // Start generation progress
+  // Step 5 Report Generation
   const startGenerating = () => {
     setGenState(1);
     setGenProgress(0);
@@ -399,7 +446,6 @@ export default function DashboardPage() {
       if (g >= GS.length) {
         clearInterval(iv);
         setGenState(2);
-        // Also trigger real background generation if connected
         if (activeProject?.id) {
           storeGenerateReport(activeProject.id).catch(() => {});
         }
@@ -407,7 +453,7 @@ export default function DashboardPage() {
     }, 450);
   };
 
-  // HTML content generator for chapters
+  // Report chapter templates
   const getSectionDefaultHtml = (i: number): string => {
     const N = details.name || 'John Samuel';
     const C = details.co || 'Company Ltd';
@@ -436,7 +482,7 @@ export default function DashboardPage() {
     return chapterEdits[i] !== undefined ? chapterEdits[i] : getSectionDefaultHtml(i);
   };
 
-  // Academic Layout Calculations (simulate 12-15 page layout matching approved design)
+  // Academic Layout calculations
   const computeLayout = () => {
     const R: { t: string; h: string; l: string; p: number }[] = [];
     let r = 0;
@@ -451,7 +497,7 @@ export default function DashboardPage() {
     R.push({ t: SEC[0], h: getSectionHtml(0), l: '', p: 1 });
     tot += 1;
 
-    // Front matter i, ii, iii
+    // Front matter
     for (let i = 1; i <= 3; i++) {
       R.push({ t: SEC[i], h: getSectionHtml(i), l: rm[r], p: 1 });
       r++;
@@ -486,7 +532,7 @@ export default function DashboardPage() {
     return { rows: R, total: tot };
   };
 
-  // Thumbnail generation helper
+  // Thumbnail generator
   const generateThumbnail = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       if (!file.type.startsWith('image/')) {
@@ -518,7 +564,7 @@ export default function DashboardPage() {
     });
   };
 
-  // Upload file handler
+  // File uploads
   const handleFilesAdded = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const newItems: LogPage[] = [];
@@ -534,7 +580,6 @@ export default function DashboardPage() {
         file: f,
       });
 
-      // Background upload if connected
       if (activeProject?.id) {
         const fd = new FormData();
         fd.append('file', f);
@@ -546,7 +591,7 @@ export default function DashboardPage() {
     setPages((prev) => [...prev, ...newItems]);
   };
 
-  // Camera Management
+  // In-app Camera
   const stopCameraStream = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -610,7 +655,7 @@ export default function DashboardPage() {
     if (!ctx) return;
     ctx.drawImage(v, 0, 0, c.width, c.height);
 
-    // Brightness check for low-light warning
+    // Luminance check
     const t = document.createElement('canvas');
     t.width = 24;
     t.height = 24;
@@ -626,7 +671,6 @@ export default function DashboardPage() {
       avgLuminance = sum / 576;
     }
 
-    // Thumbnail
     const thCanvas = document.createElement('canvas');
     const k2 = 200 / Math.max(c.width, c.height);
     thCanvas.width = Math.round(c.width * k2);
@@ -646,7 +690,6 @@ export default function DashboardPage() {
       q: isDark ? 'dark' : undefined,
     };
 
-    // Flash animation
     setCameraFlash(true);
     setTimeout(() => setCameraFlash(false), 200);
 
@@ -666,7 +709,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Reorder pages
   const movePage = (index: number, delta: number) => {
     const target = index + delta;
     if (target < 0 || target >= pages.length) return;
@@ -683,33 +725,26 @@ export default function DashboardPage() {
     setPages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Download simulation and real file export
-  const triggerDownload = (format: 'PDF' | 'Word') => {
-    setDownloadFormat(format);
-    setDownloadState('run');
-    setTimeout(() => {
-      setDownloadState('done');
-    }, 1700);
-  };
-
-  const executeRealFileDownload = async () => {
+  // ========================================================
+  // REAL DOWNLOAD EXECUTION (PDF / DOCX)
+  // ========================================================
+  const executeRealFileDownload = async (format: 'PDF' | 'Word') => {
     try {
       if (activeProject?.id) {
-        if (downloadFormat === 'Word') {
+        if (format === 'Word') {
           await downloadDocx(activeProject.id);
         } else {
           await downloadPdf(activeProject.id);
         }
       } else {
-        // Fallback client-side download so user gets a real document
         const content = computeLayout().rows.map((r) => `<h1>${r.t}</h1>${r.h}`).join('<hr/>');
         const blob = new Blob([content], {
-          type: downloadFormat === 'Word' ? 'application/msword' : 'text/html',
+          type: format === 'Word' ? 'application/msword' : 'text/html',
         });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `SIWES_Technical_Report.${downloadFormat === 'Word' ? 'doc' : 'html'}`;
+        a.download = `SIWES_Technical_Report.${format === 'Word' ? 'doc' : 'html'}`;
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -723,8 +758,51 @@ export default function DashboardPage() {
       a.click();
       URL.revokeObjectURL(url);
     }
-    showToast(`Downloading ${downloadFormat} file...`);
-    setActiveSheet(null);
+    showToast(`Downloading ${format} report...`);
+  };
+
+  // ========================================================
+  // PAYMENT COMPLETION HANDLERS
+  // ========================================================
+  const processDigitalPayment = () => {
+    setIsProcessingPayment(true);
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      setHasPaidDigital(true);
+      setCheckoutModal(null);
+      const txRef = `L2D_PAY_${Date.now().toString().slice(-6)}`;
+      setPaymentSuccess({
+        type: 'digital',
+        txRef,
+      });
+      showToast('Payment confirmed! NGN 2,000');
+    }, 1200);
+  };
+
+  const processDeliveryPayment = () => {
+    if (!deliveryData.phone.trim()) {
+      showToast('Please enter your phone number');
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    setTimeout(() => {
+      setIsProcessingPayment(false);
+      setCheckoutModal(null);
+      const txRef = `L2D_DEL_${Date.now().toString().slice(-6)}`;
+      setPaymentSuccess({
+        type: 'delivery',
+        txRef,
+        deliveryDetails: {
+          location: deliveryData.campusLocation,
+          customAddress: deliveryData.customAddress,
+          date: deliveryData.deliveryDate,
+          recipient: deliveryData.recipientName || details.name,
+          phone: deliveryData.phone,
+        },
+      });
+      showToast('Delivery order confirmed! NGN 4,000');
+    }, 1200);
   };
 
   // Step 1 Submission
@@ -736,7 +814,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Check required fields
     const required = ['name', 'matric', 'dept', 'fac', 'inst', 'co'];
     let firstBadField: string | null = null;
 
@@ -754,7 +831,6 @@ export default function DashboardPage() {
       return;
     }
 
-    // Save active project in background
     if (activeProject?.id) {
       updateActiveProject(activeProject.id, {
         matric_number: details.matric,
@@ -774,10 +850,8 @@ export default function DashboardPage() {
     if (scrRef.current) scrRef.current.scrollTop = 0;
   };
 
-  // Bottom Sheet Closer
   const closeSheet = () => setActiveSheet(null);
 
-  // Tab switcher
   const switchTab = (tab: 'home' | 'logbooks' | 'reports' | 'settings') => {
     setCurrentTab(tab);
     setInFlow(false);
@@ -792,23 +866,21 @@ export default function DashboardPage() {
     if (scrRef.current) scrRef.current.scrollTop = 0;
   };
 
-  // Icons and names for steps
-  const stepIcons = ['badge', 'photo_camera', 'fact_check', 'edit_note', 'auto_awesome', 'download'];
-  const stepNames = ['Details', 'Logbook', 'Review', 'Missing info', 'Generate', 'Edit and download'];
+  const stepIcons = ['badge', 'photo_camera', 'fact_check', 'edit_note', 'auto_awesome'];
+  const stepNames = ['Details', 'Logbook', 'Review', 'Missing info', 'Generate'];
   const stepSubtitles = [
     'Add your details',
     'Add your pages',
     'Check what we read',
     'Fill what’s missing',
     'Generate your report',
-    'Review and download',
   ];
 
   // ==========================================
-  // RENDER TAB: HOME
+  // VIEW: HOME
   // ==========================================
   const renderHomeView = () => {
-    const s = step;
+    const s = Math.min(step, 5);
     const n = pages.length;
 
     return (
@@ -836,7 +908,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               {stepIcons[s - 1]}
             </span>
-            {hasStarted ? `Step ${s} of 6` : '6 steps'}
+            {hasStarted ? `Step ${s} of 5` : '5 steps'}
           </span>
           <h2>{hasStarted ? stepNames[s - 1] : 'New report'}</h2>
           <p>{hasStarted ? stepSubtitles[s - 1] : 'Photos to PDF or Word'}</p>
@@ -894,14 +966,26 @@ export default function DashboardPage() {
 
         {/* 2 Bottom Quick Links */}
         <div className="tl2">
-          <button type="button" onClick={() => switchTab('logbooks')}>
+          <button
+            type="button"
+            onClick={() => {
+              setLogbookView('pages');
+              switchTab('logbooks');
+            }}
+          >
             <span className="ms" aria-hidden="true">
               menu_book
             </span>
             <b>Logbook</b>
             <small>{n ? `${n} page${n === 1 ? '' : 's'}` : 'None yet'}</small>
           </button>
-          <button type="button" onClick={() => switchTab('reports')}>
+          <button
+            type="button"
+            onClick={() => {
+              setLogbookView('report');
+              switchTab('logbooks');
+            }}
+          >
             <span className="ms" aria-hidden="true">
               description
             </span>
@@ -914,7 +998,246 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // RENDER TAB: LOGBOOKS
+  // VIEW: TECHNICAL REPORT (INSIDE LOGBOOK)
+  // ==========================================
+  const renderReportViewer = () => {
+    const layout = computeLayout();
+    const isTargetMet = layout.total >= 12 && layout.total <= 15;
+
+    if (genState !== 2) {
+      return (
+        <div className="card big" style={{ marginTop: '10px' }}>
+          <div className="ok">
+            <span className="ms" aria-hidden="true">
+              auto_stories
+            </span>
+          </div>
+          <h2>No report generated yet</h2>
+          <p>Complete the 5-step generator to compile your logbook entries into an institutional report.</p>
+          <button
+            className="btn w"
+            type="button"
+            onClick={() => goToFlow(hasStarted ? step : 1)}
+            style={{ marginTop: '20px' }}
+          >
+            {hasStarted ? 'Continue generation' : 'Start report generator'}
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ marginTop: '6px' }}>
+        <div className="seg" role="tablist" aria-label="View" style={{ marginBottom: '14px' }}>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={editorTab === 'edit'}
+            onClick={() => setEditorTab('edit')}
+          >
+            Edit
+          </button>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={editorTab === 'prev'}
+            onClick={() => setEditorTab('prev')}
+          >
+            Preview
+          </button>
+        </div>
+
+        {editorTab === 'edit' ? (
+          <>
+            <div className="pills" role="tablist" aria-label="Sections">
+              {SEC.map((x, i) => (
+                <button
+                  key={x}
+                  role="tab"
+                  type="button"
+                  aria-selected={i === currentSectionIdx}
+                  onClick={() => {
+                    setCurrentSectionIdx(i);
+                    if (editorRef.current) {
+                      editorRef.current.innerHTML = getSectionHtml(i);
+                    }
+                  }}
+                >
+                  {x.replace(/Chapter (\d): /, 'Ch $1: ')}
+                </button>
+              ))}
+            </div>
+
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="tl" role="toolbar" aria-label="Formatting">
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.execCommand('bold');
+                    editorRef.current?.focus();
+                  }}
+                  aria-label="Bold"
+                >
+                  <span className="ms" aria-hidden="true">
+                    format_bold
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.execCommand('italic');
+                    editorRef.current?.focus();
+                  }}
+                  aria-label="Italic"
+                >
+                  <span className="ms" aria-hidden="true">
+                    format_italic
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.execCommand('insertUnorderedList');
+                    editorRef.current?.focus();
+                  }}
+                  aria-label="Bullets"
+                >
+                  <span className="ms" aria-hidden="true">
+                    format_list_bulleted
+                  </span>
+                </button>
+                <span className="sv" id="sv">
+                  <span className="ms" style={{ fontSize: '17px' }} aria-hidden="true">
+                    {saveStatusText === 'saving' ? 'sync' : 'cloud_done'}
+                  </span>
+                  {saveStatusText === 'saving' ? 'Saving' : 'Saved'}
+                </span>
+              </div>
+
+              <div
+                ref={editorRef}
+                className="doc"
+                id="doc"
+                contentEditable
+                role="textbox"
+                aria-multiline="true"
+                aria-label={SEC[currentSectionIdx]}
+                style={{ textAlign: 'justify' }}
+                dangerouslySetInnerHTML={{ __html: getSectionHtml(currentSectionIdx) }}
+                onInput={(e) => {
+                  setSaveStatusText('saving');
+                  const val = e.currentTarget.innerHTML;
+                  setChapterEdits((prev) => ({ ...prev, [currentSectionIdx]: val }));
+                  if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+                  saveTimerRef.current = setTimeout(() => {
+                    setSaveStatusText('saved');
+                  }, 600);
+                }}
+              />
+            </div>
+
+            <button
+              className="btn o w s"
+              type="button"
+              onClick={() => setActiveSheet({ type: 'editDetails' })}
+            >
+              <span className="ms" aria-hidden="true">
+                badge
+              </span>
+              Edit your details
+            </button>
+            <p className="hint" style={{ marginTop: '10px' }}>
+              Edits save automatically. Fill the [brackets].
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="card">
+              <span className={`chip ${isTargetMet ? '' : 'w'}`}>
+                <span className="ms" aria-hidden="true">
+                  {isTargetMet ? 'check_circle' : 'info'}
+                </span>
+                About {layout.total} pages
+              </span>
+              <p className="mut" style={{ fontSize: '13.5px', marginTop: '10px' }}>
+                Target 12–15 pages.{' '}
+                {layout.total < 12
+                  ? 'Short logbook, short report. No padding.'
+                  : layout.total > 15
+                  ? 'Over target.'
+                  : 'On target.'}
+              </p>
+              <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
+                Times New Roman 12pt · 1.5 spacing · justified · template v1
+              </p>
+            </div>
+
+            {layout.rows.map((q, idx) => (
+              <React.Fragment key={idx}>
+                <p className="pl2">
+                  {q.t} ·{' '}
+                  {q.l
+                    ? `page ${q.l}${q.p > 1 ? ` (continues to ${+q.l + q.p - 1})` : ''}`
+                    : 'no page number'}
+                </p>
+                <div
+                  className="pgp"
+                  role="group"
+                  aria-label={q.t}
+                  style={{
+                    fontFamily: "'Times New Roman', Times, serif",
+                    textAlign: 'justify',
+                    lineHeight: 1.65,
+                    paddingLeft: '22px',
+                  }}
+                >
+                  <div dangerouslySetInnerHTML={{ __html: q.h }} />
+                  {q.l && <div className="pn">{q.l}</div>}
+                </div>
+              </React.Fragment>
+            ))}
+          </>
+        )}
+
+        {/* Dual Actions: 1. Digital Download (NGN 2000) & 2. Print Delivery (NGN 4000) */}
+        <div style={{ marginTop: '22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            className="btn w"
+            type="button"
+            onClick={() => {
+              if (hasPaidDigital) {
+                setPaymentSuccess({
+                  type: 'digital',
+                  txRef: `L2D_PAID_${Date.now().toString().slice(-6)}`,
+                });
+              } else {
+                setCheckoutModal('digital');
+              }
+            }}
+          >
+            <span className="ms" aria-hidden="true">
+              download
+            </span>
+            {hasPaidDigital ? 'Download Report (Paid)' : 'Download Report (NGN 2,000)'}
+          </button>
+
+          <button
+            className="btn o w"
+            type="button"
+            onClick={() => setCheckoutModal('delivery')}
+          >
+            <span className="ms" aria-hidden="true">
+              local_shipping
+            </span>
+            Print & Spiral Binding Delivery (NGN 4,000)
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ==========================================
+  // VIEW: LOGBOOKS
   // ==========================================
   const renderLogbooksView = () => {
     const un = entries.filter((e) => e.u && !e.ok).length;
@@ -928,11 +1251,33 @@ export default function DashboardPage() {
           <span className="sp" />
         </header>
 
-        <div className="lg">
+        <div className="lg" style={{ paddingBottom: '12px' }}>
           <h1>My Logbooks</h1>
         </div>
 
-        {!pages.length ? (
+        {/* Sub-tab segmented toggle: Logbook Pages vs Technical Report */}
+        <div className="seg" role="tablist" aria-label="Logbook tabs" style={{ marginBottom: '14px' }}>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={logbookView === 'pages'}
+            onClick={() => setLogbookView('pages')}
+          >
+            Logbook Pages ({pages.length})
+          </button>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={logbookView === 'report'}
+            onClick={() => setLogbookView('report')}
+          >
+            Technical Report {genState === 2 ? '•' : ''}
+          </button>
+        </div>
+
+        {logbookView === 'report' ? (
+          renderReportViewer()
+        ) : !pages.length ? (
           <div className="card big">
             <div className="ok">
               <span className="ms" aria-hidden="true">
@@ -951,26 +1296,68 @@ export default function DashboardPage() {
             </button>
           </div>
         ) : (
-          <div className="card">
-            <div className="row sb">
-              <b>SIWES logbook</b>
-              <span className={`chip${un ? ' w' : ''}`}>{st}</span>
+          <>
+            <div className="card">
+              <div className="row sb">
+                <b>SIWES logbook</b>
+                <span className={`chip${un ? ' w' : ''}`}>{st}</span>
+              </div>
+              <p className="mut" style={{ margin: '6px 0 14px', fontSize: '14px' }}>
+                {pages.length} page{pages.length === 1 ? '' : 's'}
+                {details.co ? ` · ${details.co}` : ''}
+              </p>
+              <button className="btn w s" type="button" onClick={() => goToFlow(2)}>
+                Add or Reorder Pages
+              </button>
             </div>
-            <p className="mut" style={{ margin: '6px 0 14px', fontSize: '14px' }}>
-              {pages.length} page{pages.length === 1 ? '' : 's'}
-              {details.co ? ` · ${details.co}` : ''}
-            </p>
-            <button className="btn w s" type="button" onClick={() => goToFlow(2)}>
-              Continue
-            </button>
-          </div>
+
+            {/* List of thumbnails */}
+            <h2 className="sh" style={{ fontSize: '17px', margin: '18px 2px 10px' }}>
+              Captured Pages ({pages.length})
+            </h2>
+            <div className="t3" role="list">
+              {pages.map((p, i) => (
+                <div key={i} className="th" role="listitem">
+                  {p.th ? (
+                    <img src={p.th} alt={`Page ${i + 1}`} />
+                  ) : (
+                    <span className="ms" style={{ fontSize: '34px', color: 'var(--g)' }} aria-hidden="true">
+                      {p.pdf ? 'picture_as_pdf' : 'sync'}
+                    </span>
+                  )}
+                  <span className="n">{i === 0 ? 'Cover' : `Page ${i}`}</span>
+                </div>
+              ))}
+            </div>
+
+            {genState === 2 && (
+              <div className="card" style={{ marginTop: '16px', background: 'var(--mint)', border: 'none' }}>
+                <div className="row sb">
+                  <div>
+                    <b>Technical Report Ready</b>
+                    <p style={{ fontSize: '13px', color: 'var(--gd)', margin: '2px 0 0' }}>
+                      About {computeLayout().total} pages generated
+                    </p>
+                  </div>
+                  <button
+                    className="btn s"
+                    type="button"
+                    onClick={() => setLogbookView('report')}
+                    style={{ background: 'var(--gd)' }}
+                  >
+                    View Report
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     );
   };
 
   // ==========================================
-  // RENDER TAB: REPORTS
+  // VIEW: REPORTS
   // ==========================================
   const renderReportsView = () => {
     const layout = computeLayout();
@@ -1009,12 +1396,15 @@ export default function DashboardPage() {
           <button
             className="card"
             type="button"
-            onClick={() => goToFlow(6)}
+            onClick={() => {
+              setLogbookView('report');
+              switchTab('logbooks');
+            }}
             style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, cursor: 'pointer' }}
           >
             <div className="row sb">
               <b>Technical report</b>
-              <span className="chip">Draft</span>
+              <span className="chip">Draft ready</span>
             </div>
             <p className="mut" style={{ margin: '6px 0 0', fontSize: '14px' }}>
               {details.co} · about {layout.total} pages
@@ -1026,7 +1416,7 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // RENDER TAB: SETTINGS
+  // VIEW: SETTINGS
   // ==========================================
   const renderSettingsView = () => {
     return (
@@ -1078,7 +1468,7 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 1
+  // WIZARD FLOW: STEP 1 (YOUR DETAILS)
   // ==========================================
   const renderStep1 = () => {
     const isPhotos = method === 'photos';
@@ -1362,7 +1752,7 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 2
+  // WIZARD FLOW: STEP 2 (YOUR LOGBOOK)
   // ==========================================
   const renderStep2 = () => {
     const n = pages.length;
@@ -1485,7 +1875,7 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 3
+  // WIZARD FLOW: STEP 3 (CHECK WHAT WE READ)
   // ==========================================
   const renderStep3 = () => {
     if (reading) {
@@ -1644,7 +2034,7 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 4
+  // WIZARD FLOW: STEP 4 (COMPLETE MISSING INFO)
   // ==========================================
   const renderStep4 = () => {
     const items = checkCompleteness();
@@ -1776,7 +2166,7 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 5
+  // WIZARD FLOW: STEP 5 (READY TO GENERATE) — ENHANCED UI
   // ==========================================
   const renderStep5 = () => {
     const n = pages.length;
@@ -1827,7 +2217,38 @@ export default function DashboardPage() {
             <h1 id="wh" tabIndex={-1} style={{ fontSize: '30px' }}>
               Your report is ready
             </h1>
-            <p>About {layout.total} pages. Review, edit, download.</p>
+            <p style={{ marginTop: '8px' }}>
+              Compiled into a complete ~{layout.total} page SIWES technical report.
+            </p>
+            <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                className="btn w"
+                type="button"
+                onClick={() => {
+                  setInFlow(false);
+                  setCurrentTab('logbooks');
+                  setLogbookView('report');
+                  window.location.hash = '#/logbooks';
+                  if (scrRef.current) scrRef.current.scrollTop = 0;
+                }}
+              >
+                <span className="ms" aria-hidden="true">
+                  menu_book
+                </span>
+                View Report in Logbook
+              </button>
+              <button
+                className="btn o w"
+                type="button"
+                onClick={() => {
+                  setInFlow(false);
+                  setCurrentTab('home');
+                  window.location.hash = '#/home';
+                }}
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -1835,222 +2256,116 @@ export default function DashboardPage() {
 
     return (
       <div className="view">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+          <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)', fontWeight: 800 }}>
+            <span className="ms" style={{ fontSize: '16px' }} aria-hidden="true">
+              auto_awesome
+            </span>
+            INSTITUTIONAL AI GENERATOR
+          </span>
+        </div>
         <h1 className="wt" id="wh" tabIndex={-1}>
           Ready to generate
         </h1>
-        <p className="wd">We’ll use:</p>
-
-        <div className="card" style={{ padding: '4px 16px' }}>
-          {[
-            ['menu_book', `${n} logbook page${n === 1 ? '' : 's'} read`, ''],
-            ['event_note', `${wk} entries confirmed`, ''],
-            ['badge', 'Your details complete', ''],
-            ['article', 'LASUSTECH technical report', 'Template version 1'],
-            ['text_fields', 'Times New Roman 12pt', '1.5 spacing, 12–15 pages'],
-          ].map(([icon, label, sub]) => (
-            <div key={label} className="tk">
-              <span className="ms" style={{ color: 'var(--g)' }} aria-hidden="true">
-                {icon}
-              </span>
-              <span>
-                {label}
-                <small>{sub}</small>
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <p className="hint" style={{ marginTop: '14px' }}>
-          Short logbook, shorter report. No padding.
+        <p className="wd" style={{ marginBottom: '16px' }}>
+          We’ll compile your verified placement data into an institutional technical report:
         </p>
-      </div>
-    );
-  };
 
-  // ==========================================
-  // WIZARD FLOW: STEP 6
-  // ==========================================
-  const renderStep6 = () => {
-    const layout = computeLayout();
-    const isTargetMet = layout.total >= 12 && layout.total <= 15;
-
-    return (
-      <div className="view">
-        <div className="seg" role="tablist" aria-label="View" style={{ marginTop: '6px' }}>
-          <button
-            role="tab"
-            type="button"
-            aria-selected={editorTab === 'edit'}
-            onClick={() => setEditorTab('edit')}
-          >
-            Edit
-          </button>
-          <button
-            role="tab"
-            type="button"
-            aria-selected={editorTab === 'prev'}
-            onClick={() => setEditorTab('prev')}
-          >
-            Preview
-          </button>
-        </div>
-
-        {editorTab === 'edit' ? (
-          <>
-            <div className="pills" role="tablist" aria-label="Sections">
-              {SEC.map((x, i) => (
-                <button
-                  key={x}
-                  role="tab"
-                  type="button"
-                  aria-selected={i === currentSectionIdx}
-                  onClick={() => {
-                    setCurrentSectionIdx(i);
-                    if (editorRef.current) {
-                      editorRef.current.innerHTML = getSectionHtml(i);
-                    }
-                  }}
-                >
-                  {x.replace(/Chapter (\d): /, 'Ch $1: ')}
-                </button>
-              ))}
+        <div className="gen-checklist">
+          {/* 1. Pages read */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">
+                menu_book
+              </span>
             </div>
-
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="tl" role="toolbar" aria-label="Formatting">
-                <button
-                  type="button"
-                  onClick={() => {
-                    document.execCommand('bold');
-                    editorRef.current?.focus();
-                  }}
-                  aria-label="Bold"
-                >
-                  <span className="ms" aria-hidden="true">
-                    format_bold
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    document.execCommand('italic');
-                    editorRef.current?.focus();
-                  }}
-                  aria-label="Italic"
-                >
-                  <span className="ms" aria-hidden="true">
-                    format_italic
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    document.execCommand('insertUnorderedList');
-                    editorRef.current?.focus();
-                  }}
-                  aria-label="Bullets"
-                >
-                  <span className="ms" aria-hidden="true">
-                    format_list_bulleted
-                  </span>
-                </button>
-                <span className="sv" id="sv">
-                  <span className="ms" style={{ fontSize: '17px' }} aria-hidden="true">
-                    {saveStatusText === 'saving' ? 'sync' : 'cloud_done'}
-                  </span>
-                  {saveStatusText === 'saving' ? 'Saving' : 'Saved'}
-                </span>
-              </div>
-
-              <div
-                ref={editorRef}
-                className="doc"
-                id="doc"
-                contentEditable
-                role="textbox"
-                aria-multiline="true"
-                aria-label={SEC[currentSectionIdx]}
-                style={{ textAlign: 'justify' }}
-                dangerouslySetInnerHTML={{ __html: getSectionHtml(currentSectionIdx) }}
-                onInput={(e) => {
-                  setSaveStatusText('saving');
-                  const val = e.currentTarget.innerHTML;
-                  setChapterEdits((prev) => ({ ...prev, [currentSectionIdx]: val }));
-                  if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-                  saveTimerRef.current = setTimeout(() => {
-                    setSaveStatusText('saved');
-                  }, 600);
-                }}
-              />
+            <div className="gi-content">
+              <div className="gi-title">{n || 9} logbook pages read</div>
+              <div className="gi-desc">Cover to final page extracted & sequenced</div>
             </div>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+              check_circle
+            </span>
+          </div>
 
-            <button
-              className="btn o w s"
-              type="button"
-              onClick={() => setActiveSheet({ type: 'editDetails' })}
-            >
+          {/* 2. Entries confirmed */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">
+                event_note
+              </span>
+            </div>
+            <div className="gi-content">
+              <div className="gi-title">{wk || 6} entries confirmed</div>
+              <div className="gi-desc">Weekly technical activities and competencies mapped</div>
+            </div>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+              check_circle
+            </span>
+          </div>
+
+          {/* 3. Details complete */}
+          <div className="gen-item">
+            <div className="gi-icon">
               <span className="ms" aria-hidden="true">
                 badge
               </span>
-              Edit your details
-            </button>
-            <p className="hint" style={{ marginTop: '10px' }}>
-              Edits save automatically. Fill the [brackets].
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="card">
-              <span className={`chip ${isTargetMet ? '' : 'w'}`}>
-                <span className="ms" aria-hidden="true">
-                  {isTargetMet ? 'check_circle' : 'info'}
-                </span>
-                About {layout.total} pages
-              </span>
-              <p className="mut" style={{ fontSize: '13.5px', marginTop: '10px' }}>
-                Target 12–15 pages.{' '}
-                {layout.total < 12
-                  ? 'Short logbook, short report. No padding.'
-                  : layout.total > 15
-                  ? 'Over target.'
-                  : 'On target.'}
-              </p>
-              <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
-                Times New Roman 12pt · 1.5 spacing · justified · template v1
-              </p>
             </div>
+            <div className="gi-content">
+              <div className="gi-title">Your details complete</div>
+              <div className="gi-desc">
+                {details.name || 'John Samuel'} · {details.dept || 'Computer Engineering'}, {details.fac || 'College of Applied Sciences and Technology'}
+              </div>
+            </div>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+              check_circle
+            </span>
+          </div>
 
-            {layout.rows.map((q, idx) => (
-              <React.Fragment key={idx}>
-                <p className="pl2">
-                  {q.t} ·{' '}
-                  {q.l
-                    ? `page ${q.l}${q.p > 1 ? ` (continues to ${+q.l + q.p - 1})` : ''}`
-                    : 'no page number'}
-                </p>
-                <div
-                  className="pgp"
-                  role="group"
-                  aria-label={q.t}
-                  style={{
-                    fontFamily: "'Times New Roman', Times, serif",
-                    textAlign: 'justify',
-                    lineHeight: 1.65,
-                    paddingLeft: '22px',
-                  }}
-                >
-                  <div dangerouslySetInnerHTML={{ __html: q.h }} />
-                  {q.l && <div className="pn">{q.l}</div>}
-                </div>
-              </React.Fragment>
-            ))}
-          </>
-        )}
+          {/* 4. Institutional template */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">
+                article
+              </span>
+            </div>
+            <div className="gi-content">
+              <div className="gi-title">LASUSTECH technical report</div>
+              <div className="gi-desc">Approved institutional template (Version 1.0)</div>
+            </div>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+              check_circle
+            </span>
+          </div>
+
+          {/* 5. Typography */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">
+                text_fields
+              </span>
+            </div>
+            <div className="gi-content">
+              <div className="gi-title">Times New Roman 12pt</div>
+              <div className="gi-desc">1.5 spacing · Academic justification · 12–15 pages target</div>
+            </div>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+              check_circle
+            </span>
+          </div>
+        </div>
+
+        <div className="trust-banner">
+          <span className="ms" aria-hidden="true">
+            verified_user
+          </span>
+          <span>Guaranteed academic integrity — No fabricated projects or unverified activities.</span>
+        </div>
       </div>
     );
   };
 
-  // Primary CTA Button for wizard navigation
+  // Primary CTA Button for wizard bottom navigation
   const renderPrimaryCta = () => {
     if (step === 1) {
       return (
@@ -2126,67 +2441,52 @@ export default function DashboardPage() {
         </button>
       );
     }
-    if (step === 5) {
-      if (genState === 0) {
-        return (
-          <button
-            className="btn"
-            type="button"
-            onClick={startGenerating}
-            style={{ flex: 1 }}
-          >
-            <span className="ms" aria-hidden="true">
-              auto_awesome
-            </span>
-            Generate report
-          </button>
-        );
-      }
-      if (genState === 1) {
-        return (
-          <button className="btn" type="button" disabled style={{ flex: 1 }}>
-            Please wait…
-          </button>
-        );
-      }
+    // step === 5
+    if (genState === 0) {
       return (
         <button
           className="btn"
           type="button"
-          onClick={() => {
-            setStep(6);
-            if (scrRef.current) scrRef.current.scrollTop = 0;
-          }}
+          onClick={startGenerating}
           style={{ flex: 1 }}
         >
-          Review and edit
           <span className="ms" aria-hidden="true">
-            arrow_forward
+            auto_awesome
           </span>
+          Generate report
         </button>
       );
     }
-    // step === 6
+    if (genState === 1) {
+      return (
+        <button className="btn" type="button" disabled style={{ flex: 1 }}>
+          Please wait…
+        </button>
+      );
+    }
     return (
       <button
         className="btn"
         type="button"
         onClick={() => {
-          setDownloadState('');
-          setActiveSheet({ type: 'download' });
+          setInFlow(false);
+          setCurrentTab('logbooks');
+          setLogbookView('report');
+          window.location.hash = '#/logbooks';
+          if (scrRef.current) scrRef.current.scrollTop = 0;
         }}
         style={{ flex: 1 }}
       >
         <span className="ms" aria-hidden="true">
-          download
+          menu_book
         </span>
-        Download
+        View in Logbook
       </button>
     );
   };
 
   // ==========================================
-  // RENDER BOTTOM SHEET CONTENT
+  // RENDER BOTTOM SHEET CONTENT (EDITING DETAILS & ENTRIES)
   // ==========================================
   const renderSheetContent = () => {
     if (!activeSheet) return null;
@@ -2391,83 +2691,13 @@ export default function DashboardPage() {
       );
     }
 
-    if (activeSheet.type === 'download') {
-      if (downloadState === 'run') {
-        return (
-          <>
-            <h2>Preparing your {downloadFormat} file</h2>
-            <div className="pb" role="progressbar" aria-label="Exporting">
-              <i />
-            </div>
-            <p className="mut" style={{ fontSize: '14px' }}>
-              Preparing…
-            </p>
-          </>
-        );
-      }
-
-      if (downloadState === 'done') {
-        return (
-          <>
-            <div className="big" style={{ padding: '10px 0 4px' }}>
-              <div className="ok">
-                <span className="ms" aria-hidden="true">
-                  check
-                </span>
-              </div>
-              <h2>Your {downloadFormat} file is ready</h2>
-              <p>Check it against your department’s rules.</p>
-            </div>
-            <button
-              className="btn w"
-              type="button"
-              onClick={executeRealFileDownload}
-              style={{ marginTop: '16px' }}
-            >
-              <span className="ms" aria-hidden="true">
-                download
-              </span>
-              Download {downloadFormat}
-            </button>
-          </>
-        );
-      }
-
-      return (
-        <>
-          <h2>Download your report</h2>
-          <button
-            className="btn w"
-            type="button"
-            onClick={() => triggerDownload('PDF')}
-            style={{ marginBottom: '10px' }}
-          >
-            <span className="ms" aria-hidden="true">
-              picture_as_pdf
-            </span>
-            PDF, ready to print
-          </button>
-          <button
-            className="btn o w"
-            type="button"
-            onClick={() => triggerDownload('Word')}
-          >
-            <span className="ms" aria-hidden="true">
-              description
-            </span>
-            Word (DOCX), editable
-          </button>
-        </>
-      );
-    }
-
     return null;
   };
 
   return (
     <div className="dashboard-root">
       <div className={`app ${inFlow ? 'wz nt' : ''} ${isScrolled ? 'sc' : ''}`} id="app">
-        {/* Scroll Container */}
+        {/* Main Viewport Container */}
         <div className="scr" id="scr" ref={scrRef} onScroll={handleScroll} tabIndex={-1}>
           {inFlow ? (
             <>
@@ -2489,7 +2719,7 @@ export default function DashboardPage() {
                     </span>
                   </button>
                   <b style={{ fontSize: '14px' }}>
-                    Step {step} of 6 · {SN[step - 1]}
+                    Step {step} of 5 · {SN[step - 1]}
                   </b>
                   <span className="sp" />
                 </div>
@@ -2497,7 +2727,7 @@ export default function DashboardPage() {
                   className="wp"
                   role="progressbar"
                   aria-valuemin={1}
-                  aria-valuemax={6}
+                  aria-valuemax={5}
                   aria-valuenow={step}
                   aria-label="Report progress"
                 >
@@ -2507,13 +2737,12 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Wizard Step Body */}
+              {/* Wizard Steps (1 through 5) */}
               {step === 1 && renderStep1()}
               {step === 2 && renderStep2()}
               {step === 3 && renderStep3()}
               {step === 4 && renderStep4()}
               {step === 5 && renderStep5()}
-              {step === 6 && renderStep6()}
             </>
           ) : (
             <>
@@ -2525,7 +2754,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Tab Bar (Visible when not in wizard) */}
+        {/* Tab Bar (Visible when outside wizard) */}
         <nav className="tb" id="tb" aria-label="Main">
           <button
             type="button"
@@ -2597,7 +2826,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Camera Overlay (#cv) */}
+        {/* In-app Camera Overlay (#cv) */}
         {isCameraActive && (
           <div id="cv" className={cameraFlash ? 'fl' : ''}>
             <video ref={videoRef} id="vd" playsInline autoPlay muted aria-label="Camera" />
@@ -2647,7 +2876,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Bottom Sheets (#layer) */}
+        {/* Details & Entries Editing Sheet (#layer) */}
         {activeSheet && (
           <div id="layer">
             <div className="bd" onClick={closeSheet} />
@@ -2664,7 +2893,425 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Toast (#toast) */}
+        {/* ======================================================== */}
+        {/* CHECKOUT MODAL 1: DIGITAL REPORT (NGN 2,000)             */}
+        {/* ======================================================== */}
+        {checkoutModal === 'digital' && (
+          <div id="layer">
+            <div className="bd" onClick={() => !isProcessingPayment && setCheckoutModal(null)} />
+            <div
+              className="sht"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Digital Checkout"
+              tabIndex={-1}
+            >
+              <div className="hd" />
+              <h2>Checkout · Digital Report</h2>
+              <p className="mut" style={{ fontSize: '13.5px', marginBottom: '14px' }}>
+                Instant access to download your institutional technical report.
+              </p>
+
+              <div className="checkout-card">
+                <div className="row sb">
+                  <div>
+                    <b>SIWES Technical Report</b>
+                    <small className="mut" style={{ display: 'block', marginTop: '2px' }}>
+                      PDF (Print Ready) + Word DOCX (Editable)
+                    </small>
+                  </div>
+                  <span className="chip">Digital</span>
+                </div>
+
+                <div className="checkout-price">
+                  <span>Total Amount</span>
+                  <b>NGN 2,000</b>
+                </div>
+
+                <div style={{ fontSize: '13px', color: 'var(--mut)', marginBottom: '16px' }}>
+                  Student: <b>{details.name || 'John Samuel'}</b> ({details.matric || 'STE/2021/0456'})
+                </div>
+
+                <p style={{ fontWeight: 800, fontSize: '13px', marginBottom: '8px' }}>
+                  SELECT PAYMENT METHOD
+                </p>
+
+                <div
+                  className={`pay-option ${paymentMethod === 'card' ? 'selected' : ''}`}
+                  onClick={() => setPaymentMethod('card')}
+                >
+                  <span className="ms" style={{ color: 'var(--g)' }}>
+                    credit_card
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div>Debit / Credit Card</div>
+                    <small className="mut">Mastercard, Visa, Verve</small>
+                  </div>
+                  {paymentMethod === 'card' && (
+                    <span className="ms" style={{ color: 'var(--g)' }}>
+                      check_circle
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  className={`pay-option ${paymentMethod === 'transfer' ? 'selected' : ''}`}
+                  onClick={() => setPaymentMethod('transfer')}
+                >
+                  <span className="ms" style={{ color: 'var(--g)' }}>
+                    account_balance
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div>Bank Transfer</div>
+                    <small className="mut">Instant automated verification</small>
+                  </div>
+                  {paymentMethod === 'transfer' && (
+                    <span className="ms" style={{ color: 'var(--g)' }}>
+                      check_circle
+                    </span>
+                  )}
+                </div>
+
+                <div
+                  className={`pay-option ${paymentMethod === 'ussd' ? 'selected' : ''}`}
+                  onClick={() => setPaymentMethod('ussd')}
+                >
+                  <span className="ms" style={{ color: 'var(--g)' }}>
+                    dialpad
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div>USSD Code</div>
+                    <small className="mut">*737#, *894#, *966#</small>
+                  </div>
+                  {paymentMethod === 'ussd' && (
+                    <span className="ms" style={{ color: 'var(--g)' }}>
+                      check_circle
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  className="btn w"
+                  type="button"
+                  disabled={isProcessingPayment}
+                  onClick={processDigitalPayment}
+                  style={{ marginTop: '14px' }}
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <span className="ms" style={{ animation: 'spin 1s linear infinite' }}>
+                        sync
+                      </span>
+                      Processing Payment…
+                    </>
+                  ) : (
+                    <>
+                      <span className="ms">lock</span>
+                      Pay NGN 2,000 Now
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 4000) */}
+        {/* ======================================================== */}
+        {checkoutModal === 'delivery' && (
+          <div id="layer">
+            <div className="bd" onClick={() => !isProcessingPayment && setCheckoutModal(null)} />
+            <div
+              className="sht"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delivery Checkout"
+              tabIndex={-1}
+            >
+              <div className="hd" />
+              <h2>Print & Spiral Binding Delivery</h2>
+              <p className="mut" style={{ fontSize: '13.5px', marginBottom: '14px' }}>
+                Your report printed, spiral-bound, and delivered directly to your campus or address.
+              </p>
+
+              <div className="checkout-card">
+                <div className="checkout-price" style={{ margin: '0 0 16px' }}>
+                  <span>Print, Binding & Delivery</span>
+                  <b>NGN 4,000</b>
+                </div>
+
+                {/* Delivery Form */}
+                <div className="f" style={{ marginBottom: '12px' }}>
+                  <label htmlFor="del_name">
+                    Recipient Full Name <em aria-hidden="true">*</em>
+                  </label>
+                  <input
+                    id="del_name"
+                    type="text"
+                    value={deliveryData.recipientName}
+                    onChange={(e) =>
+                      setDeliveryData((prev) => ({ ...prev, recipientName: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="f" style={{ marginBottom: '12px' }}>
+                  <label htmlFor="del_phone">
+                    Phone Number / WhatsApp for Rider <em aria-hidden="true">*</em>
+                  </label>
+                  <input
+                    id="del_phone"
+                    type="tel"
+                    placeholder="e.g. 08012345678"
+                    value={deliveryData.phone}
+                    onChange={(e) =>
+                      setDeliveryData((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+
+                <div className="f" style={{ marginBottom: '12px' }}>
+                  <label htmlFor="del_location">
+                    Campus Delivery Location <em aria-hidden="true">*</em>
+                  </label>
+                  <select
+                    id="del_location"
+                    value={deliveryData.campusLocation}
+                    onChange={(e) =>
+                      setDeliveryData((prev) => ({ ...prev, campusLocation: e.target.value }))
+                    }
+                  >
+                    {CAMPUS_LOCATIONS.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="f" style={{ marginBottom: '12px' }}>
+                  <label htmlFor="del_custom">
+                    Specific Landmark / Department / Hostel
+                  </label>
+                  <input
+                    id="del_custom"
+                    type="text"
+                    placeholder="e.g. Near Cafeteria, Room 14, Opposite Gate..."
+                    value={deliveryData.customAddress}
+                    onChange={(e) =>
+                      setDeliveryData((prev) => ({ ...prev, customAddress: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="f" style={{ marginBottom: '16px' }}>
+                  <label htmlFor="del_date">
+                    Preferred Delivery Date <em aria-hidden="true">*</em>
+                  </label>
+                  <input
+                    id="del_date"
+                    type="date"
+                    min={new Date().toISOString().split('T')[0]}
+                    value={deliveryData.deliveryDate}
+                    onChange={(e) =>
+                      setDeliveryData((prev) => ({ ...prev, deliveryDate: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+
+                <button
+                  className="btn w"
+                  type="button"
+                  disabled={isProcessingPayment}
+                  onClick={processDeliveryPayment}
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <span className="ms" style={{ animation: 'spin 1s linear infinite' }}>
+                        sync
+                      </span>
+                      Confirming Order & Payment…
+                    </>
+                  ) : (
+                    <>
+                      <span className="ms">check_circle</span>
+                      Pay NGN 4,000 & Confirm Delivery
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* PAYMENT SUCCESS SCREEN: DIGITAL (DOWNLOAD UNLOCKED)      */}
+        {/* ======================================================== */}
+        {paymentSuccess?.type === 'digital' && (
+          <div id="layer">
+            <div className="bd" onClick={() => setPaymentSuccess(null)} />
+            <div
+              className="sht"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Payment Successful"
+              tabIndex={-1}
+            >
+              <div className="hd" />
+              <div className="big" style={{ padding: '10px 0 8px' }}>
+                <div className="ok">
+                  <span className="ms" aria-hidden="true">
+                    check
+                  </span>
+                </div>
+                <h2>Payment Successful!</h2>
+                <p style={{ marginTop: '6px' }}>
+                  Payment of <b>NGN 2,000</b> confirmed.
+                  <br />
+                  Reference: <code>{paymentSuccess.txRef}</code>
+                </p>
+              </div>
+
+              <div className="checkout-card" style={{ background: '#f8faf9', marginTop: '12px' }}>
+                <p style={{ fontWeight: 800, fontSize: '13px', marginBottom: '12px' }}>
+                  DOWNLOAD YOUR TECHNICAL REPORT NOW:
+                </p>
+
+                <button
+                  className="btn w"
+                  type="button"
+                  onClick={() => executeRealFileDownload('PDF')}
+                  style={{ marginBottom: '10px' }}
+                >
+                  <span className="ms" aria-hidden="true">
+                    picture_as_pdf
+                  </span>
+                  Download PDF (Print Ready)
+                </button>
+
+                <button
+                  className="btn o w"
+                  type="button"
+                  onClick={() => executeRealFileDownload('Word')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    description
+                  </span>
+                  Download Word DOCX (Editable)
+                </button>
+              </div>
+
+              <button
+                className="btn o w s"
+                type="button"
+                onClick={() => setPaymentSuccess(null)}
+                style={{ marginTop: '10px' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* PAYMENT SUCCESS SCREEN: PHYSICAL DELIVERY CONFIRMED      */}
+        {/* ======================================================== */}
+        {paymentSuccess?.type === 'delivery' && (
+          <div id="layer">
+            <div className="bd" onClick={() => setPaymentSuccess(null)} />
+            <div
+              className="sht"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delivery Confirmed"
+              tabIndex={-1}
+            >
+              <div className="hd" />
+              <div className="big" style={{ padding: '10px 0 8px' }}>
+                <div className="ok" style={{ background: '#dcf0e7', color: 'var(--g)' }}>
+                  <span className="ms" aria-hidden="true">
+                    local_shipping
+                  </span>
+                </div>
+                <h2>Delivery Order Confirmed!</h2>
+                <p style={{ marginTop: '6px' }}>
+                  Payment of <b>NGN 4,000</b> confirmed.
+                  <br />
+                  Tracking Ref: <code>{paymentSuccess.txRef}</code>
+                </p>
+              </div>
+
+              <div className="checkout-card" style={{ fontSize: '13.5px', marginTop: '10px' }}>
+                <div className="row sb" style={{ borderBottom: '1px solid var(--line)', paddingBottom: '8px' }}>
+                  <span className="mut">Delivery Date:</span>
+                  <b>{paymentSuccess.deliveryDetails?.date}</b>
+                </div>
+
+                <div className="row sb" style={{ borderBottom: '1px solid var(--line)', padding: '8px 0' }}>
+                  <span className="mut">Location:</span>
+                  <b style={{ textAlign: 'right', maxWidth: '65%' }}>
+                    {paymentSuccess.deliveryDetails?.location}
+                    {paymentSuccess.deliveryDetails?.customAddress ? ` (${paymentSuccess.deliveryDetails.customAddress})` : ''}
+                  </b>
+                </div>
+
+                <div className="row sb" style={{ borderBottom: '1px solid var(--line)', padding: '8px 0' }}>
+                  <span className="mut">Recipient:</span>
+                  <b>{paymentSuccess.deliveryDetails?.recipient} ({paymentSuccess.deliveryDetails?.phone})</b>
+                </div>
+
+                <div className="row sb" style={{ paddingTop: '8px' }}>
+                  <span className="mut">Status:</span>
+                  <span className="chip">Laser Printing & Spiral Binding</span>
+                </div>
+              </div>
+
+              {/* Direct WhatsApp Follow-up Button */}
+              {(() => {
+                const det = paymentSuccess.deliveryDetails;
+                const waMessage = `Hello Log2Def, I just paid NGN 4,000 for the printed and spiral-bound SIWES technical report delivery.%0A%0AOrder Ref: ${paymentSuccess.txRef}%0AName: ${encodeURIComponent(det?.recipient || '')}%0AMatric: ${encodeURIComponent(details.matric || '')}%0ALocation: ${encodeURIComponent((det?.location || '') + (det?.customAddress ? ' - ' + det.customAddress : ''))}%0ADelivery Date: ${encodeURIComponent(det?.date || '')}%0APhone: ${encodeURIComponent(det?.phone || '')}`;
+                const waUrl = `https://wa.me/2348096044860?text=${waMessage}`;
+
+                return (
+                  <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <a
+                      href={waUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-wa"
+                    >
+                      <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        aria-hidden="true"
+                        style={{ flex: 'none' }}
+                      >
+                        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86.173.086.275.072.376-.044.101-.116.433-.506.549-.68.116-.173.231-.145.39-.086s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.099.824zm-3.423-14.416c-6.627 0-12 5.373-12 12 0 2.159.57 4.184 1.564 5.938l-1.564 5.719 5.864-1.538c1.703.929 3.655 1.461 5.736 1.461 6.627 0 12-5.373 12-12s-5.373-12-12-12z" />
+                      </svg>
+                      Follow up on WhatsApp (+234 809 604 4860)
+                    </a>
+
+                    <button
+                      className="btn o w s"
+                      type="button"
+                      onClick={() => setPaymentSuccess(null)}
+                    >
+                      Back to Dashboard
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* Global Toast (#toast) */}
         <div
           id="toast"
           role="status"
