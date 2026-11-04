@@ -1,21 +1,28 @@
-// Log2Def IndexedDB Offline Upload Queue & Background Sync Manager
+// Log2Def Bounded Concurrency & IndexedDB Offline Upload Queue Manager
+// Designed for memory safety on mobile Android devices.
+
+import { processLogbookImage } from './image-processor';
 
 export interface QueuedUpload {
-  id: string;
+  id: string; // Used as client_upload_id for backend idempotency
   projectId: number | string;
+  pageIndex: number; // Explicit sequential page order
   fileName: string;
   fileType: string;
   fileSize: number;
   fileBlob: Blob;
-  status: 'pending' | 'uploading' | 'failed' | 'completed';
+  thumbnailUrl: string; // Micro thumbnail (<8KB) for UI previews
+  status: 'pending' | 'uploading' | 'completed' | 'failed';
+  progress: number; // 0 to 100
   createdAt: number;
   retryCount: number;
   error?: string;
+  qualityWarning?: string;
 }
 
 const DB_NAME = 'Log2DefUploadsDB';
 const STORE_NAME = 'upload_queue';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -36,6 +43,7 @@ function getDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('projectId', 'projectId', { unique: false });
         store.createIndex('status', 'status', { unique: false });
+        store.createIndex('pageIndex', 'pageIndex', { unique: false });
         store.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
@@ -47,50 +55,94 @@ function getDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-// 1. Enqueue bulk files into IndexedDB
+/**
+ * Sequential ingestion of captured images or selected files:
+ * Compresses one image at a time, checks quality, generates micro-thumbnail,
+ * and saves into IndexedDB with an explicit pageIndex.
+ */
 export async function enqueueUploads(
   projectId: number | string,
-  files: File[]
+  files: (File | Blob)[],
+  options: {
+    startPageIndex?: number;
+    fileNames?: string[];
+    onProgress?: (processed: number, total: number) => void;
+  } = {}
 ): Promise<QueuedUpload[]> {
-  const db = await getDB();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
+  const existing = await getQueuedUploads(projectId);
+  let nextPageIndex = options.startPageIndex ?? existing.length;
 
+  const db = await getDB();
   const queuedList: QueuedUpload[] = [];
   const now = Date.now();
 
   for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+    const rawFile = files[i];
+    const originalName =
+      (rawFile as File).name ||
+      (options.fileNames && options.fileNames[i]) ||
+      `page_${nextPageIndex + 1}.jpg`;
+    const isImage = rawFile.type.startsWith('image/') || /\.(jpe?g|png|webp)$/i.test(originalName);
+
+    let finalBlob: Blob = rawFile;
+    let thumbnailUrl = '';
+    let qualityWarning: string | undefined;
+
+    if (isImage) {
+      try {
+        const processed = await processLogbookImage(rawFile);
+        finalBlob = processed.blob;
+        thumbnailUrl = processed.thumbnailDataUrl;
+        if (!processed.quality.isAcceptable && processed.quality.warnings.length > 0) {
+          qualityWarning = processed.quality.warnings[0];
+        }
+      } catch (err) {
+        console.warn('Sequential image processing fallback:', err);
+      }
+    }
+
+    const uploadId = `upl_${projectId}_${now}_${i}_${Math.random().toString(36).substring(2, 8)}`;
     const item: QueuedUpload = {
-      id: `${projectId}_${now}_${i}_${Math.random().toString(36).substring(2, 7)}`,
+      id: uploadId,
       projectId,
-      fileName: file.name,
-      fileType: file.type || 'application/octet-stream',
-      fileSize: file.size,
-      fileBlob: file,
+      pageIndex: nextPageIndex,
+      fileName: originalName,
+      fileType: isImage ? 'image/jpeg' : rawFile.type || 'application/octet-stream',
+      fileSize: finalBlob.size,
+      fileBlob: finalBlob,
+      thumbnailUrl,
       status: 'pending',
+      progress: 0,
       createdAt: now,
       retryCount: 0,
+      qualityWarning,
     };
-    store.put(item);
-    queuedList.push(item);
-  }
 
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+    // Save item to IndexedDB
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).put(item);
+    await new Promise<void>((res, rej) => {
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+
+    queuedList.push(item);
+    nextPageIndex++;
+
+    if (options.onProgress) {
+      options.onProgress(i + 1, files.length);
+    }
+  }
 
   notifyQueueUpdated();
   registerBackgroundSync();
-
   return queuedList;
 }
 
-// 2. Retrieve queued uploads for project
-export async function getQueuedUploads(
-  projectId?: number | string
-): Promise<QueuedUpload[]> {
+/**
+ * Retrieve all queued items for a specific project, ordered strictly by pageIndex.
+ */
+export async function getQueuedUploads(projectId?: number | string): Promise<QueuedUpload[]> {
   try {
     const db = await getDB();
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -102,16 +154,54 @@ export async function getQueuedUploads(
       request.onerror = () => reject(request.error);
     });
 
-    if (projectId) {
-      return items.filter((item) => String(item.projectId) === String(projectId));
+    let filtered = items;
+    if (projectId !== undefined) {
+      filtered = items.filter((item) => String(item.projectId) === String(projectId));
     }
-    return items;
+    return filtered.sort((a, b) => a.pageIndex - b.pageIndex);
   } catch {
     return [];
   }
 }
 
-// 3. Remove single upload item from queue
+/**
+ * Reorder queued uploads and update their pageIndex in IndexedDB.
+ */
+export async function reorderQueuedUploads(
+  projectId: number | string,
+  orderedIds: string[]
+): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const store = tx.objectStore(STORE_NAME);
+
+  for (let newIndex = 0; newIndex < orderedIds.length; newIndex++) {
+    const id = orderedIds[newIndex];
+    const getReq = store.get(id);
+    await new Promise<void>((resolve, reject) => {
+      getReq.onsuccess = () => {
+        const item = getReq.result as QueuedUpload | undefined;
+        if (item) {
+          item.pageIndex = newIndex;
+          store.put(item);
+        }
+        resolve();
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+
+  notifyQueueUpdated();
+}
+
+/**
+ * Remove a single upload item from queue.
+ */
 export async function removeQueuedUpload(id: string): Promise<void> {
   const db = await getDB();
   const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -123,7 +213,9 @@ export async function removeQueuedUpload(id: string): Promise<void> {
   notifyQueueUpdated();
 }
 
-// 4. Clear all completed or all items for project
+/**
+ * Clear all completed items for a project.
+ */
 export async function clearCompletedUploads(projectId?: number | string): Promise<void> {
   const items = await getQueuedUploads(projectId);
   const db = await getDB();
@@ -143,13 +235,26 @@ export async function clearCompletedUploads(projectId?: number | string): Promis
   notifyQueueUpdated();
 }
 
-// 5. Process queue (send up to 30 files in bulk per batch)
+/**
+ * Bounded concurrency queue processor.
+ * Uploads files in parallel with maxConcurrency (default 2 workers).
+ * Uses exponential backoff on retry (up to 3 retries).
+ * Sends client_upload_id and page_index for backend idempotency and ordering.
+ */
 let isProcessingQueue = false;
 
 export async function processUploadQueue(
-  uploadEndpointCaller: (projectId: number | string, formData: FormData) => Promise<any>,
+  uploadSingleCaller: (
+    projectId: number | string,
+    formData: FormData,
+    onProgress?: (pct: number) => void
+  ) => Promise<any>,
   projectId?: number | string,
-  onBatchUploaded?: (count: number) => void
+  options: {
+    maxConcurrency?: number;
+    maxRetries?: number;
+    onItemCompleted?: (item: QueuedUpload) => void;
+  } = {}
 ): Promise<{ processed: number; failed: number }> {
   if (isProcessingQueue) return { processed: 0, failed: 0 };
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -160,85 +265,95 @@ export async function processUploadQueue(
   let processed = 0;
   let failed = 0;
 
+  const maxConcurrency = options.maxConcurrency ?? 2;
+  const maxRetries = options.maxRetries ?? 3;
+
   try {
     const allQueued = await getQueuedUploads(projectId);
-    const pendingItems = allQueued.filter((i) => i.status === 'pending' || i.status === 'failed');
+    const pendingItems = allQueued.filter(
+      (item) => item.status === 'pending' || (item.status === 'failed' && item.retryCount < maxRetries)
+    );
 
     if (pendingItems.length === 0) {
-      isProcessingQueue = false;
       return { processed: 0, failed: 0 };
-    }
-
-    // Group items by projectId
-    const byProject: Record<string, QueuedUpload[]> = {};
-    for (const item of pendingItems) {
-      const pId = String(item.projectId);
-      if (!byProject[pId]) byProject[pId] = [];
-      byProject[pId].push(item);
     }
 
     const db = await getDB();
 
-    for (const pId of Object.keys(byProject)) {
-      const items = byProject[pId];
-      // Process in batches of up to 30
-      while (items.length > 0) {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) break;
+    // Helper to execute single item upload with exponential backoff
+    async function uploadWorker(item: QueuedUpload): Promise<boolean> {
+      // Exponential backoff wait if retryCount > 0
+      if (item.retryCount > 0) {
+        const delayMs = Math.min(1000 * Math.pow(2, item.retryCount - 1), 6000);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
 
-        const batch = items.splice(0, 30);
-        const batchIds = batch.map((b) => b.id);
+      // Mark status as uploading
+      item.status = 'uploading';
+      item.progress = 10;
+      const txStart = db.transaction(STORE_NAME, 'readwrite');
+      txStart.objectStore(STORE_NAME).put(item);
+      await new Promise<void>((r) => { txStart.oncomplete = () => r(); });
+      notifyQueueUpdated();
 
-        // Mark as uploading in DB
-        const txMark = db.transaction(STORE_NAME, 'readwrite');
-        const storeMark = txMark.objectStore(STORE_NAME);
-        for (const item of batch) {
-          item.status = 'uploading';
-          storeMark.put(item);
-        }
-        await new Promise<void>((r) => { txMark.oncomplete = () => r(); });
+      const formData = new FormData();
+      const file = new File([item.fileBlob], item.fileName, { type: item.fileType });
+      formData.append('file', file);
+      formData.append('client_upload_id', item.id);
+      formData.append('page_index', String(item.pageIndex));
+      formData.append('async', 'true');
+
+      try {
+        await uploadSingleCaller(item.projectId, formData, (pct) => {
+          item.progress = pct;
+          notifyQueueUpdated();
+        });
+
+        // Mark completed and remove from queue
+        item.status = 'completed';
+        item.progress = 100;
+        const txDone = db.transaction(STORE_NAME, 'readwrite');
+        txDone.objectStore(STORE_NAME).delete(item.id);
+        await new Promise<void>((r) => { txDone.oncomplete = () => r(); });
+
+        processed++;
+        if (options.onItemCompleted) options.onItemCompleted(item);
         notifyQueueUpdated();
+        return true;
+      } catch (err: any) {
+        failed++;
+        item.retryCount += 1;
+        item.status = item.retryCount >= maxRetries ? 'failed' : 'pending';
+        item.error = err.message || 'Upload failed';
+        item.progress = 0;
 
-        // Build FormData
-        const formData = new FormData();
-        for (const item of batch) {
-          const file = new File([item.fileBlob], item.fileName, { type: item.fileType });
-          formData.append('files', file);
-        }
-        formData.append('file', new File([batch[0].fileBlob], batch[0].fileName, { type: batch[0].fileType }));
-
-        try {
-          await uploadEndpointCaller(pId, formData);
-
-          // Success: delete from DB
-          const txDel = db.transaction(STORE_NAME, 'readwrite');
-          const storeDel = txDel.objectStore(STORE_NAME);
-          for (const id of batchIds) {
-            storeDel.delete(id);
-          }
-          await new Promise<void>((r) => { txDel.oncomplete = () => r(); });
-
-          processed += batch.length;
-          if (onBatchUploaded) onBatchUploaded(batch.length);
-        } catch (err: any) {
-          failed += batch.length;
-          // Failed: revert status to pending or mark with error
-          const txRev = db.transaction(STORE_NAME, 'readwrite');
-          const storeRev = txRev.objectStore(STORE_NAME);
-          for (const item of batch) {
-            item.status = 'pending';
-            item.retryCount = (item.retryCount || 0) + 1;
-            item.error = err.message || 'Upload failed';
-            storeRev.put(item);
-          }
-          await new Promise<void>((r) => { txRev.oncomplete = () => r(); });
-          // Stop processing further batches if network went down
-          if (!navigator.onLine || err.message?.includes('network') || err.message?.includes('Failed to fetch')) {
-            break;
-          }
-        }
+        const txErr = db.transaction(STORE_NAME, 'readwrite');
+        txErr.objectStore(STORE_NAME).put(item);
+        await new Promise<void>((r) => { txErr.oncomplete = () => r(); });
         notifyQueueUpdated();
+        return false;
       }
     }
+
+    // Run with bounded concurrency pool
+    const queue = [...pendingItems];
+    const workers: Promise<void>[] = [];
+
+    async function runNext(): Promise<void> {
+      while (queue.length > 0) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) break;
+        const item = queue.shift();
+        if (item) {
+          await uploadWorker(item);
+        }
+      }
+    }
+
+    for (let w = 0; w < Math.min(maxConcurrency, queue.length); w++) {
+      workers.push(runNext());
+    }
+
+    await Promise.all(workers);
   } finally {
     isProcessingQueue = false;
   }
@@ -246,23 +361,22 @@ export async function processUploadQueue(
   return { processed, failed };
 }
 
-// 6. UI event notification
+// UI event notification
 function notifyQueueUpdated() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('log2def-upload-queue-updated'));
   }
 }
 
-// 7. Background Sync Registration with Service Worker
+// Background Sync Registration
 export async function registerBackgroundSync() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
-
   try {
     const registration = await navigator.serviceWorker.ready;
     if ('sync' in registration) {
       await (registration as any).sync.register('sync-logbook-uploads');
     }
   } catch {
-    // Background Sync is progressive enhancement; fallback to window 'online' event
+    // Progressive enhancement
   }
 }
