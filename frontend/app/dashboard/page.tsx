@@ -1,1941 +1,2436 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import { useAuth } from '@/lib/auth-context';
 import {
-  useAuthStore,
   useProjectStore,
   useReportStore,
-  useUIStore,
-  useFeatureFlags,
 } from '@/lib/store';
-import {
-  enqueueUploads,
-  getQueuedUploads,
-  processUploadQueue,
-  clearCompletedUploads,
-  reorderQueuedUploads,
-  removeQueuedUpload,
-  QueuedUpload,
-} from '@/lib/offline-queue';
-import CameraCapture, { CapturedPage } from '@/components/CameraCapture';
-import PageReviewModal from '@/components/PageReviewModal';
-import MissingInfoModal from '@/components/MissingInfoModal';
-import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
+// Approved Design Constants from new-dashboard.html
+const SN = [
+  'Your details',
+  'Logbook',
+  'Review',
+  'Missing info',
+  'Generate',
+  'Edit and download',
+];
+
+const GS = [
+  'Cover page',
+  'Front matter',
+  'Introduction',
+  'Organisation profile',
+  'Training activities',
+  'Skills and experience',
+  'Conclusion',
+  'Contents and page numbers',
+];
+
+const SEC = [
+  'Cover page',
+  'Certification',
+  'Dedication',
+  'Acknowledgement',
+  'Abstract',
+  'Chapter 1: Introduction',
+  'Chapter 2: Organisation profile',
+  'Chapter 3: Training activities',
+  'Chapter 4: Skills and experience',
+  'Chapter 5: Conclusion',
+  'References',
+];
+
+const FLD: [string, string][] = [
+  ['name', 'Full name'],
+  ['matric', 'Matric number'],
+  ['dept', 'Department'],
+  ['fac', 'Faculty or school'],
+  ['inst', 'Institution'],
+  ['co', 'Company'],
+  ['addr', 'Company address'],
+  ['start', 'Training start date'],
+  ['end', 'Training end date'],
+];
+
+interface LogPage {
+  n: string;
+  pdf: boolean;
+  th: string;
+  q?: string;
+  file?: File;
+}
+
+interface LogEntry {
+  w: number;
+  t: string;
+  area: string;
+  tools: string;
+  u?: number;
+  ph?: string;
+  ok?: number;
+}
+
 export default function DashboardPage() {
-  const { user, isLoading: authLoading, logout } = useAuth();
+  const { user, logout } = useAuth();
   const router = useRouter();
 
-  // Project & Data Stores
   const {
     projects,
     activeProject,
-    completeness,
     fetchProjects,
     fetchActiveProject,
-    fetchCompleteness,
-    updateMissingInfo: storeUpdateMissingInfo,
-    createProject,
-    uploadDocument: storeUploadDocument,
-    reorderDocuments: storeReorderDocuments,
-    deleteDocument: storeDeleteDocument,
-    reprocessDocument: storeReprocessDocument,
-    updatePage: storeUpdatePage,
-    updateLogbookEntry: storeUpdateLogbookEntry,
-    deleteLogbookEntry: storeDeleteLogbookEntry,
-    bulkVerifyEntries: storeBulkVerifyEntries,
-    updateActiveProject: storeUpdateProject,
+    updateActiveProject,
+    uploadDocument,
   } = useProjectStore();
 
   const {
-    report,
-    fetchReport,
+    downloadDocx,
+    downloadPdf,
     generateReport: storeGenerateReport,
-    saveSection: storeSaveSection,
-    downloadDocx: storeDownloadDocx,
-    downloadPdf: storeDownloadPdf,
-    isGeneratingReport,
   } = useReportStore();
 
-  const { flags: systemFlags, fetchFlags: fetchFeatureFlags } = useFeatureFlags();
+  // Primary navigation tab
+  const [currentTab, setCurrentTab] = useState<'home' | 'logbooks' | 'reports' | 'settings'>('home');
+  const [inFlow, setInFlow] = useState<boolean>(false);
+  const [isScrolled, setIsScrolled] = useState<boolean>(false);
 
-  // Navigation tab state: 'home' | 'logbook' | 'report' | 'settings' | 'new'
-  const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'settings' | 'new'>('home');
-  const [logbookTab, setLogbookTab] = useState<'entries' | 'docs'>('docs');
-  const [reportTab, setReportTab] = useState<'editor' | 'preview' | 'export'>('editor');
-  const [currentChapterIdx, setCurrentChapterIdx] = useState<number>(0);
+  // Flow & Project state matching 'P' from new-dashboard.html
+  const [step, setStep] = useState<number>(1);
+  const [method, setMethod] = useState<'manual' | 'photos'>('manual');
 
-  // Multi-file upload progress & offline queue
-  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
-  const [uploadStatusText, setUploadStatusText] = useState('');
-  const [uploadQueue, setUploadQueue] = useState<QueuedUpload[]>([]);
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const userFullName = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username
+    : 'John Samuel';
 
-  // Affirmation dialog / banner state
-  const [affirmationScreen, setAffirmationScreen] = useState<{
-    visible: boolean;
-    step: number;
-    title: string;
-    description: string;
-    stats?: { label: string; value: string }[];
-    primaryActionLabel: string;
-    onPrimaryAction: () => void;
-  } | null>(null);
+  const [details, setDetails] = useState<Record<string, string>>({
+    name: userFullName,
+    inst: 'Lagos State University of Science and Technology (LASUSTECH)',
+    fac: 'College of Applied Sciences and Technology',
+    dept: '',
+    matric: '',
+    co: '',
+    addr: '',
+    unit: '',
+    start: '',
+    end: '',
+    sup: '',
+    isup: '',
+  });
+  const [fieldSources, setFieldSources] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  // PWA Offline & Install Prompt states
-  const [isOffline, setIsOffline] = useState(false);
-  const [canInstallPWA, setCanInstallPWA] = useState(false);
-  const [deviceOS, setDeviceOS] = useState<DeviceOS>('pc');
+  const [pages, setPages] = useState<LogPage[]>([]);
+  const [reading, setReading] = useState<boolean>(false);
+  const [readProgress, setReadProgress] = useState<number>(0);
+  const [readDone, setReadDone] = useState<boolean>(false);
 
-  // Local UI & Scroll states
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [animDir, setAnimDir] = useState<'fw' | 'bw'>('fw');
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+
+  // Step 5 report generation state
+  const [genState, setGenState] = useState<0 | 1 | 2>(0);
+  const [genProgress, setGenProgress] = useState<number>(0);
+
+  // Step 6 report editor / preview state
+  const [editorTab, setEditorTab] = useState<'edit' | 'prev'>('edit');
+  const [currentSectionIdx, setCurrentSectionIdx] = useState<number>(0);
+  const [chapterEdits, setChapterEdits] = useState<Record<number, string>>({});
+  const [saveStatusText, setSaveStatusText] = useState<'saved' | 'saving'>('saved');
+
+  // Download state: '' | 'run' | 'done'
+  const [downloadState, setDownloadState] = useState<'' | 'run' | 'done'>('');
+  const [downloadFormat, setDownloadFormat] = useState<'PDF' | 'Word'>('PDF');
+
+  // Bottom sheet modal state
+  const [activeSheet, setActiveSheet] = useState<
+    | { type: 'editWeek'; index: number }
+    | { type: 'editField'; key: string; label: string }
+    | { type: 'editDetails' }
+    | { type: 'download' }
+    | null
+  >(null);
+
+  // Camera overlay state
+  const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const [retakeIndex, setRetakeIndex] = useState<number>(-1);
+  const [cameraFlash, setCameraFlash] = useState<boolean>(false);
+
+  // Toast notification
+  const [toastMessage, setToastMessage] = useState<string>('');
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const scrRef = useRef<HTMLDivElement>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const camInputRef = useRef<HTMLInputElement>(null);
 
-  // Interactive Bottom Sheet Modal state: 'me' (profile) | 'editDetails' | 'pwaGuide' | null
-  const [activeSheet, setActiveSheet] = useState<'me' | 'editDetails' | 'pwaGuide' | null>(null);
+  // Show Toast
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage('');
+    }, 2300);
+  }, []);
 
-  // Page Review & Missing Info Modal states
-  const [reviewingDoc, setReviewingDoc] = useState<any | null>(null);
-  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [isMissingInfoOpen, setIsMissingInfoOpen] = useState(false);
-
-  // Step 1: Details Form state
-  const [detailsStep, setDetailsStep] = useState<1 | 2>(1);
-  const [detailsData, setDetailsData] = useState({
-    full_name: '',
-    matric_number: '',
-    department: '',
-    faculty_school: 'College of Applied Sciences and Technology',
-    university_name: 'Lagos State University of Science and Technology (LASUSTECH)',
-    organization_name: '',
-    organization_address: '',
-    placement_department: '',
-    training_start_date: '',
-    training_end_date: '',
-    industry_supervisor_name: '',
-    academic_supervisor_name: '',
-  });
-  const [detailsErrors, setDetailsErrors] = useState<Record<string, string>>({});
-  const [isSavingDetails, setIsSavingDetails] = useState(false);
-
-  // Local Toast notification
-  const [localToast, setLocalToast] = useState<{ message: string; visible: boolean }>({
-    message: '',
-    visible: false,
-  });
-
-  const [isPreview, setIsPreview] = useState(false);
-
-  const triggerToast = (msg: string) => {
-    setLocalToast({ message: msg, visible: true });
-    setTimeout(() => {
-      setLocalToast((prev) => ({ ...prev, visible: false }));
-    }, 2500);
-  };
-
-  // Check URL params, tokens, and hash on mount
+  // Sync user info into details on mount
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const search = window.location.search;
-    if (search.includes('preview=1') || search.includes('demo=1')) {
-      setIsPreview(true);
+    if (user) {
+      const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
+      if (name) {
+        setDetails((prev) => ({ ...prev, name }));
+      }
     }
-    const params = new URLSearchParams(search);
-    const urlToken = params.get('token');
-    if (urlToken) {
-      import('@/lib/api').then(({ setAuthToken }) => {
-        setAuthToken(urlToken);
-        useAuthStore.getState().refreshUser();
-      });
-    }
-    fetchFeatureFlags();
+  }, [user]);
 
+  // Sync active project if already present
+  useEffect(() => {
+    fetchProjects()
+      .then((list) => {
+        if (list && list.length > 0) {
+          fetchActiveProject(list[0].id).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [fetchProjects, fetchActiveProject]);
+
+  useEffect(() => {
+    if (activeProject) {
+      setDetails((prev) => ({
+        ...prev,
+        matric: activeProject.matric_number || prev.matric,
+        dept: activeProject.department || prev.dept,
+        fac: activeProject.faculty_school || prev.fac,
+        inst: activeProject.university_name || prev.inst,
+        co: activeProject.organization_name || prev.co,
+        addr: activeProject.organization_address || prev.addr,
+        start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : prev.start,
+        end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : prev.end,
+        sup: activeProject.industry_supervisor_name || prev.sup,
+        isup: activeProject.institution_supervisor_name || prev.isup,
+      }));
+    }
+  }, [activeProject]);
+
+  // Handle URL hash navigation (#home, #logbooks, #reports, #settings, #flow, #report)
+  useEffect(() => {
     const handleHash = () => {
-      const hash = window.location.hash.replace('#/', '').replace('#', '').split('/')[0];
-      if (['home', 'logbook', 'report', 'settings', 'new'].includes(hash)) {
-        setCurrentTab(hash as any);
+      const h = window.location.hash.replace('#/', '').replace('#', '');
+      if (h === 'report') {
+        setStep(6);
+        setInFlow(true);
+      } else if (h === 'flow') {
+        setInFlow(true);
+      } else if (h === 'logbooks') {
+        setCurrentTab('logbooks');
+        setInFlow(false);
+      } else if (h === 'reports') {
+        setCurrentTab('reports');
+        setInFlow(false);
+      } else if (h === 'settings') {
+        setCurrentTab('settings');
+        setInFlow(false);
+      } else {
+        setCurrentTab('home');
+        setInFlow(false);
       }
     };
 
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, [fetchFeatureFlags]);
-
-  // Auth redirect
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (window.location.search.includes('preview=1') || window.location.search.includes('token=')) {
-        return;
-      }
-    }
-    if (!authLoading && !user && !isPreview) {
-      router.push('/login');
-    }
-  }, [user, authLoading, isPreview, router]);
-
-  // Load projects list on mount
-  useEffect(() => {
-    if (user) {
-      fetchProjects().then((projs) => {
-        if (projs && projs.length > 0 && !activeProject) {
-          fetchActiveProject(projs[0].id);
-        }
-      });
-    }
-  }, [user]);
-
-  // Load active project details
-  useEffect(() => {
-    if (activeProject?.id) {
-      fetchCompleteness(activeProject.id).catch(() => null);
-      fetchReport(activeProject.id).catch(() => null);
-      getQueuedUploads(activeProject.id).then(setUploadQueue).catch(() => []);
-
-      // Prepopulate details data from active project
-      setDetailsData({
-        full_name: activeProject.full_name || '',
-        matric_number: activeProject.matric_number || '',
-        department: activeProject.department || '',
-        faculty_school: activeProject.faculty_school || 'College of Applied Sciences and Technology',
-        university_name: activeProject.university_name || 'Lagos State University of Science and Technology (LASUSTECH)',
-        organization_name: activeProject.organization_name || '',
-        organization_address: activeProject.organization_address || '',
-        placement_department: activeProject.placement_department || '',
-        training_start_date: activeProject.training_start_date ? String(activeProject.training_start_date).slice(0, 10) : '',
-        training_end_date: activeProject.training_end_date ? String(activeProject.training_end_date).slice(0, 10) : '',
-        industry_supervisor_name: activeProject.industry_supervisor_name || '',
-        academic_supervisor_name: activeProject.academic_supervisor_name || '',
-      });
-    }
-  }, [activeProject?.id]);
-
-  // Prepopulate user profile in details if empty
-  useEffect(() => {
-    if (user && !detailsData.full_name) {
-      const fullName = user.first_name
-        ? `${user.first_name} ${user.last_name || ''}`.trim()
-        : user.username;
-      setDetailsData((prev) => ({
-        ...prev,
-        full_name: prev.full_name || fullName,
-      }));
-    }
-  }, [user]);
-
-  // PWA Offline detection & installability
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsOffline(!navigator.onLine);
-      const handleOnline = () => setIsOffline(false);
-      const handleOffline = () => setIsOffline(true);
-
-      const detectedOS = detectDeviceOS();
-      setDeviceOS(detectedOS);
-
-      const installed = isStandaloneApp();
-      if (!installed) {
-        setCanInstallPWA(true);
-      }
-
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-
-      return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      };
-    }
   }, []);
 
-  // Scroll detection
+  // Update title based on active view
+  useEffect(() => {
+    let t = 'Home';
+    if (inFlow) t = 'New report';
+    else if (currentTab === 'logbooks') t = 'Logbooks';
+    else if (currentTab === 'reports') t = 'Reports';
+    else if (currentTab === 'settings') t = 'Settings';
+    document.title = `Log2Def: ${t}`;
+  }, [inFlow, currentTab]);
+
+  // Scroll handler for top bar border & title reveal
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.currentTarget;
-    if (target.scrollTop > 40 && !isScrolled) {
-      setIsScrolled(true);
-    } else if (target.scrollTop <= 40 && isScrolled) {
-      setIsScrolled(false);
+    const top = e.currentTarget.scrollTop;
+    setIsScrolled(top > 10);
+  };
+
+  const hasStarted = Boolean(details.co || pages.length || step > 1);
+
+  // Get field value from details or answers
+  const getVal = (k: string) => details[k] || answers[k] || '';
+
+  // Check completeness of fields
+  const checkCompleteness = () => {
+    return FLD.map(([key, label]) => {
+      const v = getVal(key);
+      const exists = Boolean(v && v.trim());
+      const source =
+        fieldSources[key] === 'logbook'
+          ? 'your logbook'
+          : details[key]
+          ? 'your details'
+          : 'you added';
+      return { key, label, exists, source, value: v };
+    });
+  };
+
+  // Step 4 date & completeness validation
+  const isStep4Invalid = () => {
+    const items = checkCompleteness();
+    const hasMissing = items.some((item) => !item.exists);
+    const st = getVal('start');
+    const en = getVal('end');
+    const badDate = Boolean(st && en && en <= st);
+    return hasMissing || badDate;
+  };
+
+  // Generate Entries (Heuristic / OCR mock)
+  const populateEntries = () => {
+    const sampleEntries: LogEntry[] = [
+      {
+        w: 1,
+        t: 'Introduction to HTML. Learnt tags and created a simple webpage.',
+        area: 'Frontend Web Development',
+        tools: 'HTML',
+      },
+      {
+        w: 1,
+        t: 'CSS styling and worked on a login page.',
+        area: 'Frontend Web Development',
+        tools: 'CSS',
+      },
+      {
+        w: 2,
+        t: 'Built a to-do app using JavaScript and local storage.',
+        area: 'Frontend Web Development',
+        tools: 'JavaScript',
+        u: 1,
+        ph: 'local storage',
+      },
+      {
+        w: 3,
+        t: 'Version control with Git and GitHub.',
+        area: 'Software Engineering practice',
+        tools: 'Git, GitHub',
+      },
+      {
+        w: 4,
+        t: 'Worked on a team project, a company dashbord. Fixed layout bugs.',
+        area: 'Frontend Web Development',
+        tools: 'HTML, CSS',
+        u: 1,
+        ph: 'dashbord',
+      },
+      {
+        w: 5,
+        t: 'Deployed the project and wrote documentation.',
+        area: 'Software Engineering practice',
+        tools: 'Deployment tools',
+      },
+    ];
+
+    setEntries(sampleEntries);
+
+    if (!details.start) {
+      setDetails((prev) => ({ ...prev, start: '2026-01-12' }));
+      setFieldSources((prev) => ({ ...prev, start: 'logbook' }));
+    }
+    if (method === 'photos' && !details.co) {
+      setDetails((prev) => ({ ...prev, co: 'Sample Tech Ltd' }));
+      setFieldSources((prev) => ({ ...prev, co: 'logbook' }));
     }
   };
 
-  // Switch Tab
-  const navigateTab = (newTab: 'home' | 'logbook' | 'report' | 'settings' | 'new', dir: 'fw' | 'bw' = 'fw') => {
-    setAnimDir(dir);
-    setCurrentTab(newTab);
-    if (typeof window !== 'undefined') {
-      window.location.hash = `#/${newTab}`;
-    }
-    if (scrRef.current) {
-      scrRef.current.scrollTop = 0;
-    }
+  // Start reading progress
+  const startReading = () => {
+    setReading(true);
+    setReadProgress(0);
+    const n = Math.max(pages.length, 1);
+    let p = 0;
+    const intervalTime = Math.max(120, Math.min(400, 4000 / n));
+
+    const iv = setInterval(() => {
+      p++;
+      setReadProgress(p);
+      if (p >= n) {
+        clearInterval(iv);
+        setReading(false);
+        setReadDone(true);
+        populateEntries();
+      }
+    }, intervalTime);
   };
 
-  // Artifact fallback project for preview
-  const FALLBACK_PROJECT = {
-    id: 1,
-    title: 'SIWES Technical Report',
-    full_name: 'Babatunde Emmanuel',
-    matric_number: 'LASU/STE/2021/0458',
-    department: 'Computer Engineering',
-    faculty_school: 'College of Applied Sciences and Technology',
-    university_name: 'Lagos State University of Science and Technology (LASUSTECH)',
-    organization_name: 'Mi Labs Engineering',
-    organization_address: 'Plot 14, Commercial Avenue, Ikeja, Lagos State',
-    training_start_date: '2024-03-04',
-    training_end_date: '2024-08-30',
-    logbook_entries: [
-      {
-        id: 1,
-        week_number: 1,
-        activity_summary: 'Safety induction, equipment orientation, and workshop setup',
-        verified_text: 'Safety induction, equipment orientation, and workshop setup',
-        is_verified: true,
-      },
-      {
-        id: 2,
-        week_number: 2,
-        activity_summary: 'Configured local development network and verified router tables',
-        verified_text: 'Configured local development network and verified router tables',
-        is_verified: true,
-      },
-      {
-        id: 3,
-        week_number: 3,
-        activity_summary: 'Assisted senior engineer with server maintenance and cable termination',
-        verified_text: 'Assisted senior engineer with server maintenance and cable termination',
-        is_verified: false,
-      },
-    ],
-    source_documents: [
-      {
-        id: 1,
-        original_filename: 'Logbook_Weeks_1_to_4.pdf',
-        ocr_status: 'completed',
-        page_index: 0,
-        pages: [
-          {
-            id: 1,
-            page_number: 1,
-            confidence_score: 0.92,
-            extracted_text:
-              'Week 1: Safety induction and workshop tour.\nWeek 2: Configured local development network and verified routing tables.',
-          },
-        ],
-      },
-    ],
-  };
-
-  const effectiveProject = activeProject || (isPreview ? (FALLBACK_PROJECT as any) : null);
-  const effectiveUser =
-    user ||
-    (isPreview
-      ? {
-          id: 1,
-          first_name: 'Babatunde',
-          last_name: 'Emmanuel',
-          email: 'babatunde@lasustech.edu.ng',
-          username: 'babatunde',
+  // Start generation progress
+  const startGenerating = () => {
+    setGenState(1);
+    setGenProgress(0);
+    let g = 0;
+    const iv = setInterval(() => {
+      g++;
+      setGenProgress(g);
+      if (g >= GS.length) {
+        clearInterval(iv);
+        setGenState(2);
+        // Also trigger real background generation if connected
+        if (activeProject?.id) {
+          storeGenerateReport(activeProject.id).catch(() => {});
         }
-      : null);
+      }
+    }, 450);
+  };
 
-  const studentName = effectiveProject?.full_name || (effectiveUser?.first_name ? `${effectiveUser.first_name} ${effectiveUser.last_name || ''}`.trim() : 'Student');
-  const userInitials = effectiveUser?.first_name
-    ? `${effectiveUser.first_name[0]}${effectiveUser.last_name ? effectiveUser.last_name[0] : ''}`.toUpperCase()
-    : 'SI';
+  // HTML content generator for chapters
+  const getSectionDefaultHtml = (i: number): string => {
+    const N = details.name || 'John Samuel';
+    const C = details.co || 'Company Ltd';
+    const A = details.addr || answers.addr || '[address]';
+    const c = 'style="text-align:center"';
+    const per = `${details.start || answers.start || ''} to ${details.end || answers.end || ''}`;
 
-  // Derived Workflow Progress
-  const projectEntries = effectiveProject?.logbook_entries || [];
-  const projectDocuments = effectiveProject?.source_documents || [];
-  const sortedDocuments = [...projectDocuments].sort((a: any, b: any) => (a.page_index ?? 0) - (b.page_index ?? 0));
-  const verifiedCount = projectEntries.filter((e: any) => e.is_verified).length;
-  const totalEntries = projectEntries.length;
-  const hasReport = !!(report || effectiveProject?.report);
-  const isCompletenessReady = completeness?.can_generate ?? (totalEntries > 0 && effectiveProject?.organization_name);
+    const chapters = [
+      `<p ${c}><b>TECHNICAL REPORT ON THE STUDENT INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</b></p><p ${c}>Undertaken at<br><b>${C}</b><br>${A}</p><p ${c}>BY<br><b>${N}</b><br>${details.matric || ''}<br>${details.dept || ''}</p><p ${c}>${details.inst || ''}<br>${per}</p>`,
+      `<p ${c}><b>CERTIFICATION</b></p><p>This is to certify that ${N} (${details.matric || ''}) completed the industrial training at ${C}.</p><p>________________<br>Industry-based supervisor${details.sup ? ': ' + details.sup : ''}</p><p>________________<br>Institution-based supervisor${details.isup ? ': ' + details.isup : ''}</p>`,
+      `<p ${c}><b>DEDICATION</b></p><p>[Add your dedication here.]</p>`,
+      `<p ${c}><b>ACKNOWLEDGEMENT</b></p><p>[Add your acknowledgements here.]</p>`,
+      `<p ${c}><b>ABSTRACT</b></p><p>This report presents the industrial training of ${N} at ${C}. It covers the organisation, the activities recorded in the logbook, the skills gained and the challenges met.</p>`,
+      `<p><b>CHAPTER ONE: INTRODUCTION</b></p><p>The Student Industrial Work Experience Scheme (SIWES) exposes students to practical work in their field. This report describes the training of ${N} at ${C}.</p>`,
+      `<p><b>CHAPTER TWO: ORGANISATION PROFILE</b></p><p>${C} is located at ${A}.${details.unit ? ' The student worked in the ' + details.unit + ' unit.' : ''}</p><p>[Add the company’s background, structure and services.]</p>`,
+      `<p><b>CHAPTER THREE: TRAINING ACTIVITIES</b></p>${entries.map((e) => `<p>Week ${e.w}: ${e.t}</p>`).join('')}`,
+      `<p><b>CHAPTER FOUR: SKILLS AND EXPERIENCE</b></p><p>Skills worked on in the recorded activities: ${Array.from(new Set(entries.map((e) => e.tools).filter(Boolean))).join(', ')}.</p><p>[Add challenges you met and how you solved them.]</p>`,
+      `<p><b>CHAPTER FIVE: CONCLUSION AND RECOMMENDATIONS</b></p><p>[Add your conclusion and recommendations.]</p>`,
+      `<p ${c}><b>REFERENCES</b></p><p>[Add references, if you used any.]</p>`,
+    ];
 
-  // Compute Active Step in the 6-Step Journey:
-  // Step 1: Details entered? (Yes if project exists with org name and matric)
-  // Step 2: Upload? (Yes if source_documents.length > 0)
-  // Step 3: Extract & review? (Yes if entries exist and at least 1 verified)
-  // Step 4: Complete? (Yes if completeness.can_generate is true)
-  // Step 5: Generate? (Yes if report is generated)
-  // Step 6: Review & export
-  const hasDetails = Boolean(effectiveProject && effectiveProject.matric_number && effectiveProject.organization_name);
-  const hasUploads = sortedDocuments.length > 0 || uploadQueue.length > 0;
-  const hasExtracted = totalEntries > 0;
-  const isComplete = Boolean(completeness?.can_generate);
+    return chapters[i] || '';
+  };
 
-  let currentWorkflowStep = 1;
-  if (!effectiveProject || !hasDetails) {
-    currentWorkflowStep = 1;
-  } else if (!hasUploads) {
-    currentWorkflowStep = 2;
-  } else if (!hasExtracted || verifiedCount === 0) {
-    currentWorkflowStep = 3;
-  } else if (!isComplete) {
-    currentWorkflowStep = 4;
-  } else if (!hasReport) {
-    currentWorkflowStep = 5;
-  } else {
-    currentWorkflowStep = 6;
-  }
+  const getSectionHtml = (i: number): string => {
+    return chapterEdits[i] !== undefined ? chapterEdits[i] : getSectionDefaultHtml(i);
+  };
 
-  const progressPct = effectiveProject
-    ? Math.round(
-        ((hasDetails ? 1 : 0) +
-          (hasUploads ? 1 : 0) +
-          (verifiedCount > 0 ? 1 : 0) +
-          (isComplete ? 1 : 0) +
-          (hasReport ? 1 : 0)) /
-          5 *
-          100
-      )
-    : 0;
+  // Academic Layout Calculations (simulate 12-15 page layout matching approved design)
+  const computeLayout = () => {
+    const R: { t: string; h: string; l: string; p: number }[] = [];
+    let r = 0;
+    let n = 0;
+    const rm = ['i', 'ii', 'iii', 'iv', 'v'];
+    let tot = 0;
 
-  // Up Next CTA based on workflow step
-  const getUpNextAction = () => {
-    switch (currentWorkflowStep) {
-      case 1:
-        return {
-          title: 'Enter your basic details',
-          desc: 'Student name, matric, department, and company placement',
-          buttonText: 'Enter Details',
-          tab: 'new' as const,
-        };
-      case 2:
-        return {
-          title: 'Capture or upload your logbook',
-          desc: 'Snap pages with phone camera or upload photos/PDF',
-          buttonText: 'Upload Logbook',
-          tab: 'logbook' as const,
-        };
-      case 3:
-        return {
-          title: 'Review extracted entries',
-          desc: `${totalEntries} weekly technical activities found in your logbook`,
-          buttonText: 'Review Activities',
-          tab: 'logbook' as const,
-        };
-      case 4:
-        return {
-          title: 'Complete required information',
-          desc: completeness?.blocking_reasons?.[0] || 'A few essential fields are required before generation',
-          buttonText: 'Complete Missing Info',
-          action: () => setIsMissingInfoOpen(true),
-          tab: 'logbook' as const,
-        };
-      case 5:
-        return {
-          title: 'Generate your technical report',
-          desc: 'All information verified. Generate your 12–15 page LASUSTECH report',
-          buttonText: 'Generate Technical Report',
-          action: () => handleGenerateReport(),
-          tab: 'report' as const,
-        };
-      case 6:
-      default:
-        return {
-          title: 'Review and download report',
-          desc: 'Your LASUSTECH technical report is ready for export (Word & PDF)',
-          buttonText: 'Download Report',
-          tab: 'report' as const,
-        };
+    const words = (h: string) => h.replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length;
+    const pg = (h: string) => Math.max(1, Math.ceil(words(h) / 230));
+
+    // Cover
+    R.push({ t: SEC[0], h: getSectionHtml(0), l: '', p: 1 });
+    tot += 1;
+
+    // Front matter i, ii, iii
+    for (let i = 1; i <= 3; i++) {
+      R.push({ t: SEC[i], h: getSectionHtml(i), l: rm[r], p: 1 });
+      r++;
+      tot++;
+    }
+
+    // Abstract
+    R.push({ t: SEC[4], h: getSectionHtml(4), l: rm[r], p: 1 });
+    r++;
+    tot++;
+
+    // Contents page
+    const tp = { t: 'Contents', h: '', l: rm[r], p: 1 };
+    r++;
+    tot++;
+    R.push(tp);
+
+    // Chapters 1 to 5 + References
+    const toc: [string, number][] = [];
+    for (let j = 5; j <= 10; j++) {
+      const p = pg(getSectionHtml(j));
+      R.push({ t: SEC[j], h: getSectionHtml(j), l: String(n + 1), p });
+      toc.push([SEC[j], n + 1]);
+      n += p;
+      tot += p;
+    }
+
+    tp.h =
+      '<p style="text-align:center"><b>TABLE OF CONTENTS</b></p>' +
+      toc.map((x) => `<p>${x[0]} ........ ${x[1]}</p>`).join('');
+
+    return { rows: R, total: tot };
+  };
+
+  // Thumbnail generation helper
+  const generateThumbnail = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/')) {
+        resolve('');
+        return;
+      }
+      const u = URL.createObjectURL(file);
+      const im = new window.Image();
+      im.onload = () => {
+        const c = document.createElement('canvas');
+        const k = Math.min(1, 200 / Math.max(im.width, im.height));
+        c.width = Math.round(im.width * k);
+        c.height = Math.round(im.height * k);
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(im, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(u);
+          resolve(c.toDataURL('image/jpeg', 0.6));
+        } else {
+          URL.revokeObjectURL(u);
+          resolve('');
+        }
+      };
+      im.onerror = () => {
+        URL.revokeObjectURL(u);
+        resolve('');
+      };
+      im.src = u;
+    });
+  };
+
+  // Upload file handler
+  const handleFilesAdded = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const newItems: LogPage[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const isPdf = f.type === 'application/pdf';
+      const th = await generateThumbnail(f);
+      newItems.push({
+        n: f.name,
+        pdf: isPdf,
+        th,
+        file: f,
+      });
+
+      // Background upload if connected
+      if (activeProject?.id) {
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('page_index', String(pages.length + i));
+        uploadDocument(activeProject.id, fd).catch(() => {});
+      }
+    }
+
+    setPages((prev) => [...prev, ...newItems]);
+  };
+
+  // Camera Management
+  const stopCameraStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
     }
   };
 
-  const upNext = getUpNextAction();
+  const startCamera = async (targetIndex = -1) => {
+    setRetakeIndex(targetIndex);
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast('Camera unavailable');
+      if (camInputRef.current) camInputRef.current.click();
+      return;
+    }
 
-  // Chapter names
-  const CHAPTER_NAMES = [
-    'Preliminary pages',
-    'Chapter One: Introduction',
-    'Chapter Two: Company Profile',
-    'Chapter Three: Training Activities',
-    'Chapters Four & Five: Skills & Conclusion',
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: cameraFacingMode },
+          width: { ideal: 1920 },
+          height: { ideal: 1440 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setIsCameraActive(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 50);
+    } catch {
+      showToast('Camera blocked. Allow it, or upload files');
+      if (camInputRef.current) camInputRef.current.click();
+    }
+  };
+
+  const closeCamera = () => {
+    stopCameraStream();
+    setIsCameraActive(false);
+  };
+
+  const switchCamera = () => {
+    const nextMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    setCameraFacingMode(nextMode);
+    stopCameraStream();
+    setTimeout(() => {
+      startCamera(retakeIndex);
+    }, 100);
+  };
+
+  const snapPhoto = () => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) return;
+
+    const k = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(v.videoWidth * k);
+    c.height = Math.round(v.videoHeight * k);
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+
+    // Brightness check for low-light warning
+    const t = document.createElement('canvas');
+    t.width = 24;
+    t.height = 24;
+    const tx = t.getContext('2d');
+    let avgLuminance = 100;
+    if (tx) {
+      tx.drawImage(c, 0, 0, 24, 24);
+      const d = tx.getImageData(0, 0, 24, 24).data;
+      let sum = 0;
+      for (let z = 0; z < d.length; z += 4) {
+        sum += d[z] * 0.3 + d[z + 1] * 0.59 + d[z + 2] * 0.11;
+      }
+      avgLuminance = sum / 576;
+    }
+
+    // Thumbnail
+    const thCanvas = document.createElement('canvas');
+    const k2 = 200 / Math.max(c.width, c.height);
+    thCanvas.width = Math.round(c.width * k2);
+    thCanvas.height = Math.round(c.height * k2);
+    const thCtx = thCanvas.getContext('2d');
+    let thumbUrl = '';
+    if (thCtx) {
+      thCtx.drawImage(c, 0, 0, thCanvas.width, thCanvas.height);
+      thumbUrl = thCanvas.toDataURL('image/jpeg', 0.6);
+    }
+
+    const isDark = avgLuminance < 40;
+    const pageItem: LogPage = {
+      n: 'Camera page',
+      pdf: false,
+      th: thumbUrl,
+      q: isDark ? 'dark' : undefined,
+    };
+
+    // Flash animation
+    setCameraFlash(true);
+    setTimeout(() => setCameraFlash(false), 200);
+
+    if (retakeIndex >= 0) {
+      setPages((prev) => {
+        const copy = [...prev];
+        copy[retakeIndex] = pageItem;
+        return copy;
+      });
+      closeCamera();
+      return;
+    }
+
+    setPages((prev) => [...prev, pageItem]);
+    if (isDark) {
+      showToast(`Page ${pages.length + 1} looks dark`);
+    }
+  };
+
+  // Reorder pages
+  const movePage = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= pages.length) return;
+    setPages((prev) => {
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[target];
+      copy[target] = temp;
+      return copy;
+    });
+  };
+
+  const removePage = (index: number) => {
+    setPages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Download simulation and real file export
+  const triggerDownload = (format: 'PDF' | 'Word') => {
+    setDownloadFormat(format);
+    setDownloadState('run');
+    setTimeout(() => {
+      setDownloadState('done');
+    }, 1700);
+  };
+
+  const executeRealFileDownload = async () => {
+    try {
+      if (activeProject?.id) {
+        if (downloadFormat === 'Word') {
+          await downloadDocx(activeProject.id);
+        } else {
+          await downloadPdf(activeProject.id);
+        }
+      } else {
+        // Fallback client-side download so user gets a real document
+        const content = computeLayout().rows.map((r) => `<h1>${r.t}</h1>${r.h}`).join('<hr/>');
+        const blob = new Blob([content], {
+          type: downloadFormat === 'Word' ? 'application/msword' : 'text/html',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `SIWES_Technical_Report.${downloadFormat === 'Word' ? 'doc' : 'html'}`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      const content = computeLayout().rows.map((r) => `<h1>${r.t}</h1>${r.h}`).join('<hr/>');
+      const blob = new Blob([content], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SIWES_Technical_Report.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    showToast(`Downloading ${downloadFormat} file...`);
+    setActiveSheet(null);
+  };
+
+  // Step 1 Submission
+  const handleStep1Submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (method === 'photos') {
+      setStep(2);
+      if (scrRef.current) scrRef.current.scrollTop = 0;
+      return;
+    }
+
+    // Check required fields
+    const required = ['name', 'matric', 'dept', 'fac', 'inst', 'co'];
+    let firstBadField: string | null = null;
+
+    for (const k of required) {
+      const val = details[k] ? details[k].trim() : '';
+      if (!val) {
+        firstBadField = k;
+        break;
+      }
+    }
+
+    if (firstBadField) {
+      const el = document.getElementById(firstBadField);
+      if (el) el.focus();
+      return;
+    }
+
+    // Save active project in background
+    if (activeProject?.id) {
+      updateActiveProject(activeProject.id, {
+        matric_number: details.matric,
+        department: details.dept,
+        faculty_school: details.fac,
+        university_name: details.inst,
+        organization_name: details.co,
+        organization_address: details.addr,
+        training_start_date: details.start || undefined,
+        training_end_date: details.end || undefined,
+        industry_supervisor_name: details.sup || undefined,
+        institution_supervisor_name: details.isup || undefined,
+      }).catch(() => {});
+    }
+
+    setStep(2);
+    if (scrRef.current) scrRef.current.scrollTop = 0;
+  };
+
+  // Bottom Sheet Closer
+  const closeSheet = () => setActiveSheet(null);
+
+  // Tab switcher
+  const switchTab = (tab: 'home' | 'logbooks' | 'reports' | 'settings') => {
+    setCurrentTab(tab);
+    setInFlow(false);
+    window.location.hash = `#/${tab}`;
+    if (scrRef.current) scrRef.current.scrollTop = 0;
+  };
+
+  const goToFlow = (targetStep = 1) => {
+    setStep(targetStep);
+    setInFlow(true);
+    window.location.hash = '#/flow';
+    if (scrRef.current) scrRef.current.scrollTop = 0;
+  };
+
+  // Icons and names for steps
+  const stepIcons = ['badge', 'photo_camera', 'fact_check', 'edit_note', 'auto_awesome', 'download'];
+  const stepNames = ['Details', 'Logbook', 'Review', 'Missing info', 'Generate', 'Edit and download'];
+  const stepSubtitles = [
+    'Add your details',
+    'Add your pages',
+    'Check what we read',
+    'Fill what’s missing',
+    'Generate your report',
+    'Review and download',
   ];
 
-  const getSectionContent = (idx: number) => {
-    if (report?.sections && report.sections.length > idx) {
-      return report.sections[idx].content;
-    }
-    const title = CHAPTER_NAMES[idx] || `Chapter ${idx + 1}`;
-    return `<p style="color:#5f6761;font-style:italic;"><strong>${title}</strong> will be generated using your verified logbook records and the approved LASUSTECH format.</p>`;
+  // ==========================================
+  // RENDER TAB: HOME
+  // ==========================================
+  const renderHomeView = () => {
+    const s = step;
+    const n = pages.length;
+
+    return (
+      <div className="view">
+        <header className="top">
+          <span className="sp" />
+          <span className="tt">Home</span>
+          <span className="sp" />
+        </header>
+
+        <div className="lg">
+          <p style={{ margin: '0 0 4px', fontWeight: 700, color: 'var(--mut)' }}>
+            Hi, {details.name ? details.name.split(' ')[0] : 'John'}
+          </p>
+          <h1>
+            Logbook in.
+            <br />
+            Report out.
+          </h1>
+        </div>
+
+        {/* Hero Card */}
+        <section className="hero" aria-label="Your report">
+          <span className="chip" style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}>
+            <span className="ms" aria-hidden="true">
+              {stepIcons[s - 1]}
+            </span>
+            {hasStarted ? `Step ${s} of 6` : '6 steps'}
+          </span>
+          <h2>{hasStarted ? stepNames[s - 1] : 'New report'}</h2>
+          <p>{hasStarted ? stepSubtitles[s - 1] : 'Photos to PDF or Word'}</p>
+          <div className="wp" aria-hidden="true">
+            {stepNames.map((_, k) => (
+              <i key={k} className={hasStarted && k < s ? 'on' : ''} />
+            ))}
+          </div>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => goToFlow(s)}
+            style={{ textDecoration: 'none', marginTop: '16px' }}
+          >
+            {hasStarted ? 'Continue' : 'Start'}
+            <span className="ms" aria-hidden="true">
+              arrow_forward
+            </span>
+          </button>
+        </section>
+
+        {/* Your Steps */}
+        <h2 className="sh">Your steps</h2>
+        <div className="card" style={{ padding: '4px 14px' }}>
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {stepNames.map((x, i) => {
+              const k = !hasStarted ? (i === 0 ? 'c' : 'u') : i + 1 < s ? 'd' : i + 1 === s ? 'c' : 'u';
+              const can = k !== 'u';
+              return (
+                <li key={x}>
+                  <button
+                    className={`rm ${k}`}
+                    type="button"
+                    disabled={!can}
+                    onClick={() => {
+                      if (can) goToFlow(i + 1);
+                    }}
+                    aria-current={k === 'c' ? 'step' : undefined}
+                  >
+                    <span className="ji">
+                      <span className="ms" aria-hidden="true">
+                        {k === 'd' ? 'check' : stepIcons[i]}
+                      </span>
+                    </span>
+                    <span>
+                      {x}
+                      <small>{k === 'd' ? 'Done' : k === 'c' ? 'Next' : 'Later'}</small>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+
+        {/* 2 Bottom Quick Links */}
+        <div className="tl2">
+          <button type="button" onClick={() => switchTab('logbooks')}>
+            <span className="ms" aria-hidden="true">
+              menu_book
+            </span>
+            <b>Logbook</b>
+            <small>{n ? `${n} page${n === 1 ? '' : 's'}` : 'None yet'}</small>
+          </button>
+          <button type="button" onClick={() => switchTab('reports')}>
+            <span className="ms" aria-hidden="true">
+              description
+            </span>
+            <b>Report</b>
+            <small>{genState === 2 ? 'Draft ready' : 'Not yet'}</small>
+          </button>
+        </div>
+      </div>
+    );
   };
 
-  // Auto-resume background upload queue
-  const runAutoResumeQueue = async () => {
-    if (!activeProject?.id || !navigator.onLine) return;
-    const items = await getQueuedUploads(activeProject.id);
-    const pending = items.filter((i) => i.status === 'pending' || i.status === 'failed');
-    if (pending.length === 0) {
-      setUploadQueue(items);
-      return;
-    }
-    setIsUploadingFiles(true);
-    setUploadProgress({ current: 0, total: pending.length });
-    setUploadStatusText(`Uploading & analyzing ${pending.length} logbook file${pending.length > 1 ? 's' : ''}...`);
-    try {
-      const result = await processUploadQueue(
-        async (pId, formData) => {
-          await storeUploadDocument(pId, formData);
-        },
-        activeProject.id,
-        {
-          maxConcurrency: 2,
-          onItemCompleted: () => {
-            setUploadProgress((prev) => ({
-              current: Math.min(prev.total, prev.current + 1),
-              total: prev.total,
-            }));
-          },
-        }
+  // ==========================================
+  // RENDER TAB: LOGBOOKS
+  // ==========================================
+  const renderLogbooksView = () => {
+    const un = entries.filter((e) => e.u && !e.ok).length;
+    const st = !readDone ? (reading ? 'Reading' : 'Not read yet') : un ? `${un} to check` : 'Reviewed';
+
+    return (
+      <div className="view">
+        <header className="top">
+          <span className="sp" />
+          <span className="tt">Logbooks</span>
+          <span className="sp" />
+        </header>
+
+        <div className="lg">
+          <h1>My Logbooks</h1>
+        </div>
+
+        {!pages.length ? (
+          <div className="card big">
+            <div className="ok">
+              <span className="ms" aria-hidden="true">
+                photo_camera
+              </span>
+            </div>
+            <h2>No logbook yet</h2>
+            <p>Add your logbook to begin.</p>
+            <button
+              className="btn w"
+              type="button"
+              onClick={() => goToFlow(1)}
+              style={{ textDecoration: 'none', marginTop: '20px' }}
+            >
+              Start a new report
+            </button>
+          </div>
+        ) : (
+          <div className="card">
+            <div className="row sb">
+              <b>SIWES logbook</b>
+              <span className={`chip${un ? ' w' : ''}`}>{st}</span>
+            </div>
+            <p className="mut" style={{ margin: '6px 0 14px', fontSize: '14px' }}>
+              {pages.length} page{pages.length === 1 ? '' : 's'}
+              {details.co ? ` · ${details.co}` : ''}
+            </p>
+            <button className="btn w s" type="button" onClick={() => goToFlow(2)}>
+              Continue
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ==========================================
+  // RENDER TAB: REPORTS
+  // ==========================================
+  const renderReportsView = () => {
+    const layout = computeLayout();
+
+    return (
+      <div className="view">
+        <header className="top">
+          <span className="sp" />
+          <span className="tt">Reports</span>
+          <span className="sp" />
+        </header>
+
+        <div className="lg">
+          <h1>My Reports</h1>
+        </div>
+
+        {genState !== 2 ? (
+          <div className="card big">
+            <div className="ok">
+              <span className="ms" aria-hidden="true">
+                description
+              </span>
+            </div>
+            <h2>No reports yet</h2>
+            <p>Reports appear here.</p>
+            <button
+              className="btn w"
+              type="button"
+              onClick={() => goToFlow(hasStarted ? step : 1)}
+              style={{ textDecoration: 'none', marginTop: '20px' }}
+            >
+              {hasStarted ? 'Continue your report' : 'Start a new report'}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="card"
+            type="button"
+            onClick={() => goToFlow(6)}
+            style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, cursor: 'pointer' }}
+          >
+            <div className="row sb">
+              <b>Technical report</b>
+              <span className="chip">Draft</span>
+            </div>
+            <p className="mut" style={{ margin: '6px 0 0', fontSize: '14px' }}>
+              {details.co} · about {layout.total} pages
+            </p>
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // ==========================================
+  // RENDER TAB: SETTINGS
+  // ==========================================
+  const renderSettingsView = () => {
+    return (
+      <div className="view">
+        <header className="top">
+          <span className="sp" />
+          <span className="tt">Settings</span>
+          <span className="sp" />
+        </header>
+
+        <div className="lg">
+          <h1>Settings</h1>
+        </div>
+
+        <div className="card">
+          <b>{details.name || 'John Samuel'}</b>
+          <p className="mut" style={{ fontSize: '14px' }}>
+            {user?.email || 'johnayobami77@proton.me'}
+          </p>
+        </div>
+
+        <div className="card">
+          <b>Institution</b>
+          <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
+            Lagos State University of Science and Technology (LASUSTECH)
+          </p>
+          <b style={{ display: 'block', marginTop: '14px' }}>Report template</b>
+          <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
+            LASUSTECH technical report, version 1
+          </p>
+        </div>
+
+        <button
+          className="btn o w"
+          type="button"
+          onClick={() => {
+            showToast('Logged out');
+            logout();
+          }}
+        >
+          Log out
+        </button>
+      </div>
+    );
+  };
+
+  // ==========================================
+  // WIZARD FLOW: STEP 1
+  // ==========================================
+  const renderStep1 = () => {
+    const isPhotos = method === 'photos';
+
+    return (
+      <form id="sf" noValidate onSubmit={handleStep1Submit}>
+        <div className="view">
+          <h1 className="wt" id="wh" tabIndex={-1}>
+            {isPhotos ? 'Photos first' : 'Your details'}
+          </h1>
+          <div className="seg" role="tablist" aria-label="How to start" style={{ marginTop: '14px' }}>
+            <button
+              role="tab"
+              type="button"
+              aria-selected={!isPhotos}
+              onClick={() => setMethod('manual')}
+            >
+              Fill in details
+            </button>
+            <button
+              role="tab"
+              type="button"
+              aria-selected={isPhotos}
+              onClick={() => setMethod('photos')}
+            >
+              Photos first
+            </button>
+          </div>
+
+          {isPhotos ? (
+            <div className="card big" style={{ padding: '26px 16px' }}>
+              <div className="ok">
+                <span className="ms" aria-hidden="true">
+                  photo_camera
+                </span>
+              </div>
+              <p style={{ margin: 0 }}>We read your details from the cover and last page.</p>
+            </div>
+          ) : (
+            <>
+              <p className="gt">ABOUT YOU</p>
+
+              <div className="f" data-f="name">
+                <label htmlFor="name">
+                  Full name <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  value={details.name || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, name: e.target.value }))}
+                  required
+                />
+                <p className="err" id="name-e" hidden={Boolean(details.name?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
+              <div className="f" data-f="matric">
+                <label htmlFor="matric">
+                  Matriculation number <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="matric"
+                  name="matric"
+                  type="text"
+                  placeholder="e.g. STE/2021/0456"
+                  value={details.matric || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, matric: e.target.value }))}
+                  required
+                />
+                <p className="err" id="matric-e" hidden={Boolean(details.matric?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
+              <div className="f" data-f="dept">
+                <label htmlFor="dept">
+                  Department <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="dept"
+                  name="dept"
+                  type="text"
+                  value={details.dept || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, dept: e.target.value }))}
+                  required
+                />
+                <p className="err" id="dept-e" hidden={Boolean(details.dept?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
+              <div className="f" data-f="fac">
+                <label htmlFor="fac">
+                  Faculty or school <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="fac"
+                  name="fac"
+                  type="text"
+                  value={details.fac || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, fac: e.target.value }))}
+                  required
+                />
+                <p className="err" id="fac-e" hidden={Boolean(details.fac?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
+              <div className="f" data-f="inst">
+                <label htmlFor="inst">
+                  Institution <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="inst"
+                  name="inst"
+                  type="text"
+                  value={details.inst || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, inst: e.target.value }))}
+                  required
+                />
+                <p className="err" id="inst-e" hidden={Boolean(details.inst?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
+              <p className="gt">YOUR PLACEMENT</p>
+
+              <div className="f" data-f="co">
+                <label htmlFor="co">
+                  Company or organisation <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="co"
+                  name="co"
+                  type="text"
+                  value={details.co || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, co: e.target.value }))}
+                  required
+                />
+                <p className="err" id="co-e" hidden={Boolean(details.co?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
+              <div className="f" data-f="addr">
+                <label htmlFor="addr">
+                  Company address <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
+                </label>
+                <input
+                  id="addr"
+                  name="addr"
+                  type="text"
+                  value={details.addr || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, addr: e.target.value }))}
+                />
+              </div>
+
+              <div className="f" data-f="unit">
+                <label htmlFor="unit">
+                  Department or unit at company <span className="mut" style={{ fontWeight: 600 }}>(optional)</span>
+                </label>
+                <input
+                  id="unit"
+                  name="unit"
+                  type="text"
+                  value={details.unit || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, unit: e.target.value }))}
+                />
+              </div>
+
+              <div className="f" data-f="start">
+                <label htmlFor="start">
+                  Training start date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
+                </label>
+                <input
+                  id="start"
+                  name="start"
+                  type="date"
+                  value={details.start || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, start: e.target.value }))}
+                />
+              </div>
+
+              <div className="f" data-f="end">
+                <label htmlFor="end">
+                  Training end date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
+                </label>
+                <input
+                  id="end"
+                  name="end"
+                  type="date"
+                  value={details.end || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, end: e.target.value }))}
+                />
+              </div>
+
+              <p className="gt">SUPERVISORS</p>
+              <p className="hint" style={{ margin: '-4px 4px 12px' }}>
+                If your template asks.
+              </p>
+
+              <div className="f" data-f="sup">
+                <label htmlFor="sup">
+                  Industry supervisor <span className="mut" style={{ fontWeight: 600 }}>(optional)</span>
+                </label>
+                <input
+                  id="sup"
+                  name="sup"
+                  type="text"
+                  value={details.sup || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, sup: e.target.value }))}
+                />
+              </div>
+
+              <div className="f" data-f="isup">
+                <label htmlFor="isup">
+                  Institution supervisor <span className="mut" style={{ fontWeight: 600 }}>(optional)</span>
+                </label>
+                <input
+                  id="isup"
+                  name="isup"
+                  type="text"
+                  value={details.isup || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, isup: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </form>
+    );
+  };
+
+  // ==========================================
+  // WIZARD FLOW: STEP 2
+  // ==========================================
+  const renderStep2 = () => {
+    const n = pages.length;
+
+    return (
+      <div className="view">
+        <h1 className="wt" id="wh" tabIndex={-1}>
+          Your logbook
+        </h1>
+        <p className="wd">Cover to last page, in order.</p>
+
+        <div className="row">
+          <button className="btn" type="button" onClick={() => startCamera()} style={{ flex: 1 }}>
+            <span className="ms" aria-hidden="true">
+              photo_camera
+            </span>
+            Take photos
+          </button>
+          <label className="btn o" style={{ flex: 1, position: 'relative' }}>
+            <span className="ms" aria-hidden="true">
+              upload_file
+            </span>
+            Upload files
+            <input
+              ref={fileInputRef}
+              className="fi"
+              id="upl"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              multiple
+              aria-label="Upload logbook images or PDFs"
+              onChange={(e) => handleFilesAdded(e.target.files)}
+            />
+          </label>
+        </div>
+
+        <input
+          ref={camInputRef}
+          id="cam"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          hidden
+          onChange={(e) => handleFilesAdded(e.target.files)}
+        />
+
+        {n ? (
+          <>
+            <div className="t3" role="list">
+              {pages.map((p, i) => (
+                <div key={i} className="th" role="listitem">
+                  {p.th ? (
+                    <img src={p.th} alt={`Page ${i + 1}`} />
+                  ) : (
+                    <span className="ms" style={{ fontSize: '34px', color: 'var(--g)' }} aria-hidden="true">
+                      {p.pdf ? 'picture_as_pdf' : 'sync'}
+                    </span>
+                  )}
+                  {p.q === 'dark' && (
+                    <button
+                      className="chip w"
+                      type="button"
+                      onClick={() => startCamera(i)}
+                      style={{ position: 'absolute', left: '6px', top: '6px', border: 0, cursor: 'pointer' }}
+                    >
+                      <span className="ms" aria-hidden="true">
+                        refresh
+                      </span>
+                      Dark. Retake
+                    </button>
+                  )}
+                  <span className="n">{i === 0 ? 'Cover' : `Page ${i}`}</span>
+                  <button
+                    className="ib x"
+                    type="button"
+                    onClick={() => removePage(i)}
+                    aria-label={`Remove page ${i + 1}`}
+                  >
+                    <span className="ms" style={{ fontSize: '18px' }} aria-hidden="true">
+                      close
+                    </span>
+                  </button>
+                  <div className="mv">
+                    <button
+                      type="button"
+                      disabled={i === 0}
+                      onClick={() => movePage(i, -1)}
+                      aria-label={`Move page ${i + 1} earlier`}
+                    >
+                      <span className="ms" style={{ fontSize: '18px' }} aria-hidden="true">
+                        chevron_left
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={i === n - 1}
+                      onClick={() => movePage(i, 1)}
+                      aria-label={`Move page ${i + 1} later`}
+                    >
+                      <span className="ms" style={{ fontSize: '18px' }} aria-hidden="true">
+                        chevron_right
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="hint" role="status">
+              {n} page{n === 1 ? '' : 's'} added
+            </p>
+          </>
+        ) : (
+          <div className="card empty" style={{ marginTop: '16px', padding: '30px' }}>
+            <p style={{ margin: 0, color: 'var(--mut)' }}>No pages yet</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ==========================================
+  // WIZARD FLOW: STEP 3
+  // ==========================================
+  const renderStep3 = () => {
+    if (reading) {
+      const n = Math.max(pages.length, 1);
+      return (
+        <div className="view">
+          <div className="card big">
+            <div className="ok">
+              <span className="ms" aria-hidden="true">
+                auto_stories
+              </span>
+            </div>
+            <h2 id="wh" tabIndex={-1}>
+              Reading your logbook
+            </h2>
+            <p>
+              Page {Math.min(readProgress + 1, n)} of {n}
+            </p>
+            <div
+              className="pb"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={n}
+              aria-valuenow={readProgress}
+              aria-label="Reading progress"
+              style={{ marginTop: '20px' }}
+            >
+              <i
+                style={{
+                  animation: 'none',
+                  width: `${(readProgress / n) * 100}%`,
+                  transition: 'width .3s',
+                }}
+              />
+            </div>
+          </div>
+        </div>
       );
-      if (result.processed > 0) {
-        await fetchActiveProject(activeProject.id);
-        await fetchCompleteness(activeProject.id);
-        setLogbookTab('docs');
-        triggerToast(`Processed ${result.processed} logbook photo${result.processed > 1 ? 's' : ''}`);
+    }
 
-        // Affirmation Screen for upload completion
-        setAffirmationScreen({
-          visible: true,
-          step: 2,
-          title: 'Logbook Successfully Uploaded!',
-          description: `${result.processed} logbook page${result.processed > 1 ? 's were' : ' was'} processed and safely preserved as your authoritative source of technical truth.`,
-          stats: [
-            { label: 'Pages Processed', value: String(result.processed) },
-            { label: 'Status', value: 'OCR Extraction Complete' },
-          ],
-          primaryActionLabel: 'Review Extracted Activities',
-          onPrimaryAction: () => {
-            setAffirmationScreen(null);
-            navigateTab('logbook');
-            setLogbookTab('entries');
-          },
-        });
+    const un = entries.filter((e) => e.u && !e.ok);
+    const rest = entries.filter((e) => !(e.u && !e.ok));
+
+    return (
+      <div className="view">
+        <h1 className="wt" id="wh" tabIndex={-1}>
+          Check what we read
+        </h1>
+        <p className="wd">{entries.length} entries found</p>
+
+        {un.length > 0 ? (
+          <>
+            <p className="gt">UNCLEAR READINGS ({un.length})</p>
+            {un.map((e) => {
+              const i = entries.indexOf(e);
+              return (
+                <div key={i} className="card">
+                  <div className="row sb">
+                    <b>Week {e.w}</b>
+                    <span className="chip w">
+                      <span className="ms" aria-hidden="true">
+                        warning
+                      </span>
+                      Unclear
+                    </span>
+                  </div>
+                  <div className="f" style={{ margin: '10px 0 8px' }}>
+                    <label htmlFor={`e${i}`} className="sr-only" style={{ display: 'none' }}>
+                      Week {e.w} text
+                    </label>
+                    <textarea
+                      id={`e${i}`}
+                      value={e.t}
+                      onChange={(ev) => {
+                        const val = ev.target.value;
+                        setEntries((prev) => {
+                          const copy = [...prev];
+                          copy[i] = { ...copy[i], t: val };
+                          return copy;
+                        });
+                      }}
+                      style={{ minHeight: '84px', fontSize: '16px', borderRadius: '16px' }}
+                    />
+                  </div>
+                  <p className="hint" style={{ margin: '0 0 12px' }}>
+                    Unsure about “{e.ph}”
+                  </p>
+                  <button
+                    className="btn w s"
+                    type="button"
+                    onClick={() => {
+                      setEntries((prev) => {
+                        const copy = [...prev];
+                        copy[i] = { ...copy[i], ok: 1 };
+                        return copy;
+                      });
+                    }}
+                  >
+                    <span className="ms" aria-hidden="true">
+                      check
+                    </span>
+                    Looks right
+                  </button>
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <div className="card" style={{ background: 'var(--mint)', boxShadow: 'none' }}>
+            <div className="row">
+              <span className="ms" style={{ color: 'var(--g)', fontSize: '28px' }} aria-hidden="true">
+                check_circle
+              </span>
+              <b>All unclear readings confirmed</b>
+            </div>
+          </div>
+        )}
+
+        <p className="gt">ALL ENTRIES</p>
+        <div className="card" style={{ padding: '4px 16px' }}>
+          {rest.map((e) => {
+            const i = entries.indexOf(e);
+            return (
+              <div key={i} className="en">
+                <div style={{ flex: 1 }}>
+                  <small>WEEK {e.w}</small>
+                  <p>{e.t}</p>
+                  <div className="row" style={{ marginTop: '6px', gap: '6px', flexWrap: 'wrap' }}>
+                    <span className="chip">
+                      <span className="ms" aria-hidden="true">
+                        menu_book
+                      </span>
+                      Recorded
+                    </span>
+                    <span className="chip" style={{ background: '#e6ecff', color: '#1d3fbf' }}>
+                      <span className="ms" aria-hidden="true">
+                        lightbulb
+                      </span>
+                      Inferred: {e.area}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  className="tx"
+                  type="button"
+                  onClick={() => setActiveSheet({ type: 'editWeek', index: i })}
+                >
+                  Edit
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ==========================================
+  // WIZARD FLOW: STEP 4
+  // ==========================================
+  const renderStep4 = () => {
+    const items = checkCompleteness();
+    const missing = items.filter((x) => !x.exists);
+    const st = getVal('start');
+    const en = getVal('end');
+    const dateError = Boolean(st && en && en <= st);
+
+    return (
+      <div className="view">
+        <h1 className="wt" id="wh" tabIndex={-1}>
+          {missing.length ? 'Complete your details' : 'All details found'}
+        </h1>
+        <p className="wd">
+          {missing.length ? 'Fill what’s missing. Check the rest.' : 'Check them, then continue.'}
+        </p>
+
+        <div className="card" style={{ padding: '4px 16px' }}>
+          {items.map((x) => {
+            if (x.exists) {
+              return (
+                <div key={x.key} className="tk">
+                  <span className="ms" style={{ color: 'var(--g)' }} aria-hidden="true">
+                    check_circle
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    {x.label}
+                    <small style={{ wordBreak: 'break-word' }}>
+                      {x.value} · {x.source}
+                    </small>
+                  </span>
+                  <button
+                    className="tx"
+                    type="button"
+                    onClick={() => setActiveSheet({ type: 'editField', key: x.key, label: x.label })}
+                  >
+                    Edit
+                  </button>
+                </div>
+              );
+            }
+
+            const isDate = x.key === 'start' || x.key === 'end';
+            return (
+              <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
+                <label htmlFor={`a_${x.key}`}>
+                  {x.label} <em aria-hidden="true">*</em>
+                  <span className="chip w" style={{ marginLeft: '6px' }}>
+                    <span className="ms" aria-hidden="true">
+                      error
+                    </span>
+                    Missing
+                  </span>
+                </label>
+                <input
+                  id={`a_${x.key}`}
+                  type={isDate ? 'date' : 'text'}
+                  value={answers[x.key] || ''}
+                  onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
+                  required
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        {dateError && (
+          <p className="err" id="derr" role="alert">
+            The end date must be after the start date.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  // ==========================================
+  // WIZARD FLOW: STEP 5
+  // ==========================================
+  const renderStep5 = () => {
+    const n = pages.length;
+    const wk = entries.length;
+    const layout = computeLayout();
+
+    if (genState === 1) {
+      return (
+        <div className="view">
+          <h1 className="wt" id="wh" tabIndex={-1}>
+            Building your report
+          </h1>
+          <p className="wd">Almost there</p>
+          <div className="card" style={{ padding: '4px 16px' }} role="status">
+            {GS.map((x, i) => {
+              const d = i < genProgress;
+              const c = i === genProgress;
+              return (
+                <div key={x} className="tk">
+                  <span
+                    className="ms"
+                    style={{ color: d ? 'var(--g)' : c ? 'var(--gl)' : '#c9c3b2' }}
+                    aria-hidden="true"
+                  >
+                    {d ? 'check_circle' : c ? 'sync' : 'radio_button_unchecked'}
+                  </span>
+                  <span>
+                    {x}
+                    <small>{d ? 'Done' : c ? 'In progress' : 'Waiting'}</small>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    if (genState === 2) {
+      return (
+        <div className="view">
+          <div className="card big">
+            <div className="ok">
+              <span className="ms" aria-hidden="true">
+                check
+              </span>
+            </div>
+            <h1 id="wh" tabIndex={-1} style={{ fontSize: '30px' }}>
+              Your report is ready
+            </h1>
+            <p>About {layout.total} pages. Review, edit, download.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="view">
+        <h1 className="wt" id="wh" tabIndex={-1}>
+          Ready to generate
+        </h1>
+        <p className="wd">We’ll use:</p>
+
+        <div className="card" style={{ padding: '4px 16px' }}>
+          {[
+            ['menu_book', `${n} logbook page${n === 1 ? '' : 's'} read`, ''],
+            ['event_note', `${wk} entries confirmed`, ''],
+            ['badge', 'Your details complete', ''],
+            ['article', 'LASUSTECH technical report', 'Template version 1'],
+            ['text_fields', 'Times New Roman 12pt', '1.5 spacing, 12–15 pages'],
+          ].map(([icon, label, sub]) => (
+            <div key={label} className="tk">
+              <span className="ms" style={{ color: 'var(--g)' }} aria-hidden="true">
+                {icon}
+              </span>
+              <span>
+                {label}
+                <small>{sub}</small>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <p className="hint" style={{ marginTop: '14px' }}>
+          Short logbook, shorter report. No padding.
+        </p>
+      </div>
+    );
+  };
+
+  // ==========================================
+  // WIZARD FLOW: STEP 6
+  // ==========================================
+  const renderStep6 = () => {
+    const layout = computeLayout();
+    const isTargetMet = layout.total >= 12 && layout.total <= 15;
+
+    return (
+      <div className="view">
+        <div className="seg" role="tablist" aria-label="View" style={{ marginTop: '6px' }}>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={editorTab === 'edit'}
+            onClick={() => setEditorTab('edit')}
+          >
+            Edit
+          </button>
+          <button
+            role="tab"
+            type="button"
+            aria-selected={editorTab === 'prev'}
+            onClick={() => setEditorTab('prev')}
+          >
+            Preview
+          </button>
+        </div>
+
+        {editorTab === 'edit' ? (
+          <>
+            <div className="pills" role="tablist" aria-label="Sections">
+              {SEC.map((x, i) => (
+                <button
+                  key={x}
+                  role="tab"
+                  type="button"
+                  aria-selected={i === currentSectionIdx}
+                  onClick={() => {
+                    setCurrentSectionIdx(i);
+                    if (editorRef.current) {
+                      editorRef.current.innerHTML = getSectionHtml(i);
+                    }
+                  }}
+                >
+                  {x.replace(/Chapter (\d): /, 'Ch $1: ')}
+                </button>
+              ))}
+            </div>
+
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="tl" role="toolbar" aria-label="Formatting">
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.execCommand('bold');
+                    editorRef.current?.focus();
+                  }}
+                  aria-label="Bold"
+                >
+                  <span className="ms" aria-hidden="true">
+                    format_bold
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.execCommand('italic');
+                    editorRef.current?.focus();
+                  }}
+                  aria-label="Italic"
+                >
+                  <span className="ms" aria-hidden="true">
+                    format_italic
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    document.execCommand('insertUnorderedList');
+                    editorRef.current?.focus();
+                  }}
+                  aria-label="Bullets"
+                >
+                  <span className="ms" aria-hidden="true">
+                    format_list_bulleted
+                  </span>
+                </button>
+                <span className="sv" id="sv">
+                  <span className="ms" style={{ fontSize: '17px' }} aria-hidden="true">
+                    {saveStatusText === 'saving' ? 'sync' : 'cloud_done'}
+                  </span>
+                  {saveStatusText === 'saving' ? 'Saving' : 'Saved'}
+                </span>
+              </div>
+
+              <div
+                ref={editorRef}
+                className="doc"
+                id="doc"
+                contentEditable
+                role="textbox"
+                aria-multiline="true"
+                aria-label={SEC[currentSectionIdx]}
+                style={{ textAlign: 'justify' }}
+                dangerouslySetInnerHTML={{ __html: getSectionHtml(currentSectionIdx) }}
+                onInput={(e) => {
+                  setSaveStatusText('saving');
+                  const val = e.currentTarget.innerHTML;
+                  setChapterEdits((prev) => ({ ...prev, [currentSectionIdx]: val }));
+                  if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+                  saveTimerRef.current = setTimeout(() => {
+                    setSaveStatusText('saved');
+                  }, 600);
+                }}
+              />
+            </div>
+
+            <button
+              className="btn o w s"
+              type="button"
+              onClick={() => setActiveSheet({ type: 'editDetails' })}
+            >
+              <span className="ms" aria-hidden="true">
+                badge
+              </span>
+              Edit your details
+            </button>
+            <p className="hint" style={{ marginTop: '10px' }}>
+              Edits save automatically. Fill the [brackets].
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="card">
+              <span className={`chip ${isTargetMet ? '' : 'w'}`}>
+                <span className="ms" aria-hidden="true">
+                  {isTargetMet ? 'check_circle' : 'info'}
+                </span>
+                About {layout.total} pages
+              </span>
+              <p className="mut" style={{ fontSize: '13.5px', marginTop: '10px' }}>
+                Target 12–15 pages.{' '}
+                {layout.total < 12
+                  ? 'Short logbook, short report. No padding.'
+                  : layout.total > 15
+                  ? 'Over target.'
+                  : 'On target.'}
+              </p>
+              <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
+                Times New Roman 12pt · 1.5 spacing · justified · template v1
+              </p>
+            </div>
+
+            {layout.rows.map((q, idx) => (
+              <React.Fragment key={idx}>
+                <p className="pl2">
+                  {q.t} ·{' '}
+                  {q.l
+                    ? `page ${q.l}${q.p > 1 ? ` (continues to ${+q.l + q.p - 1})` : ''}`
+                    : 'no page number'}
+                </p>
+                <div
+                  className="pgp"
+                  role="group"
+                  aria-label={q.t}
+                  style={{
+                    fontFamily: "'Times New Roman', Times, serif",
+                    textAlign: 'justify',
+                    lineHeight: 1.65,
+                    paddingLeft: '22px',
+                  }}
+                >
+                  <div dangerouslySetInnerHTML={{ __html: q.h }} />
+                  {q.l && <div className="pn">{q.l}</div>}
+                </div>
+              </React.Fragment>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // Primary CTA Button for wizard navigation
+  const renderPrimaryCta = () => {
+    if (step === 1) {
+      return (
+        <button className="btn" type="submit" form="sf" style={{ flex: 1 }}>
+          Next
+          <span className="ms" aria-hidden="true">
+            arrow_forward
+          </span>
+        </button>
+      );
+    }
+    if (step === 2) {
+      return (
+        <button
+          className="btn"
+          type="button"
+          disabled={pages.length === 0}
+          onClick={() => {
+            if (pages.length === 0) return;
+            if (!readDone) startReading();
+            setStep(3);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
+          }}
+          style={{ flex: 1 }}
+        >
+          Next
+          <span className="ms" aria-hidden="true">
+            arrow_forward
+          </span>
+        </button>
+      );
+    }
+    if (step === 3) {
+      const un = entries.filter((e) => e.u && !e.ok);
+      return (
+        <button
+          className="btn"
+          type="button"
+          disabled={un.length > 0}
+          onClick={() => {
+            setStep(4);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
+          }}
+          style={{ flex: 1 }}
+        >
+          {un.length ? `Confirm ${un.length} more to continue` : 'Continue'}
+          <span className="ms" aria-hidden="true">
+            arrow_forward
+          </span>
+        </button>
+      );
+    }
+    if (step === 4) {
+      return (
+        <button
+          className="btn"
+          type="button"
+          id="c4"
+          disabled={isStep4Invalid()}
+          onClick={() => {
+            Object.entries(answers).forEach(([k, v]) => {
+              if (v) setDetails((prev) => ({ ...prev, [k]: v }));
+            });
+            setStep(5);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
+          }}
+          style={{ flex: 1 }}
+        >
+          Next
+          <span className="ms" aria-hidden="true">
+            arrow_forward
+          </span>
+        </button>
+      );
+    }
+    if (step === 5) {
+      if (genState === 0) {
+        return (
+          <button
+            className="btn"
+            type="button"
+            onClick={startGenerating}
+            style={{ flex: 1 }}
+          >
+            <span className="ms" aria-hidden="true">
+              auto_awesome
+            </span>
+            Generate report
+          </button>
+        );
       }
-    } catch (err: any) {
-      triggerToast(err.message || 'Upload queue processing failed');
-    } finally {
-      setIsUploadingFiles(false);
-      setUploadStatusText('');
-      setUploadProgress({ current: 0, total: 0 });
-      if (activeProject?.id) {
-        const remaining = await getQueuedUploads(activeProject.id);
-        setUploadQueue(remaining);
+      if (genState === 1) {
+        return (
+          <button className="btn" type="button" disabled style={{ flex: 1 }}>
+            Please wait…
+          </button>
+        );
       }
+      return (
+        <button
+          className="btn"
+          type="button"
+          onClick={() => {
+            setStep(6);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
+          }}
+          style={{ flex: 1 }}
+        >
+          Review and edit
+          <span className="ms" aria-hidden="true">
+            arrow_forward
+          </span>
+        </button>
+      );
     }
+    // step === 6
+    return (
+      <button
+        className="btn"
+        type="button"
+        onClick={() => {
+          setDownloadState('');
+          setActiveSheet({ type: 'download' });
+        }}
+        style={{ flex: 1 }}
+      >
+        <span className="ms" aria-hidden="true">
+          download
+        </span>
+        Download
+      </button>
+    );
   };
 
-  // Multi-file Logbook Upload
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!activeProject?.id) {
-      triggerToast('Please save your placement details first.');
-      navigateTab('new');
-      return;
-    }
-    const rawFiles = e.target.files;
-    if (!rawFiles || rawFiles.length === 0) return;
+  // ==========================================
+  // RENDER BOTTOM SHEET CONTENT
+  // ==========================================
+  const renderSheetContent = () => {
+    if (!activeSheet) return null;
 
-    let filesArray = Array.from(rawFiles);
-    if (filesArray.length > 30) {
-      triggerToast('Batch limit is 30 files. Uploading the first 30 photos.');
-      filesArray = filesArray.slice(0, 30);
-    }
-
-    if (e.target) e.target.value = '';
-
-    try {
-      await enqueueUploads(activeProject.id, filesArray);
-      const currentQueue = await getQueuedUploads(activeProject.id);
-      setUploadQueue(currentQueue);
-
-      if (!navigator.onLine) {
-        triggerToast(`${filesArray.length} photo${filesArray.length > 1 ? 's' : ''} queued offline. Will upload when back online.`);
-        return;
-      }
-
-      await runAutoResumeQueue();
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to process files');
-    }
-  };
-
-  // Camera capture complete handler
-  const handleCameraCaptureComplete = async (captured: CapturedPage[]) => {
-    setIsCameraOpen(false);
-    if (!activeProject?.id || captured.length === 0) return;
-
-    try {
-      setIsUploadingFiles(true);
-      setUploadStatusText(`Compressing and preparing ${captured.length} photo${captured.length > 1 ? 's' : ''}...`);
-
-      const blobs = captured.map((c) => c.blob);
-      const names = captured.map((c) => `${c.label.toLowerCase().replace(/\s+/g, '_')}.jpg`);
-
-      await enqueueUploads(activeProject.id, blobs, {
-        fileNames: names,
-      });
-
-      const currentQueue = await getQueuedUploads(activeProject.id);
-      setUploadQueue(currentQueue);
-
-      if (!navigator.onLine) {
-        triggerToast(`${captured.length} page${captured.length > 1 ? 's' : ''} saved offline. Will auto-upload when back online.`);
-        setIsUploadingFiles(false);
-        return;
-      }
-
-      await runAutoResumeQueue();
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to queue captured pages');
-      setIsUploadingFiles(false);
-    }
-  };
-
-  // Clear completed upload queue items
-  const handleClearCompletedUploads = async () => {
-    if (!activeProject?.id) return;
-    await clearCompletedUploads(activeProject.id);
-    const updated = await getQueuedUploads(activeProject.id);
-    setUploadQueue(updated);
-    triggerToast('Cleared uploaded queue items');
-  };
-
-  // Delete Document
-  const handleDeleteDoc = async (docId: number) => {
-    if (!activeProject?.id) return;
-    try {
-      await storeDeleteDocument(activeProject.id, docId);
-      triggerToast('Document removed');
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to delete document');
-    }
-  };
-
-  // Toggle Entry Verified
-  const handleToggleVerify = async (entry: any) => {
-    if (!activeProject?.id) return;
-    try {
-      await storeUpdateLogbookEntry(activeProject.id, entry.id, {
-        is_verified: !entry.is_verified,
-      });
-      triggerToast(entry.is_verified ? 'Entry unverified' : 'Entry verified');
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to update entry');
-    }
-  };
-
-  // Bulk verify all entries
-  const handleVerifyAll = async () => {
-    if (!activeProject?.id) return;
-    try {
-      await storeBulkVerifyEntries(activeProject.id);
-      triggerToast('All entries verified');
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to verify entries');
-    }
-  };
-
-  // Generate Report Action with Affirmation
-  const handleGenerateReport = async () => {
-    if (!activeProject?.id) return;
-    try {
-      triggerToast('Generating report using approved LASUSTECH template...');
-      await storeGenerateReport(activeProject.id);
-      await fetchReport(activeProject.id);
-      triggerToast('Technical report generated successfully!');
-
-      // Affirmation Screen
-      setAffirmationScreen({
-        visible: true,
-        step: 5,
-        title: 'Report Generated Successfully!',
-        description: 'Your SIWES technical report has been generated following the approved LASUSTECH format. It is approximately 12–15 pages, with Times New Roman 12pt, 1.5 line spacing, and correct academic pagination.',
-        stats: [
-          { label: 'Chapters', value: '5 Chapters Complete' },
-          { label: 'Pagination', value: 'Preliminary i-iv • Main 1-15' },
-          { label: 'Institution', value: 'LASUSTECH Approved' },
-        ],
-        primaryActionLabel: 'Review & Download Report',
-        onPrimaryAction: () => {
-          setAffirmationScreen(null);
-          navigateTab('report');
-          setReportTab('editor');
-        },
-      });
-    } catch (err: any) {
-      triggerToast(err.message || 'Report generation failed');
-    }
-  };
-
-  // Download Handlers
-  const handleDownloadWord = async () => {
-    if (!activeProject?.id) return;
-    try {
-      triggerToast('Preparing Word document (.docx)...');
-      await storeDownloadDocx(activeProject.id);
-      triggerToast('Downloaded Word document (.docx)');
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to download Word document');
-    }
-  };
-
-  const handleDownloadPdf = async () => {
-    if (!activeProject?.id) return;
-    try {
-      triggerToast('Compiling print-ready PDF...');
-      await storeDownloadPdf(activeProject.id);
-      triggerToast('Downloaded PDF (.pdf)');
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to download PDF');
-    }
-  };
-
-  const handleDirectPrint = () => {
-    if (typeof window !== 'undefined') {
-      window.print();
-    }
-  };
-
-  // Step 1: Save Details Form
-  const handleSaveDetails = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const errors: Record<string, string> = {};
-
-    if (!detailsData.full_name?.trim()) errors.full_name = 'Full name is required';
-    if (!detailsData.matric_number?.trim()) errors.matric_number = 'Matriculation number is required';
-    if (!detailsData.department?.trim()) errors.department = 'Department is required';
-    if (!detailsData.organization_name?.trim()) errors.organization_name = 'Company name is required';
-    if (!detailsData.organization_address?.trim()) errors.organization_address = 'Company address is required';
-    if (!detailsData.training_start_date) errors.training_start_date = 'Start date is required';
-    if (!detailsData.training_end_date) errors.training_end_date = 'End date is required';
-
-    if (detailsData.training_start_date && detailsData.training_end_date) {
-      const s = new Date(detailsData.training_start_date);
-      const eDate = new Date(detailsData.training_end_date);
-      if (s >= eDate) {
-        errors.training_end_date = 'End date must be strictly after start date';
-      }
+    if (activeSheet.type === 'editWeek') {
+      const entry = entries[activeSheet.index];
+      return (
+        <>
+          <h2>Edit week {entry?.w}</h2>
+          <div className="f">
+            <label htmlFor="et">What your logbook says</label>
+            <textarea
+              id="et"
+              defaultValue={entry?.t}
+              onChange={(e) => {
+                const val = e.target.value;
+                setEntries((prev) => {
+                  const copy = [...prev];
+                  copy[activeSheet.index] = { ...copy[activeSheet.index], t: val };
+                  return copy;
+                });
+              }}
+            />
+          </div>
+          <button
+            className="btn w"
+            type="button"
+            onClick={() => {
+              closeSheet();
+              showToast('Saved');
+            }}
+          >
+            Save
+          </button>
+        </>
+      );
     }
 
-    if (Object.keys(errors).length > 0) {
-      setDetailsErrors(errors);
-      triggerToast('Please complete all required fields.');
-      return;
+    if (activeSheet.type === 'editField') {
+      const isDate = activeSheet.key === 'start' || activeSheet.key === 'end';
+      return (
+        <>
+          <h2>{activeSheet.label}</h2>
+          <div className="f">
+            <input
+              id="fv"
+              aria-label={activeSheet.label}
+              type={isDate ? 'date' : 'text'}
+              defaultValue={getVal(activeSheet.key)}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
+                setAnswers((prev) => {
+                  const copy = { ...prev };
+                  delete copy[activeSheet.key];
+                  return copy;
+                });
+              }}
+            />
+          </div>
+          <button
+            className="btn w"
+            type="button"
+            onClick={() => {
+              closeSheet();
+              showToast('Details updated');
+            }}
+          >
+            Save
+          </button>
+        </>
+      );
     }
 
-    setDetailsErrors({});
-    setIsSavingDetails(true);
+    if (activeSheet.type === 'editDetails') {
+      return (
+        <>
+          <h2>Your details</h2>
+          {FLD.map(([key, label]) => (
+            <div key={key} className="f">
+              <label htmlFor={`d_${key}`}>{label}</label>
+              <input
+                id={`d_${key}`}
+                type={key === 'start' || key === 'end' ? 'date' : 'text'}
+                defaultValue={details[key] || ''}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  setDetails((prev) => ({ ...prev, [key]: val }));
+                }}
+              />
+            </div>
+          ))}
+          <button
+            className="btn w"
+            type="button"
+            onClick={() => {
+              closeSheet();
+              showToast('Details updated');
+            }}
+          >
+            Save
+          </button>
+        </>
+      );
+    }
 
-    try {
-      const payload = {
-        title: `SIWES Technical Report - ${detailsData.organization_name.trim()}`,
-        full_name: detailsData.full_name.trim(),
-        matric_number: detailsData.matric_number.trim(),
-        department: detailsData.department.trim(),
-        faculty_school: detailsData.faculty_school.trim(),
-        university_name: detailsData.university_name.trim(),
-        organization_name: detailsData.organization_name.trim(),
-        organization_address: detailsData.organization_address.trim(),
-        placement_department: detailsData.placement_department?.trim() || '',
-        training_start_date: detailsData.training_start_date,
-        training_end_date: detailsData.training_end_date,
-        industry_supervisor_name: detailsData.industry_supervisor_name?.trim() || '',
-        academic_supervisor_name: detailsData.academic_supervisor_name?.trim() || '',
-      };
-
-      if (activeProject?.id) {
-        await storeUpdateProject(activeProject.id, payload);
-        await fetchActiveProject(activeProject.id);
-      } else {
-        const newProj = await createProject(payload);
-        if (newProj?.id) {
-          await fetchActiveProject(newProj.id);
-        }
+    if (activeSheet.type === 'download') {
+      if (downloadState === 'run') {
+        return (
+          <>
+            <h2>Preparing your {downloadFormat} file</h2>
+            <div className="pb" role="progressbar" aria-label="Exporting">
+              <i />
+            </div>
+            <p className="mut" style={{ fontSize: '14px' }}>
+              Preparing…
+            </p>
+          </>
+        );
       }
 
-      triggerToast('Placement details confirmed!');
-
-      // Affirmation Screen for Step 1
-      setAffirmationScreen({
-        visible: true,
-        step: 1,
-        title: 'Placement Details Saved!',
-        description: 'Your student and SIWES details have been saved to the approved LASUSTECH template. Now, let’s capture or upload your logbook pages.',
-        stats: [
-          { label: 'Institution', value: 'LASUSTECH' },
-          { label: 'Company', value: detailsData.organization_name },
-          { label: 'Matric No', value: detailsData.matric_number },
-        ],
-        primaryActionLabel: 'Proceed to Logbook Upload',
-        onPrimaryAction: () => {
-          setAffirmationScreen(null);
-          navigateTab('logbook');
-        },
-      });
-    } catch (err: any) {
-      triggerToast(err.message || 'Failed to save details');
-    } finally {
-      setIsSavingDetails(false);
-    }
-  };
-
-  // PWA Install Trigger
-  const handleInstallApp = async () => {
-    if (deviceOS === 'ios') {
-      setActiveSheet('pwaGuide');
-      return;
-    }
-    const promptEvent = (window as any).__pwaInstallPrompt;
-    if (promptEvent) {
-      promptEvent.prompt();
-      const choice = await promptEvent.userChoice;
-      if (choice.outcome === 'accepted') {
-        localStorage.setItem('pwa_installed', 'true');
-        setCanInstallPWA(false);
-        triggerToast('Log2Def installed successfully!');
+      if (downloadState === 'done') {
+        return (
+          <>
+            <div className="big" style={{ padding: '10px 0 4px' }}>
+              <div className="ok">
+                <span className="ms" aria-hidden="true">
+                  check
+                </span>
+              </div>
+              <h2>Your {downloadFormat} file is ready</h2>
+              <p>Check it against your department’s rules.</p>
+            </div>
+            <button
+              className="btn w"
+              type="button"
+              onClick={executeRealFileDownload}
+              style={{ marginTop: '16px' }}
+            >
+              <span className="ms" aria-hidden="true">
+                download
+              </span>
+              Download {downloadFormat}
+            </button>
+          </>
+        );
       }
-    } else {
-      setActiveSheet('pwaGuide');
+
+      return (
+        <>
+          <h2>Download your report</h2>
+          <button
+            className="btn w"
+            type="button"
+            onClick={() => triggerDownload('PDF')}
+            style={{ marginBottom: '10px' }}
+          >
+            <span className="ms" aria-hidden="true">
+              picture_as_pdf
+            </span>
+            PDF, ready to print
+          </button>
+          <button
+            className="btn o w"
+            type="button"
+            onClick={() => triggerDownload('Word')}
+          >
+            <span className="ms" aria-hidden="true">
+              description
+            </span>
+            Word (DOCX), editable
+          </button>
+        </>
+      );
     }
+
+    return null;
   };
 
   return (
     <div className="dashboard-root">
-      <div className={`app ${animDir}`}>
-        <div
-          className={`scr ${isScrolled ? 'sc' : ''}`}
-          id="scr"
-          tabIndex={-1}
-          ref={scrRef}
-          onScroll={handleScroll}
-        >
-          {/* ======================= TAB: HOME ======================= */}
-          {currentTab === 'home' && (
-            <div className="view">
-              <header className="top">
-                <span className="sp"></span>
-                <span className="tt">Home</span>
-                <button
-                  className="ib pl"
-                  type="button"
-                  aria-label="Student Account"
-                  onClick={() => setActiveSheet('me')}
-                >
-                  {userInitials}
-                </button>
-              </header>
-
-              <div className="lg">
-                <h1>Hi, {studentName.split(' ')[0]}</h1>
-                <p>Turn your logbook into a technical report.</p>
-              </div>
-
-              {/* Offline Warning Banner */}
-              {isOffline && (
-                <div className="offline-banner" role="status">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="ms" aria-hidden="true">cloud_off</span>
-                    <span>Offline mode. Your local drafts remain accessible.</span>
-                  </div>
+      <div className={`app ${inFlow ? 'wz nt' : ''} ${isScrolled ? 'sc' : ''}`} id="app">
+        {/* Scroll Container */}
+        <div className="scr" id="scr" ref={scrRef} onScroll={handleScroll} tabIndex={-1}>
+          {inFlow ? (
+            <>
+              {/* Wizard Sticky Top Header */}
+              <div className="wh">
+                <div className="row sb">
                   <button
-                    className="btn o s"
+                    className="ib"
                     type="button"
-                    style={{ color: '#fbbf24', borderColor: 'rgba(235, 178, 59, 0.4)' }}
-                    onClick={() => window.location.reload()}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-
-              {/* Hero Card / Empty State */}
-              {!effectiveProject ? (
-                <div className="card empty">
-                  <div className="ico">
-                    <span className="ms" aria-hidden="true">auto_stories</span>
-                  </div>
-                  <h2>Turn your logbook into a technical report</h2>
-                  <p>
-                    Upload your completed SIWES logbook. We&apos;ll extract your activities and help you prepare your technical report.
-                  </p>
-                  <button
-                    className="btn w"
-                    type="button"
-                    onClick={() => navigateTab('new')}
-                  >
-                    <span className="ms" aria-hidden="true">add</span>
-                    Start a new report
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {/* Hero Card */}
-                  <section className="hero" aria-label="Current project">
-                    <div
-                      className="ring"
-                      style={{ '--p': `${progressPct}%` } as React.CSSProperties}
-                    >
-                      <b>{progressPct}%</b>
-                    </div>
-                    <span
-                      className="chip"
-                      style={{ background: 'rgba(255,255,255,.18)', color: '#fff' }}
-                    >
-                      {hasReport ? 'Report ready' : `Step ${currentWorkflowStep} of 6`}
-                    </span>
-                    <h2 style={{ maxWidth: '11em' }}>{effectiveProject.organization_name || effectiveProject.title}</h2>
-                    <p>
-                      {verifiedCount} of {totalEntries} entries verified • {sortedDocuments.length} page{sortedDocuments.length === 1 ? '' : 's'}
-                    </p>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => {
-                        if (upNext.action) upNext.action();
-                        else navigateTab(upNext.tab);
-                      }}
-                    >
-                      {upNext.buttonText}
-                      <span className="ms" aria-hidden="true">arrow_forward</span>
-                    </button>
-                  </section>
-
-                  {/* Quick Actions */}
-                  <div className="qa">
-                    <button type="button" onClick={() => navigateTab('new')}>
-                      <span className="ms" aria-hidden="true">edit_note</span>
-                      Details
-                    </button>
-                    <button type="button" onClick={() => navigateTab('logbook')}>
-                      <span className="ms" aria-hidden="true">upload_file</span>
-                      Logbook
-                    </button>
-                    <button type="button" onClick={() => navigateTab('report')}>
-                      <span className="ms" aria-hidden="true">auto_awesome</span>
-                      Report
-                    </button>
-                  </div>
-
-                  {/* Up Next Section */}
-                  <h2 className="sh">Up next</h2>
-                  <div className="card" style={{ padding: '4px 16px' }}>
-                    <div
-                      className="lr"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        if (upNext.action) upNext.action();
-                        else navigateTab(upNext.tab);
-                      }}
-                    >
-                      <span className="ic">
-                        <span className="ms" aria-hidden="true">
-                          {currentWorkflowStep === 6 ? 'download' : 'arrow_forward'}
-                        </span>
-                      </span>
-                      <span style={{ flex: 1 }}>
-                        <b>{upNext.title}</b>
-                        <small>{upNext.desc}</small>
-                      </span>
-                      <span className="ms mut" aria-hidden="true">chevron_right</span>
-                    </div>
-
-                    {hasReport && (
-                      <div
-                        className="lr"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => {
-                          navigateTab('report');
-                          setReportTab('export');
-                        }}
-                      >
-                        <span className="ic">
-                          <span className="ms" aria-hidden="true">download</span>
-                        </span>
-                        <span style={{ flex: 1 }}>
-                          <b>Export Word and PDF</b>
-                          <small>LASUSTECH 1.5&rdquo; binding margin format</small>
-                        </span>
-                        <span className="ms mut" aria-hidden="true">chevron_right</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Secondary Action */}
-                  <button
-                    className="home-fab"
-                    type="button"
-                    onClick={() => navigateTab('new')}
-                    aria-label="Start a new report"
-                  >
-                    <span className="ms" aria-hidden="true">add</span>
-                    New report
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* ======================= TAB: LOGBOOK (STEPS 2 & 3) ======================= */}
-          {currentTab === 'logbook' && (
-            <div className="view">
-              <header className="top">
-                <button
-                  className="ib"
-                  type="button"
-                  aria-label="Back to home"
-                  onClick={() => navigateTab('home', 'bw')}
-                >
-                  <span className="ms" aria-hidden="true">arrow_back</span>
-                </button>
-                <span className="tt">My Logbooks</span>
-                <button
-                  className="ib pl"
-                  type="button"
-                  aria-label="Account"
-                  onClick={() => setActiveSheet('me')}
-                >
-                  {userInitials}
-                </button>
-              </header>
-
-              <div className="lg">
-                <h1>My Logbooks</h1>
-                <p>
-                  {effectiveProject?.organization_name || 'Upload handwritten notes & scans'}
-                </p>
-              </div>
-
-              {/* Completeness / Validation Banner */}
-              {completeness && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: '14px',
-                    background: completeness.can_generate ? 'var(--mint)' : '#fffbeb',
-                    border: `1px solid ${completeness.can_generate ? 'rgba(6, 107, 77, 0.3)' : '#fde68a'}`,
-                    borderRadius: '16px',
-                    padding: '12px 16px',
-                    flexWrap: 'wrap',
-                    gap: '10px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span className="ms" style={{ color: completeness.can_generate ? 'var(--g)' : 'var(--amb)', fontSize: '22px' }}>
-                      {completeness.can_generate ? 'verified' : 'fact_check'}
-                    </span>
-                    <div>
-                      <strong style={{ fontSize: '13.5px', display: 'block', color: 'var(--ink)' }}>
-                        {completeness.can_generate ? 'Information Verified (Ready)' : 'Missing Information Notice'}
-                      </strong>
-                      <span style={{ fontSize: '12px', color: 'var(--mut)' }}>
-                        {completeness.can_generate
-                          ? 'All required fields found. Ready to generate report.'
-                          : completeness.blocking_reasons?.[0] || 'Provide missing required details.'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {!completeness.can_generate && (
-                    <button
-                      type="button"
-                      className="btn s"
-                      style={{ padding: '6px 14px', fontSize: '12px' }}
-                      onClick={() => setIsMissingInfoOpen(true)}
-                    >
-                      Complete Missing Info
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Upload Actions (Step 2) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-                <button
-                  type="button"
-                  className="card"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '16px 12px',
-                    textAlign: 'center',
-                    border: '1.5px dashed var(--line)',
-                    background: 'var(--card)',
-                    cursor: 'pointer',
-                    borderRadius: '20px',
-                    margin: 0,
-                  }}
-                  onClick={() => setIsCameraOpen(true)}
-                >
-                  <span className="ms" style={{ fontSize: '30px', color: 'var(--g)', marginBottom: '4px' }} aria-hidden="true">
-                    photo_camera
-                  </span>
-                  <b style={{ fontSize: '14px' }}>Take Photos</b>
-                  <span className="mut" style={{ fontSize: '11.5px', marginTop: '2px' }}>
-                    Continuous camera capture
-                  </span>
-                </button>
-
-                <label
-                  className="card"
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '16px 12px',
-                    textAlign: 'center',
-                    border: '1.5px dashed var(--line)',
-                    background: 'var(--card)',
-                    cursor: 'pointer',
-                    borderRadius: '20px',
-                    margin: 0,
-                  }}
-                >
-                  <span className="ms" style={{ fontSize: '30px', color: '#0369a1', marginBottom: '4px' }} aria-hidden="true">
-                    cloud_upload
-                  </span>
-                  <b style={{ fontSize: '14px' }}>Upload Files</b>
-                  <span className="mut" style={{ fontSize: '11.5px', marginTop: '2px' }}>
-                    JPG, PNG, WebP or PDF
-                  </span>
-                  <input
-                    type="file"
-                    id="fi"
-                    multiple
-                    accept=".pdf,.jpg,.jpeg,.png,.webp"
-                    aria-label="Upload logbook pages"
-                    onChange={handleFileUpload}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-              </div>
-
-              {/* Sub-tabs: Logbook Pages | Extracted Activities */}
-              <div className="seg" role="tablist" aria-label="Logbook views" style={{ marginBottom: '14px' }}>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={logbookTab === 'docs'}
-                  onClick={() => setLogbookTab('docs')}
-                >
-                  Logbook Pages ({sortedDocuments.length})
-                </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={logbookTab === 'entries'}
-                  onClick={() => setLogbookTab('entries')}
-                >
-                  Extracted Activities ({totalEntries})
-                </button>
-              </div>
-
-              {/* 1. Logbook Pages View */}
-              {logbookTab === 'docs' && (
-                <div>
-                  {isUploadingFiles && (
-                    <div className="card" style={{ padding: '16px', background: 'var(--mint)', border: '1px solid rgba(6, 107, 77, 0.2)' }}>
-                      <div className="row sb" style={{ marginBottom: '6px' }}>
-                        <strong style={{ fontSize: '13px', color: 'var(--gd)' }}>{uploadStatusText}</strong>
-                        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--g)' }}>
-                          {uploadProgress.current} / {uploadProgress.total}
-                        </span>
-                      </div>
-                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.7)', borderRadius: '99px', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            background: 'var(--g)',
-                            width: `${uploadProgress.total ? (uploadProgress.current / uploadProgress.total) * 100 : 30}%`,
-                            transition: 'width 0.3s',
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {sortedDocuments.length === 0 && uploadQueue.length === 0 ? (
-                    <div className="card empty">
-                      <div className="ico">
-                        <span className="ms" aria-hidden="true">photo_library</span>
-                      </div>
-                      <h2>No logbook pages yet</h2>
-                      <p>Use the camera button or upload button above to add your completed logbook pages.</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {sortedDocuments.map((doc: any, idx: number) => {
-                        const page = doc.pages?.[0];
-                        return (
-                          <div key={doc.id} className="card" style={{ padding: '12px 14px', margin: 0 }}>
-                            <div className="row sb">
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <div
-                                  style={{
-                                    width: '42px',
-                                    height: '52px',
-                                    borderRadius: '8px',
-                                    background: 'var(--paper)',
-                                    border: '1px solid var(--line)',
-                                    display: 'grid',
-                                    placeItems: 'center',
-                                    overflow: 'hidden',
-                                    flex: 'none',
-                                  }}
-                                >
-                                  {doc.file_url ? (
-                                    <img src={doc.file_url} alt="Page" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                  ) : (
-                                    <span className="ms mut" style={{ fontSize: '20px' }}>description</span>
-                                  )}
-                                </div>
-                                <div>
-                                  <b style={{ fontSize: '14px', display: 'block' }}>
-                                    Page {idx + 1}: {doc.original_filename || 'Logbook Scan'}
-                                  </b>
-                                  <span className="mut" style={{ fontSize: '12px' }}>
-                                    OCR Status: {doc.ocr_status || 'Processed'} {page?.confidence_score ? `• ${Math.round(page.confidence_score * 100)}% accuracy` : ''}
-                                  </span>
-                                </div>
-                              </div>
-
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <button
-                                  type="button"
-                                  className="btn o s"
-                                  style={{ padding: '6px 12px', fontSize: '12px' }}
-                                  onClick={() => {
-                                    setReviewingDoc(doc);
-                                    setIsReviewModalOpen(true);
-                                  }}
-                                >
-                                  Inspect
-                                </button>
-                                <button
-                                  type="button"
-                                  className="ib"
-                                  style={{ width: '34px', height: '34px' }}
-                                  onClick={() => handleDeleteDoc(doc.id)}
-                                  title="Delete page"
-                                >
-                                  <span className="ms mut" style={{ fontSize: '18px' }}>delete</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 2. Extracted Activities View (Step 3) */}
-              {logbookTab === 'entries' && (
-                <div>
-                  <div className="row sb" style={{ marginBottom: '12px' }}>
-                    <div>
-                      <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0 }}>Verified Weekly Entries</h2>
-                      <span className="mut" style={{ fontSize: '12px' }}>
-                        Extracted directly from your logbook. No fabricated experiences.
-                      </span>
-                    </div>
-                    {totalEntries > 0 && verifiedCount < totalEntries && (
-                      <button
-                        type="button"
-                        className="btn s"
-                        style={{ padding: '6px 14px', fontSize: '12px' }}
-                        onClick={handleVerifyAll}
-                      >
-                        Verify All ({totalEntries})
-                      </button>
-                    )}
-                  </div>
-
-                  {projectEntries.length === 0 ? (
-                    <div className="card empty">
-                      <p>No activities extracted yet. Upload your logbook pages to trigger OCR extraction.</p>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {projectEntries.map((entry: any) => (
-                        <div key={entry.id} className="card" style={{ padding: '14px', margin: 0 }}>
-                          <div className="row sb" style={{ marginBottom: '6px' }}>
-                            <span className="chip">Week {entry.week_number}</span>
-                            <button
-                              type="button"
-                              className={`btn s ${entry.is_verified ? '' : 'o'}`}
-                              style={{ padding: '4px 10px', fontSize: '11px', minHeight: '30px' }}
-                              onClick={() => handleToggleVerify(entry)}
-                            >
-                              <span className="ms" style={{ fontSize: '14px' }}>
-                                {entry.is_verified ? 'check' : 'check_box_outline_blank'}
-                              </span>
-                              {entry.is_verified ? 'Verified' : 'Verify'}
-                            </button>
-                          </div>
-                          <p style={{ fontSize: '13.5px', color: 'var(--ink)', lineHeight: '1.5' }}>
-                            {entry.activity_summary || entry.verified_text}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Proceed to Generation Button */}
-                  <div style={{ marginTop: '20px' }}>
-                    <button
-                      type="button"
-                      className="btn w"
-                      onClick={() => {
-                        if (isComplete) {
-                          handleGenerateReport();
-                        } else {
-                          setIsMissingInfoOpen(true);
-                        }
-                      }}
-                    >
-                      {isComplete ? 'Generate Report' : 'Complete Info'}
-                      <span className="ms">arrow_forward</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ======================= TAB: REPORT (STEPS 5 & 6) ======================= */}
-          {currentTab === 'report' && (
-            <div className="view">
-              <header className="top">
-                <button
-                  className="ib"
-                  type="button"
-                  aria-label="Back to home"
-                  onClick={() => navigateTab('home', 'bw')}
-                >
-                  <span className="ms" aria-hidden="true">arrow_back</span>
-                </button>
-                <span className="tt">My Reports</span>
-                <button
-                  className="ib pl"
-                  type="button"
-                  aria-label="Account"
-                  onClick={() => setActiveSheet('me')}
-                >
-                  {userInitials}
-                </button>
-              </header>
-
-              <div className="lg">
-                <h1>Technical Report</h1>
-                <p>{effectiveProject?.title || 'SIWES Technical Report'}</p>
-              </div>
-
-              {/* Sub-tabs: Editor | Preview | Export */}
-              <div className="seg" role="tablist" aria-label="Report views" style={{ marginBottom: '14px' }}>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={reportTab === 'editor'}
-                  onClick={() => setReportTab('editor')}
-                >
-                  Document Editor
-                </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={reportTab === 'preview'}
-                  onClick={() => setReportTab('preview')}
-                >
-                  Page Preview
-                </button>
-                <button
-                  role="tab"
-                  type="button"
-                  aria-selected={reportTab === 'export'}
-                  onClick={() => setReportTab('export')}
-                >
-                  Export & Download
-                </button>
-              </div>
-
-              {/* 1. DOCUMENT EDITOR */}
-              {reportTab === 'editor' && (
-                <div>
-                  {!hasReport && (
-                    <div className="card empty" style={{ marginBottom: '16px' }}>
-                      <div className="ico">
-                        <span className="ms" aria-hidden="true">auto_awesome</span>
-                      </div>
-                      <h2>Report Not Generated Yet</h2>
-                      <p>Generate your 12–15 page report from your verified logbook records.</p>
-                      <button
-                        className="btn"
-                        type="button"
-                        disabled={isGeneratingReport}
-                        onClick={handleGenerateReport}
-                      >
-                        {isGeneratingReport ? 'Generating...' : 'Generate Report'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Chapter Selector */}
-                  <div className="card" style={{ padding: '8px', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
-                      {CHAPTER_NAMES.map((chap, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          className={`btn s ${currentChapterIdx === idx ? '' : 'o'}`}
-                          style={{
-                            whiteSpace: 'nowrap',
-                            padding: '6px 14px',
-                            fontSize: '12px',
-                            minHeight: '36px',
-                          }}
-                          onClick={() => setCurrentChapterIdx(idx)}
-                        >
-                          {chap.split(':')[0]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Editor Container */}
-                  <div
-                    className="card"
-                    style={{
-                      padding: 'clamp(14px, 4vw, 24px)',
-                      background: 'var(--card)',
-                      fontFamily: "'Times New Roman', Times, serif",
-                      fontSize: '15px',
-                      lineHeight: '1.6',
-                      minHeight: '380px',
+                    onClick={() => {
+                      setInFlow(false);
+                      window.location.hash = '#/home';
+                      showToast('Progress saved');
                     }}
+                    aria-label="Save and close"
                   >
-                    <div className="row sb" style={{ marginBottom: '16px', borderBottom: '1px solid var(--line)', paddingBottom: '10px' }}>
-                      <h3 style={{ fontSize: '18px', fontWeight: 600, margin: 0, fontFamily: 'inherit' }}>
-                        {CHAPTER_NAMES[currentChapterIdx]}
-                      </h3>
-                      <span className="mut" style={{ fontSize: '12px', fontFamily: "'Manrope', sans-serif" }}>
-                        Times New Roman 12pt • 1.5 line spacing
-                      </span>
-                    </div>
-
-                    <div
-                      contentEditable
-                      suppressContentEditableWarning
-                      dangerouslySetInnerHTML={{ __html: getSectionContent(currentChapterIdx) }}
-                      style={{ outline: 'none', minHeight: '260px' }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* 2. PAGE PREVIEW */}
-              {reportTab === 'preview' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="card" style={{ padding: 'clamp(16px, 5vw, 28px)', background: '#fff', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-                    <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-                      <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--mut)' }}>
-                        {effectiveProject?.university_name || 'Lagos State University of Science and Technology'}
-                      </p>
-                      <h2 style={{ fontSize: '20px', fontFamily: "'Fraunces', Georgia, serif", margin: '14px 0 8px' }}>
-                        {effectiveProject?.title || 'SIWES TECHNICAL REPORT'}
-                      </h2>
-                      <p style={{ fontSize: '13px', color: 'var(--mut)' }}>
-                        Submitted by: <strong>{studentName}</strong> ({effectiveProject?.matric_number || 'Matric Pending'})
-                      </p>
-                    </div>
-
-                    <div style={{ borderTop: '1px solid var(--line)', paddingTop: '20px', fontSize: '14px', lineHeight: '1.6' }}>
-                      <p style={{ fontStyle: 'italic', color: 'var(--mut)' }}>
-                        Approved LASUSTECH institutional template applied. Technical activities derived solely from your verified logbook records.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 3. EXPORT & DOWNLOAD */}
-              {reportTab === 'export' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <div className="card">
-                    <span className="chip">Editable Document</span>
-                    <h3 style={{ fontSize: '18px', margin: '8px 0 4px' }}>Word Document (.docx)</h3>
-                    <p className="mut" style={{ fontSize: '13.5px', marginBottom: '14px' }}>
-                      Editable in Microsoft Word, Google Docs. A4, 1.5-inch left margin for binding.
-                    </p>
-                    <button
-                      className="btn w"
-                      type="button"
-                      disabled={!hasReport}
-                      onClick={handleDownloadWord}
-                    >
-                      <span className="ms">download</span>
-                      Download (.docx)
-                    </button>
-                  </div>
-
-                  <div className="card">
-                    <span className="chip" style={{ background: '#e0f2fe', color: '#0369a1' }}>Submission Ready</span>
-                    <h3 style={{ fontSize: '18px', margin: '8px 0 4px' }}>Print-Ready PDF (.pdf)</h3>
-                    <p className="mut" style={{ fontSize: '13.5px', marginBottom: '14px' }}>
-                      Fixed academic pagination: Roman preliminary numerals (i-iv) and Arabic main numbering (1-15).
-                    </p>
-                    <button
-                      className="btn w"
-                      type="button"
-                      disabled={!hasReport}
-                      onClick={handleDownloadPdf}
-                    >
-                      <span className="ms">download</span>
-                      Download (.pdf)
-                    </button>
-                  </div>
-
-                  <div className="card">
-                    <span className="chip" style={{ background: '#fef3c7', color: '#b45309' }}>Direct Print</span>
-                    <h3 style={{ fontSize: '18px', margin: '8px 0 4px' }}>Browser Print</h3>
-                    <p className="mut" style={{ fontSize: '13.5px', marginBottom: '14px' }}>
-                      Print or save directly using clean print stylesheet.
-                    </p>
-                    <button
-                      className="btn w o"
-                      type="button"
-                      disabled={!hasReport}
-                      onClick={handleDirectPrint}
-                    >
-                      <span className="ms">print</span>
-                      Print Report
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ======================= TAB: SETTINGS ======================= */}
-          {currentTab === 'settings' && (
-            <div className="view">
-              <header className="top">
-                <button
-                  className="ib"
-                  type="button"
-                  aria-label="Back to home"
-                  onClick={() => navigateTab('home', 'bw')}
-                >
-                  <span className="ms" aria-hidden="true">arrow_back</span>
-                </button>
-                <span className="tt">Settings</span>
-                <button
-                  className="ib pl"
-                  type="button"
-                  aria-label="Account"
-                  onClick={() => setActiveSheet('me')}
-                >
-                  {userInitials}
-                </button>
-              </header>
-
-              <div className="lg">
-                <h1>Settings</h1>
-                <p>Student Profile & Application Preferences</p>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* Student Profile Card */}
-                <div className="card">
-                  <div className="row sb" style={{ marginBottom: '10px' }}>
-                    <div>
-                      <h2 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 2px' }}>{studentName}</h2>
-                      <p className="mut" style={{ fontSize: '13px' }}>
-                        {effectiveUser?.email || 'Student Account'}
-                      </p>
-                    </div>
-                    <span className="ms" style={{ color: 'var(--g)', fontSize: '32px' }}>account_circle</span>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', margin: '14px 0', fontSize: '12.5px' }}>
-                    <div style={{ padding: '8px 10px', background: 'var(--paper)', borderRadius: '10px' }}>
-                      <span className="mut" style={{ display: 'block', fontSize: '10.5px', textTransform: 'uppercase', fontWeight: 700 }}>Matric Number</span>
-                      <strong>{effectiveProject?.matric_number || 'Pending'}</strong>
-                    </div>
-                    <div style={{ padding: '8px 10px', background: 'var(--paper)', borderRadius: '10px' }}>
-                      <span className="mut" style={{ display: 'block', fontSize: '10.5px', textTransform: 'uppercase', fontWeight: 700 }}>Department</span>
-                      <strong>{effectiveProject?.department || 'Pending'}</strong>
-                    </div>
-                    <div style={{ padding: '8px 10px', background: 'var(--paper)', borderRadius: '10px', gridColumn: '1 / -1' }}>
-                      <span className="mut" style={{ display: 'block', fontSize: '10.5px', textTransform: 'uppercase', fontWeight: 700 }}>Institution</span>
-                      <strong>{effectiveProject?.university_name || 'Lagos State University of Science and Technology (LASUSTECH)'}</strong>
-                    </div>
-                  </div>
-
-                  <button
-                    className="btn w o s"
-                    type="button"
-                    onClick={() => navigateTab('new')}
-                  >
-                    Edit Student & Placement Details
+                    <span className="ms" aria-hidden="true">
+                      close
+                    </span>
                   </button>
+                  <b style={{ fontSize: '14px' }}>
+                    Step {step} of 6 · {SN[step - 1]}
+                  </b>
+                  <span className="sp" />
                 </div>
-
-                {/* Switch Active Project if multiple exist */}
-                {projects.length > 1 && (
-                  <div className="card">
-                    <div className="row sb" style={{ marginBottom: '8px' }}>
-                      <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Active SIWES Project</h2>
-                      <span className="ms mut" style={{ fontSize: '20px' }}>folder</span>
-                    </div>
-                    <select
-                      value={activeProject?.id || ''}
-                      onChange={(e) => {
-                        const id = Number(e.target.value);
-                        fetchActiveProject(id);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '10px 12px',
-                        borderRadius: '12px',
-                        border: '1px solid var(--line)',
-                        background: 'var(--paper)',
-                        fontSize: '13px',
-                      }}
-                    >
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title} ({p.organization_name || 'SIWES'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* PWA Mobile App Card */}
-                {canInstallPWA && (
-                  <div className="card">
-                    <div className="row sb" style={{ marginBottom: '6px' }}>
-                      <h2 style={{ fontSize: '15px', fontWeight: 700, margin: 0 }}>Mobile App Installation</h2>
-                      <span className="ms" style={{ color: 'var(--g)' }}>smartphone</span>
-                    </div>
-                    <p className="mut" style={{ fontSize: '12.5px', marginBottom: '12px' }}>
-                      Install Log2Def on your phone for rapid camera access and offline logbook capture.
-                    </p>
-                    <button
-                      className="btn w s"
-                      type="button"
-                      onClick={handleInstallApp}
-                    >
-                      {deviceOS === 'ios' ? 'How to Add to Home Screen' : 'Install Mobile App'}
-                    </button>
-                  </div>
-                )}
-
-                {/* Sign Out Button */}
-                <button
-                  className="btn w o"
-                  type="button"
-                  style={{ color: 'var(--red)', borderColor: 'rgba(180, 35, 24, 0.3)' }}
-                  onClick={logout}
+                <div
+                  className="wp"
+                  role="progressbar"
+                  aria-valuemin={1}
+                  aria-valuemax={6}
+                  aria-valuenow={step}
+                  aria-label="Report progress"
                 >
-                  Sign Out
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ======================= TAB: NEW / EDIT DETAILS (STEP 1) ======================= */}
-          {currentTab === 'new' && (
-            <div className="view">
-              <header className="top">
-                <button
-                  className="ib"
-                  type="button"
-                  aria-label="Back to home"
-                  onClick={() => navigateTab('home', 'bw')}
-                >
-                  <span className="ms" aria-hidden="true">arrow_back</span>
-                </button>
-                <span className="tt">Placement Details</span>
-                <span className="sp"></span>
-              </header>
-
-              <div className="lg">
-                <h1>Step 1: Enter Your Details</h1>
-                <p>Provide your basic student and SIWES placement information once.</p>
+                  {SN.map((_, k) => (
+                    <i key={k} className={k < step ? 'on' : ''} />
+                  ))}
+                </div>
               </div>
 
-              <form onSubmit={handleSaveDetails} className="card" style={{ padding: '20px' }}>
-                <h2 style={{ fontSize: '17px', fontWeight: 700, marginBottom: '14px', color: 'var(--gd)' }}>
-                  A. Student & Institution
-                </h2>
-
-                <div className="f">
-                  <label htmlFor="fn">Full Name <em>*</em></label>
-                  <input
-                    id="fn"
-                    type="text"
-                    required
-                    value={detailsData.full_name}
-                    onChange={(e) => setDetailsData({ ...detailsData, full_name: e.target.value })}
-                    placeholder="e.g., Babatunde Oluwaseun Emmanuel"
-                  />
-                  {detailsErrors.full_name && <p className="err">{detailsErrors.full_name}</p>}
-                </div>
-
-                <div className="f">
-                  <label htmlFor="mn">Matriculation Number <em>*</em></label>
-                  <input
-                    id="mn"
-                    type="text"
-                    required
-                    value={detailsData.matric_number}
-                    onChange={(e) => setDetailsData({ ...detailsData, matric_number: e.target.value })}
-                    placeholder="e.g., STE/2021/0458"
-                  />
-                  {detailsErrors.matric_number && <p className="err">{detailsErrors.matric_number}</p>}
-                </div>
-
-                <div className="f">
-                  <label htmlFor="dept">Department <em>*</em></label>
-                  <input
-                    id="dept"
-                    type="text"
-                    required
-                    value={detailsData.department}
-                    onChange={(e) => setDetailsData({ ...detailsData, department: e.target.value })}
-                    placeholder="e.g., Computer Engineering"
-                  />
-                  {detailsErrors.department && <p className="err">{detailsErrors.department}</p>}
-                </div>
-
-                <div className="f">
-                  <label htmlFor="fac">Faculty / School</label>
-                  <input
-                    id="fac"
-                    type="text"
-                    value={detailsData.faculty_school}
-                    onChange={(e) => setDetailsData({ ...detailsData, faculty_school: e.target.value })}
-                    placeholder="College of Applied Sciences and Technology"
-                  />
-                </div>
-
-                <div className="f">
-                  <label htmlFor="uni">Higher Institution</label>
-                  <input
-                    id="uni"
-                    type="text"
-                    value={detailsData.university_name}
-                    onChange={(e) => setDetailsData({ ...detailsData, university_name: e.target.value })}
-                    placeholder="Lagos State University of Science and Technology (LASUSTECH)"
-                  />
-                </div>
-
-                <h2 style={{ fontSize: '17px', fontWeight: 700, margin: '24px 0 14px', color: 'var(--gd)' }}>
-                  B. SIWES Placement Company
-                </h2>
-
-                <div className="f">
-                  <label htmlFor="on">Company / Organisation Name <em>*</em></label>
-                  <input
-                    id="on"
-                    type="text"
-                    required
-                    value={detailsData.organization_name}
-                    onChange={(e) => setDetailsData({ ...detailsData, organization_name: e.target.value })}
-                    placeholder="e.g., Mi Labs Engineering Ltd, Lagos"
-                  />
-                  {detailsErrors.organization_name && <p className="err">{detailsErrors.organization_name}</p>}
-                </div>
-
-                <div className="f">
-                  <label htmlFor="oa">Company Physical Address <em>*</em></label>
-                  <input
-                    id="oa"
-                    type="text"
-                    required
-                    value={detailsData.organization_address}
-                    onChange={(e) => setDetailsData({ ...detailsData, organization_address: e.target.value })}
-                    placeholder="e.g., Plot 12, Commercial Avenue, Ikeja, Lagos State"
-                  />
-                  {detailsErrors.organization_address && <p className="err">{detailsErrors.organization_address}</p>}
-                </div>
-
-                <div className="f">
-                  <label htmlFor="pd">Unit / Department at Company (Optional)</label>
-                  <input
-                    id="pd"
-                    type="text"
-                    value={detailsData.placement_department}
-                    onChange={(e) => setDetailsData({ ...detailsData, placement_department: e.target.value })}
-                    placeholder="e.g., Network & Systems Maintenance Unit"
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="f">
-                    <label htmlFor="sd">Start Date <em>*</em></label>
-                    <input
-                      id="sd"
-                      type="date"
-                      required
-                      value={detailsData.training_start_date}
-                      onChange={(e) => setDetailsData({ ...detailsData, training_start_date: e.target.value })}
-                    />
-                    {detailsErrors.training_start_date && <p className="err">{detailsErrors.training_start_date}</p>}
-                  </div>
-
-                  <div className="f">
-                    <label htmlFor="ed">End Date <em>*</em></label>
-                    <input
-                      id="ed"
-                      type="date"
-                      required
-                      value={detailsData.training_end_date}
-                      onChange={(e) => setDetailsData({ ...detailsData, training_end_date: e.target.value })}
-                    />
-                    {detailsErrors.training_end_date && <p className="err">{detailsErrors.training_end_date}</p>}
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSavingDetails}
-                  className="btn w"
-                  style={{ marginTop: '14px' }}
-                >
-                  {isSavingDetails ? 'Saving Details...' : 'Save & Continue to Logbook Upload'}
-                  <span className="ms">arrow_forward</span>
-                </button>
-              </form>
-            </div>
+              {/* Wizard Step Body */}
+              {step === 1 && renderStep1()}
+              {step === 2 && renderStep2()}
+              {step === 3 && renderStep3()}
+              {step === 4 && renderStep4()}
+              {step === 5 && renderStep5()}
+              {step === 6 && renderStep6()}
+            </>
+          ) : (
+            <>
+              {currentTab === 'home' && renderHomeView()}
+              {currentTab === 'logbooks' && renderLogbooksView()}
+              {currentTab === 'reports' && renderReportsView()}
+              {currentTab === 'settings' && renderSettingsView()}
+            </>
           )}
         </div>
 
-        {/* Floating Bottom Tab Bar — 4 tabs, sleek glass */}
+        {/* Tab Bar (Visible when not in wizard) */}
         <nav className="tb" id="tb" aria-label="Main">
-          <span
-            className="tb-glide"
-            aria-hidden="true"
-            style={{
-              '--i': ['home', 'logbook', 'report', 'settings'].indexOf(
-                ['home', 'logbook', 'report', 'settings'].includes(currentTab) ? currentTab : 'home'
-              ),
-            } as React.CSSProperties}
-          />
           <button
-            className="tab-btn"
             type="button"
-            aria-current={currentTab === 'home' ? 'page' : undefined}
-            onClick={() => navigateTab('home')}
+            onClick={() => switchTab('home')}
+            data-t="home"
+            aria-current={currentTab === 'home' && !inFlow ? 'page' : undefined}
           >
-            <span className="ms" aria-hidden="true">home</span>
-            <span className="tab-label">Home</span>
+            <span className="ms" aria-hidden="true">
+              home
+            </span>
+            Home
           </button>
           <button
-            className="tab-btn"
             type="button"
-            aria-current={currentTab === 'logbook' ? 'page' : undefined}
-            onClick={() => navigateTab('logbook')}
+            onClick={() => switchTab('logbooks')}
+            data-t="logbooks"
+            aria-current={currentTab === 'logbooks' && !inFlow ? 'page' : undefined}
           >
-            <span className="ms" aria-hidden="true">menu_book</span>
-            <span className="tab-label">My Logbooks</span>
+            <span className="ms" aria-hidden="true">
+              menu_book
+            </span>
+            Logbooks
           </button>
           <button
-            className="tab-btn"
             type="button"
-            aria-current={currentTab === 'report' ? 'page' : undefined}
-            onClick={() => navigateTab('report')}
+            onClick={() => switchTab('reports')}
+            data-t="reports"
+            aria-current={currentTab === 'reports' && !inFlow ? 'page' : undefined}
           >
-            <span className="ms" aria-hidden="true">description</span>
-            <span className="tab-label">My Reports</span>
+            <span className="ms" aria-hidden="true">
+              description
+            </span>
+            Reports
           </button>
           <button
-            className="tab-btn"
             type="button"
-            aria-current={currentTab === 'settings' ? 'page' : undefined}
-            onClick={() => navigateTab('settings')}
+            onClick={() => switchTab('settings')}
+            data-t="settings"
+            aria-current={currentTab === 'settings' && !inFlow ? 'page' : undefined}
           >
-            <span className="ms" aria-hidden="true">settings</span>
-            <span className="tab-label">Settings</span>
+            <span className="ms" aria-hidden="true">
+              settings
+            </span>
+            Settings
           </button>
         </nav>
 
-        {/* ======================= AFFIRMATION MODAL SCREEN ======================= */}
-        {affirmationScreen?.visible && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-            style={{
-              backgroundColor: 'rgba(20, 32, 27, 0.7)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-            }}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div
-              className="affirmation-card w-full max-w-md shadow-2xl"
-              style={{ background: 'var(--card)', border: '1px solid rgba(6, 107, 77, 0.3)', margin: 0 }}
-            >
-              <div className="affirmation-header">
-                <div className="affirmation-icon">
-                  <span className="ms" style={{ fontSize: '24px' }}>check</span>
-                </div>
-                <div>
-                  <h3 className="affirmation-title">{affirmationScreen.title}</h3>
-                  <span className="chip" style={{ fontSize: '11px', padding: '2px 8px' }}>
-                    Step {affirmationScreen.step} Complete
-                  </span>
-                </div>
-              </div>
-
-              <p className="affirmation-desc">{affirmationScreen.description}</p>
-
-              {affirmationScreen.stats && (
-                <div className="affirmation-stats">
-                  {affirmationScreen.stats.map((s, idx) => (
-                    <div key={idx} className="affirmation-stat-chip">
-                      <span>{s.label}</span>
-                      <strong>{s.value}</strong>
-                    </div>
-                  ))}
-                </div>
-              )}
-
+        {/* Wizard Bottom Action Bar (#nv) */}
+        {inFlow && (
+          <div id="nv">
+            <div className="wc">
               <button
+                className="btn o"
                 type="button"
-                className="btn w"
-                onClick={affirmationScreen.onPrimaryAction}
+                style={{ flex: '0 0 42%' }}
+                disabled={step === 1 || reading || (step === 5 && genState === 1)}
+                onClick={() => {
+                  setStep((prev) => Math.max(1, prev - 1));
+                  if (scrRef.current) scrRef.current.scrollTop = 0;
+                }}
               >
-                {affirmationScreen.primaryActionLabel}
-                <span className="ms">arrow_forward</span>
+                <span className="ms" aria-hidden="true">
+                  arrow_back
+                </span>
+                Previous
+              </button>
+              {renderPrimaryCta()}
+            </div>
+          </div>
+        )}
+
+        {/* Camera Overlay (#cv) */}
+        {isCameraActive && (
+          <div id="cv" className={cameraFlash ? 'fl' : ''}>
+            <video ref={videoRef} id="vd" playsInline autoPlay muted aria-label="Camera" />
+            <div className="cf" aria-hidden="true" />
+            <div className="ct">
+              <button
+                className="ib"
+                type="button"
+                onClick={closeCamera}
+                aria-label="Close camera"
+              >
+                <span className="ms" aria-hidden="true">
+                  close
+                </span>
+              </button>
+              <span className="chip" id="cc" role="status">
+                {pages.length} page{pages.length === 1 ? '' : 's'}
+              </span>
+              <button
+                className="ib"
+                type="button"
+                onClick={switchCamera}
+                aria-label="Switch camera"
+              >
+                <span className="ms" aria-hidden="true">
+                  cameraswitch
+                </span>
+              </button>
+            </div>
+            <p className="ctip">Fit the whole page</p>
+            <div className="cb">
+              <div className="cth" id="cth">
+                {pages.length > 0 && pages[pages.length - 1].th ? (
+                  <img src={pages[pages.length - 1].th} alt="Last page" />
+                ) : null}
+              </div>
+              <button
+                className="sh2"
+                type="button"
+                onClick={snapPhoto}
+                aria-label="Take photo"
+              />
+              <button className="btn s" type="button" onClick={closeCamera}>
+                Done
               </button>
             </div>
           </div>
         )}
 
-        {/* ======================= BOTTOM SHEET: PROFILE / ACCOUNT ======================= */}
+        {/* Bottom Sheets (#layer) */}
         {activeSheet && (
-          <div className="layer on" id="layer">
-            <div className="bd" onClick={() => setActiveSheet(null)}></div>
+          <div id="layer">
+            <div className="bd" onClick={closeSheet} />
             <div
               className="sht"
               role="dialog"
@@ -1943,141 +2438,21 @@ export default function DashboardPage() {
               aria-label="Dialog"
               tabIndex={-1}
             >
-              <div className="hd"></div>
-
-              {activeSheet === 'me' && (
-                <>
-                  <h2>{studentName}</h2>
-                  <p className="mut" style={{ margin: '-8px 0 18px' }}>
-                    {effectiveUser?.email || 'Logged in student'}
-                  </p>
-
-                  <div className="card" style={{ padding: '12px 14px', marginBottom: '14px', background: 'var(--paper)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '13px' }}>
-                      <div className="row sb">
-                        <span className="mut">Matric Number:</span>
-                        <strong>{effectiveProject?.matric_number || 'Pending'}</strong>
-                      </div>
-                      <div className="row sb">
-                        <span className="mut">Department:</span>
-                        <strong>{effectiveProject?.department || 'Pending'}</strong>
-                      </div>
-                      <div className="row sb">
-                        <span className="mut">Company:</span>
-                        <strong>{effectiveProject?.organization_name || 'Not set'}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    className="btn o w"
-                    type="button"
-                    style={{ marginBottom: '10px' }}
-                    onClick={() => {
-                      setActiveSheet(null);
-                      navigateTab('new');
-                    }}
-                  >
-                    Edit Student & Placement Details
-                  </button>
-
-                  <button
-                    className="btn w"
-                    type="button"
-                    onClick={() => {
-                      setActiveSheet(null);
-                      logout();
-                    }}
-                  >
-                    Log out
-                  </button>
-                </>
-              )}
-
-              {activeSheet === 'pwaGuide' && (
-                <div style={{ padding: '10px 0' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 6px' }}>
-                    Install Log2Def on {deviceOS === 'ios' ? 'iPhone / iPad' : 'your device'}
-                  </h3>
-                  <p className="mut" style={{ fontSize: '13px', marginBottom: '16px' }}>
-                    {deviceOS === 'ios'
-                      ? 'In Safari, tap the Share button (square with arrow pointing up) and select "Add to Home Screen".'
-                      : 'Tap Install to save Log2Def as a standalone application on your home screen.'}
-                  </p>
-                  <button
-                    className="btn w"
-                    type="button"
-                    onClick={() => setActiveSheet(null)}
-                  >
-                    Got it
-                  </button>
-                </div>
-              )}
+              <div className="hd" />
+              {renderSheetContent()}
             </div>
           </div>
         )}
 
-        {/* Camera Capture Modal */}
-        {isCameraOpen && (
-          <CameraCapture
-            onCaptureComplete={handleCameraCaptureComplete}
-            onCancel={() => setIsCameraOpen(false)}
-            existingPageCount={sortedDocuments.length}
-          />
-        )}
-
-        {/* Page Review & OCR Inspection Modal */}
-        {isReviewModalOpen && reviewingDoc && (
-          <PageReviewModal
-            isOpen={isReviewModalOpen}
-            onClose={() => {
-              setIsReviewModalOpen(false);
-              setReviewingDoc(null);
-            }}
-            document={reviewingDoc}
-            onSave={async (pageId, updatedText, meta) => {
-              if (activeProject?.id) {
-                await storeUpdatePage(activeProject.id, pageId, {
-                  extracted_text: updatedText,
-                  ...meta,
-                });
-                triggerToast('Corrections saved');
-              }
-            }}
-            onReprocess={async (docId) => {
-              if (activeProject?.id) {
-                await storeReprocessDocument(activeProject.id, docId);
-                triggerToast('Document reprocessed');
-              }
-            }}
-          />
-        )}
-
-        {/* Missing Info Completeness Modal */}
-        {isMissingInfoOpen && (
-          <MissingInfoModal
-            isOpen={isMissingInfoOpen}
-            onClose={() => setIsMissingInfoOpen(false)}
-            completeness={completeness}
-            project={effectiveProject}
-            onSubmit={async (data) => {
-              if (activeProject?.id) {
-                await storeUpdateMissingInfo(activeProject.id, data);
-                await fetchActiveProject(activeProject.id);
-                await fetchCompleteness(activeProject.id);
-                triggerToast('Information confirmed and saved');
-              }
-            }}
-          />
-        )}
-
-        {/* Toast Notification */}
-        {localToast.visible && (
-          <div id="toast" role="status" className="on">
-            <span className="ms">check_circle</span>
-            <span id="toast-text">{localToast.message}</span>
-          </div>
-        )}
+        {/* Toast (#toast) */}
+        <div
+          id="toast"
+          role="status"
+          aria-live="polite"
+          className={toastMessage ? 'on' : ''}
+        >
+          {toastMessage}
+        </div>
       </div>
     </div>
   );
