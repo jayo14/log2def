@@ -32,22 +32,28 @@ export default function CameraCapture({
   const [isProcessingShot, setIsProcessingShot] = useState(false);
   const [flashActive, setFlashActive] = useState(false);
   const [lastWarning, setLastWarning] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
 
-  // Initialize camera stream with rear camera preference (environment)
-  const startCamera = useCallback(async () => {
+  // Initialize camera stream with chosen facing mode
+  const startCamera = useCallback(async (mode: 'environment' | 'user') => {
     setIsStartingCamera(true);
     setCameraError(null);
 
+    // Stop existing stream if running
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
     try {
       if (!navigator?.mediaDevices?.getUserMedia) {
-        throw new Error('Camera access is not supported by your browser. Please use file upload.');
+        throw new Error('Camera access not supported by browser. Please use file upload.');
       }
 
-      // Constraints prefer rear camera and 1080p resolution
       const constraints: MediaStreamConstraints = {
         audio: false,
         video: {
-          facingMode: { ideal: 'environment' },
+          facingMode: { ideal: mode },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         },
@@ -65,9 +71,9 @@ export default function CameraCapture({
       console.error('Camera initialization error:', err);
       let message = 'Unable to access camera.';
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        message = 'Camera permission denied. Please allow camera permissions in browser settings.';
+        message = 'Camera permission denied. Allow camera access in browser settings.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        message = 'No camera found on this device.';
+        message = 'No camera device found.';
       } else if (err.message) {
         message = err.message;
       }
@@ -85,18 +91,23 @@ export default function CameraCapture({
   }, []);
 
   useEffect(() => {
-    startCamera();
+    startCamera(facingMode);
     return () => {
       stopCamera();
     };
-  }, [startCamera, stopCamera]);
+  }, [facingMode, startCamera, stopCamera]);
 
-  // Capture single frame from the live video stream without restarting stream
+  // Flip camera between rear and front
+  const toggleFacingMode = () => {
+    setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'));
+  };
+
+  // Capture single frame from live stream
   const handleSnap = async () => {
     if (!videoRef.current || isProcessingShot) return;
     setIsProcessingShot(true);
     setFlashActive(true);
-    setTimeout(() => setFlashActive(false), 200);
+    setTimeout(() => setFlashActive(false), 160);
 
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
@@ -120,7 +131,7 @@ export default function CameraCapture({
         );
       });
 
-      // Free capture canvas
+      // Free canvas
       canvas.width = 1;
       canvas.height = 1;
 
@@ -183,61 +194,142 @@ export default function CameraCapture({
   };
 
   const currentPageNumber = existingPageCount + capturedPages.length + 1;
-  const targetLabel = capturedPages.length === 0 && existingPageCount === 0 ? 'Cover Page' : `Page ${currentPageNumber}`;
+  const targetLabel = capturedPages.length === 0 && existingPageCount === 0 ? 'Cover' : `Page ${currentPageNumber}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-white">
-      {/* Top Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-100">
-            Logbook Camera Capture
-          </h2>
-          <p className="text-xs text-slate-400">
-            Next target: <span className="text-emerald-400 font-medium">{targetLabel}</span> • {capturedPages.length} snapped
-          </p>
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-between"
+      style={{
+        background: '#041d15',
+        color: '#fff',
+        fontFamily: "'Manrope', system-ui, sans-serif",
+        height: '100dvh',
+      }}
+    >
+      {/* Top Header — Sleek Brand Bar */}
+      <header
+        className="flex items-center justify-between px-3.5 sm:px-5 py-3 flex-none"
+        style={{
+          background: 'linear-gradient(180deg, rgba(4, 30, 22, 0.95), rgba(4, 30, 22, 0.6))',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderBottom: '1px solid rgba(15, 163, 122, 0.2)',
+          zIndex: 40,
+        }}
+      >
+        <div className="flex items-center gap-2.5">
+          <span
+            className="w-8 h-8 rounded-xl flex items-center justify-center flex-none"
+            style={{ background: 'var(--mint, #dcf0e7)', color: 'var(--g, #066b4d)' }}
+          >
+            <span className="ms" style={{ fontSize: '18px' }}>photo_camera</span>
+          </span>
+          <div>
+            <h2
+              style={{
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontSize: '15px',
+                fontWeight: 600,
+                margin: 0,
+                lineHeight: 1.2,
+                color: '#fff',
+              }}
+            >
+              Logbook Scanner
+            </h2>
+            <div className="flex items-center gap-2 text-xs" style={{ color: 'rgba(255,255,255,0.7)', marginTop: '2px' }}>
+              <span>Target: <strong style={{ color: '#58d6ad' }}>{targetLabel}</strong></span>
+              <span>•</span>
+              <span>{capturedPages.length} snapped</span>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={() => {
-            stopCamera();
-            onCancel();
-          }}
-          className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition"
-        >
-          Cancel
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* Flip camera */}
+          <button
+            type="button"
+            onClick={toggleFacingMode}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition active:scale-90"
+            style={{
+              background: 'rgba(255,255,255,0.12)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)',
+              cursor: 'pointer',
+            }}
+            title="Switch Camera (Front/Rear)"
+            aria-label="Switch Camera"
+          >
+            <span className="ms" style={{ fontSize: '18px' }}>flip_camera_ios</span>
+          </button>
+
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={() => {
+              stopCamera();
+              onCancel();
+            }}
+            className="px-3 py-1.5 rounded-full text-xs font-bold transition hover:opacity-80"
+            style={{
+              background: 'rgba(255,255,255,0.12)',
+              color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
       </header>
 
-      {/* Camera Viewport */}
-      <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-        {flashActive && <div className="absolute inset-0 bg-white z-30 opacity-75 transition-opacity" />}
+      {/* Camera Viewport & Focus Frame */}
+      <div className="relative flex-1 flex items-center justify-center overflow-hidden bg-black">
+        {flashActive && (
+          <div className="absolute inset-0 bg-white z-30 opacity-75 transition-opacity pointer-events-none" />
+        )}
 
         {isStartingCamera && (
-          <div className="flex flex-col items-center gap-2 text-slate-400 text-sm">
-            <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            <p>Accessing rear camera...</p>
+          <div className="flex flex-col items-center gap-2.5 text-xs text-white/70">
+            <div
+              className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+              style={{ borderColor: 'var(--gl, #0fa37a)', borderTopColor: 'transparent' }}
+            />
+            <span>Initializing rear camera...</span>
           </div>
         )}
 
         {cameraError && (
-          <div className="max-w-md p-6 bg-slate-900 border border-red-500/30 rounded-xl text-center space-y-3 mx-4">
-            <p className="text-sm font-semibold text-red-400">Camera Unavailable</p>
-            <p className="text-xs text-slate-300">{cameraError}</p>
-            <div className="flex justify-center gap-3 pt-2">
+          <div
+            className="max-w-xs sm:max-w-sm p-5 rounded-2xl text-center space-y-3 mx-4"
+            style={{
+              background: 'rgba(20, 32, 27, 0.9)',
+              border: '1px solid rgba(220, 38, 38, 0.4)',
+              backdropFilter: 'blur(10px)',
+            }}
+          >
+            <span className="ms" style={{ fontSize: '32px', color: '#f87171' }}>videocam_off</span>
+            <p style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: '#fca5a5' }}>Camera Unavailable</p>
+            <p style={{ fontSize: '12px', color: '#e5e7eb', margin: 0 }}>{cameraError}</p>
+            <div className="flex items-center justify-center gap-2 pt-2">
               <button
-                onClick={startCamera}
-                className="px-4 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
+                type="button"
+                onClick={() => startCamera(facingMode)}
+                className="px-4 py-1.5 rounded-full text-xs font-bold"
+                style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', cursor: 'pointer' }}
               >
-                Retry Camera
+                Retry
               </button>
               <button
+                type="button"
                 onClick={() => {
                   stopCamera();
                   onCancel();
                 }}
-                className="px-4 py-1.5 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition"
+                className="px-4 py-1.5 rounded-full text-xs font-bold"
+                style={{ background: 'var(--g, #066b4d)', color: '#fff', border: 'none', cursor: 'pointer' }}
               >
-                Use File Upload Instead
+                Use Upload
               </button>
             </div>
           </div>
@@ -251,25 +343,74 @@ export default function CameraCapture({
           className={`w-full h-full object-cover ${cameraError ? 'hidden' : 'block'}`}
         />
 
-        {/* Viewfinder Target Overlay */}
+        {/* Brand Document Alignment Frame */}
         {!cameraError && !isStartingCamera && (
-          <div className="absolute inset-8 pointer-events-none border-2 border-dashed border-emerald-400/40 rounded-2xl flex flex-col justify-between p-4">
-            <div className="flex justify-between text-[11px] text-emerald-300 font-mono bg-black/40 px-2 py-1 rounded backdrop-blur self-start">
-              Align page edges inside frame
+          <div className="absolute inset-4 sm:inset-8 pointer-events-none flex flex-col justify-between items-center">
+            {/* Top alignment badge */}
+            <div
+              className="px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-md"
+              style={{
+                background: 'rgba(4, 30, 22, 0.75)',
+                color: '#58d6ad',
+                border: '1px solid rgba(15, 163, 122, 0.4)',
+                backdropFilter: 'blur(6px)',
+              }}
+            >
+              <span className="ms" style={{ fontSize: '13px' }}>crop_free</span>
+              <span>Align page edges inside frame</span>
+            </div>
+
+            {/* Document Corner Brackets */}
+            <div
+              className="w-full flex-1 my-3 relative rounded-2xl"
+              style={{
+                border: '1.5px dashed rgba(88, 214, 173, 0.35)',
+              }}
+            >
+              {/* Corner 1: Top-Left */}
+              <div
+                className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 rounded-tl-xl"
+                style={{ borderColor: '#58d6ad' }}
+              />
+              {/* Corner 2: Top-Right */}
+              <div
+                className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 rounded-tr-xl"
+                style={{ borderColor: '#58d6ad' }}
+              />
+              {/* Corner 3: Bottom-Left */}
+              <div
+                className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 rounded-bl-xl"
+                style={{ borderColor: '#58d6ad' }}
+              />
+              {/* Corner 4: Bottom-Right */}
+              <div
+                className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 rounded-br-xl"
+                style={{ borderColor: '#58d6ad' }}
+              />
             </div>
           </div>
         )}
 
-        {/* Quality Warning Prompt */}
+        {/* Quality Warning Pill Banner */}
         {lastWarning && (
-          <div className="absolute top-4 left-4 right-4 z-20 bg-amber-950/90 border border-amber-500/50 rounded-xl p-3 backdrop-blur shadow-lg flex items-start justify-between gap-3 animate-fade-in">
-            <div className="text-xs text-amber-200">
-              <p className="font-semibold text-amber-100">Quality Notice on Last Shot</p>
-              <p className="mt-0.5">{lastWarning}</p>
+          <div
+            className="absolute top-3 inset-x-4 z-20 p-2.5 rounded-2xl flex items-center justify-between gap-2 shadow-lg animate-fade-in"
+            style={{
+              background: 'rgba(138, 90, 0, 0.9)',
+              color: '#fff',
+              border: '1px solid #fde68a',
+              backdropFilter: 'blur(8px)',
+            }}
+          >
+            <div className="flex items-center gap-2 text-xs min-w-0">
+              <span className="ms flex-none" style={{ fontSize: '18px', color: '#fef08a' }}>warning</span>
+              <span className="truncate">{lastWarning}</span>
             </div>
             <button
+              type="button"
               onClick={handleRetakeLast}
-              className="px-3 py-1 text-xs font-semibold bg-amber-500 text-slate-950 hover:bg-amber-400 rounded-lg whitespace-nowrap transition"
+              className="px-2.5 py-1 rounded-full text-xs font-bold flex-none transition"
+              style={{ background: '#fff', color: '#8a5a00', border: 'none', cursor: 'pointer' }}
             >
               Retake
             </button>
@@ -277,35 +418,35 @@ export default function CameraCapture({
         )}
       </div>
 
-      {/* Thumbnail Strip */}
+      {/* Thumbnail Preview Strip */}
       {capturedPages.length > 0 && (
-        <div className="bg-slate-900 border-t border-slate-800 px-4 py-2">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
-            {capturedPages.map((page, idx) => (
+        <div
+          className="px-3.5 py-2 flex-none"
+          style={{
+            background: 'rgba(4, 25, 18, 0.95)',
+            borderTop: '1px solid rgba(15, 163, 122, 0.2)',
+          }}
+        >
+          <div className="flex items-center gap-2.5 overflow-x-auto pb-0.5 scrollbar-thin">
+            {capturedPages.map((p) => (
               <div
-                key={page.id}
-                className="relative flex-shrink-0 w-16 h-20 rounded border border-slate-700 bg-slate-800 overflow-hidden group"
+                key={p.id}
+                className="relative flex-none w-14 h-18 rounded-xl overflow-hidden group shadow-sm"
+                style={{ border: '1.5px solid var(--gl, #0fa37a)', background: '#000' }}
               >
-                <img
-                  src={page.thumbnailUrl}
-                  alt={page.label}
-                  className="w-full h-full object-cover"
-                />
-                <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[9px] text-center text-slate-200 truncate px-0.5">
-                  {page.label}
+                <img src={p.thumbnailUrl} alt={p.label} className="w-full h-full object-cover" />
+                <span
+                  className="absolute bottom-0 inset-x-0 text-[9px] font-bold text-center py-0.5 truncate px-0.5"
+                  style={{ background: 'rgba(0,0,0,0.75)', color: '#fff' }}
+                >
+                  {p.label}
                 </span>
-                {page.qualityWarning && (
-                  <span
-                    title={page.qualityWarning}
-                    className="absolute top-0.5 right-0.5 w-3 h-3 bg-amber-500 text-[8px] font-bold text-black rounded-full flex items-center justify-center"
-                  >
-                    !
-                  </span>
-                )}
                 <button
-                  onClick={() => handleDeletePage(page.id)}
-                  className="absolute top-0.5 left-0.5 w-4 h-4 bg-red-600/90 hover:bg-red-500 text-[10px] text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                  title="Delete page"
+                  type="button"
+                  onClick={() => handleDeletePage(p.id)}
+                  className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[10px] text-white opacity-90 hover:opacity-100"
+                  style={{ background: 'rgba(180, 35, 24, 0.9)', border: 'none', cursor: 'pointer' }}
+                  title="Remove page"
                 >
                   ✕
                 </button>
@@ -315,42 +456,89 @@ export default function CameraCapture({
         </div>
       )}
 
-      {/* Bottom Shutter Controls */}
-      <footer className="bg-slate-950 px-6 py-4 border-t border-slate-900 flex items-center justify-between">
-        <div className="w-24">
+      {/* Bottom Shutter & Controls Bar */}
+      <footer
+        className="px-4 sm:px-8 py-3.5 sm:py-5 flex items-center justify-between flex-none"
+        style={{
+          background: 'linear-gradient(0deg, rgba(4, 30, 22, 0.98), rgba(4, 30, 22, 0.8))',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderTop: '1px solid rgba(15, 163, 122, 0.2)',
+        }}
+      >
+        {/* Left: Retake Last */}
+        <div className="w-24 flex items-center">
           {capturedPages.length > 0 && (
             <button
+              type="button"
               onClick={handleRetakeLast}
               disabled={isProcessingShot}
-              className="text-xs text-slate-400 hover:text-white px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 transition"
+              className="px-3 py-1.5 rounded-full text-xs font-bold text-white/80 hover:text-white transition disabled:opacity-40"
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                cursor: 'pointer',
+              }}
             >
-              Retake Last
+              Retake
             </button>
           )}
         </div>
 
-        {/* Shutter Button */}
+        {/* Center: Tactile Shutter Button */}
         <button
+          type="button"
           onClick={handleSnap}
-          disabled={isStartingCamera || !!cameraError || isProcessingShot}
-          className="relative w-18 h-18 rounded-full border-4 border-white flex items-center justify-center p-1 active:scale-95 transition disabled:opacity-40"
-          title="Take photo"
+          disabled={isStartingCamera || Boolean(cameraError) || isProcessingShot}
+          className="relative w-18 h-18 sm:w-20 sm:h-20 rounded-full flex items-center justify-center p-1.5 transition active:scale-95 disabled:opacity-40"
+          style={{
+            border: '4px solid var(--gl, #0fa37a)',
+            boxShadow: '0 0 20px rgba(15, 163, 122, 0.5)',
+            background: 'transparent',
+            cursor: isStartingCamera || Boolean(cameraError) || isProcessingShot ? 'not-allowed' : 'pointer',
+          }}
+          title="Capture Logbook Page"
+          aria-label="Capture Logbook Page"
         >
-          <div className="w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 flex items-center justify-center">
+          <div
+            className="w-13 h-13 sm:w-15 sm:h-15 rounded-full flex items-center justify-center transition"
+            style={{
+              background: '#fff',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            }}
+          >
             {isProcessingShot && (
-              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <div
+                className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
+                style={{ borderColor: 'var(--g, #066b4d)', borderTopColor: 'transparent' }}
+              />
             )}
           </div>
         </button>
 
-        {/* Done Button */}
+        {/* Right: Done Button */}
         <div className="w-24 flex justify-end">
           <button
+            type="button"
             onClick={handleFinish}
             disabled={capturedPages.length === 0}
-            className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg disabled:opacity-40 disabled:hover:bg-emerald-600 transition"
+            className="px-4 py-2 rounded-full text-xs font-extrabold flex items-center gap-1.5 shadow-md transition disabled:opacity-40"
+            style={{
+              background: 'var(--g, #066b4d)',
+              color: '#fff',
+              border: 'none',
+              cursor: capturedPages.length === 0 ? 'not-allowed' : 'pointer',
+            }}
           >
-            Done ({capturedPages.length})
+            <span>Done</span>
+            {capturedPages.length > 0 && (
+              <span
+                className="w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold"
+                style={{ background: '#fff', color: 'var(--g, #066b4d)' }}
+              >
+                {capturedPages.length}
+              </span>
+            )}
           </button>
         </div>
       </footer>

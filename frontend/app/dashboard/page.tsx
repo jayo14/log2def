@@ -1072,7 +1072,7 @@ export default function DashboardPage() {
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '20px 14px',
+                    padding: '16px 12px',
                     textAlign: 'center',
                     border: '1.5px dashed var(--line)',
                     background: 'var(--card)',
@@ -1082,12 +1082,12 @@ export default function DashboardPage() {
                   }}
                   onClick={() => setIsCameraOpen(true)}
                 >
-                  <span className="ms" style={{ fontSize: '32px', color: 'var(--g)', marginBottom: '6px' }} aria-hidden="true">
+                  <span className="ms" style={{ fontSize: '30px', color: 'var(--g)', marginBottom: '4px' }} aria-hidden="true">
                     photo_camera
                   </span>
-                  <b style={{ fontSize: '14.5px' }}>Take Photos with Camera</b>
-                  <span className="mut" style={{ fontSize: '12px', marginTop: '2px' }}>
-                    Continuous mobile rear-camera capture
+                  <b style={{ fontSize: '14px' }}>Take Photos</b>
+                  <span className="mut" style={{ fontSize: '11.5px', marginTop: '2px' }}>
+                    Continuous camera capture
                   </span>
                 </button>
 
@@ -1098,7 +1098,7 @@ export default function DashboardPage() {
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '20px 14px',
+                    padding: '16px 12px',
                     textAlign: 'center',
                     border: '1.5px dashed var(--line)',
                     background: 'var(--card)',
@@ -1107,12 +1107,12 @@ export default function DashboardPage() {
                     margin: 0,
                   }}
                 >
-                  <span className="ms" style={{ fontSize: '32px', color: '#0369a1', marginBottom: '6px' }} aria-hidden="true">
+                  <span className="ms" style={{ fontSize: '30px', color: '#0369a1', marginBottom: '4px' }} aria-hidden="true">
                     cloud_upload
                   </span>
-                  <b style={{ fontSize: '14.5px' }}>Upload Existing Files</b>
-                  <span className="mut" style={{ fontSize: '12px', marginTop: '2px' }}>
-                    Select JPG, PNG, WebP or PDF
+                  <b style={{ fontSize: '14px' }}>Upload Files</b>
+                  <span className="mut" style={{ fontSize: '11.5px', marginTop: '2px' }}>
+                    JPG, PNG, WebP or PDF
                   </span>
                   <input
                     type="file"
@@ -1311,7 +1311,7 @@ export default function DashboardPage() {
                         }
                       }}
                     >
-                      {isComplete ? 'Generate Technical Report' : 'Complete Missing Information'}
+                      {isComplete ? 'Generate Report' : 'Complete Info'}
                       <span className="ms">arrow_forward</span>
                     </button>
                   </div>
@@ -1392,7 +1392,7 @@ export default function DashboardPage() {
                         disabled={isGeneratingReport}
                         onClick={handleGenerateReport}
                       >
-                        {isGeneratingReport ? 'Generating Report...' : 'Generate Technical Report'}
+                        {isGeneratingReport ? 'Generating...' : 'Generate Report'}
                       </button>
                     </div>
                   )}
@@ -1423,7 +1423,7 @@ export default function DashboardPage() {
                   <div
                     className="card"
                     style={{
-                      padding: '24px',
+                      padding: 'clamp(14px, 4vw, 24px)',
                       background: 'var(--card)',
                       fontFamily: "'Times New Roman', Times, serif",
                       fontSize: '15px',
@@ -1453,7 +1453,7 @@ export default function DashboardPage() {
               {/* 2. PAGE PREVIEW */}
               {reportTab === 'preview' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="card" style={{ padding: '28px', background: '#fff', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+                  <div className="card" style={{ padding: 'clamp(16px, 5vw, 28px)', background: '#fff', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
                     <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                       <p style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--mut)' }}>
                         {effectiveProject?.university_name || 'Lagos State University of Science and Technology'}
@@ -1491,7 +1491,7 @@ export default function DashboardPage() {
                       onClick={handleDownloadWord}
                     >
                       <span className="ms">download</span>
-                      Download Word (.docx)
+                      Download (.docx)
                     </button>
                   </div>
 
@@ -1508,7 +1508,7 @@ export default function DashboardPage() {
                       onClick={handleDownloadPdf}
                     >
                       <span className="ms">download</span>
-                      Download PDF (.pdf)
+                      Download (.pdf)
                     </button>
                   </div>
 
@@ -1525,7 +1525,7 @@ export default function DashboardPage() {
                       onClick={handleDirectPrint}
                     >
                       <span className="ms">print</span>
-                      Print Document
+                      Print Report
                     </button>
                   </div>
                 </div>
