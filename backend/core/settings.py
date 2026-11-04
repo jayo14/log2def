@@ -85,7 +85,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database configuration: pulled strictly from environment / .env
 import sys
 
-is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate'])
+is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate', 'test'])
 
 if is_migration_command:
     DATABASE_URL = os.getenv('DATABASE_URL_UNPOOLED') or os.getenv('DATABASE_URL', '').strip()
