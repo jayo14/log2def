@@ -1,5 +1,6 @@
 from .models import ReportProject, DefenceQuestion, LogbookEntry
 from .ai_provider import is_ai_available, generate_completion
+from .feature_flags import is_feature_enabled
 
 
 def generate_defence_questions(project: ReportProject) -> list[DefenceQuestion]:
@@ -7,6 +8,9 @@ def generate_defence_questions(project: ReportProject) -> list[DefenceQuestion]:
     Generates a comprehensive set of 15+ defence questions and model answers
     grounded in the student's actual report, placement details, and verified entries.
     """
+    if not is_feature_enabled('defence_preparation'):
+        raise RuntimeError("Feature 'defence_preparation' is disabled by system feature flags.")
+
     # Clear existing questions for clean regeneration
     project.defence_questions.all().delete()
 
@@ -270,6 +274,9 @@ def generate_presentation_slides(project: ReportProject) -> list[dict]:
     Generates structured, presentation-ready slides for oral defence rehearsal
     and projector slideshow display.
     """
+    if not is_feature_enabled('slide_generation'):
+        raise RuntimeError("Feature 'slide_generation' is disabled by system feature flags.")
+
     student_name = project.full_name or "Student"
     matric = project.matric_number or "SIWES Intern"
     company = project.organization_name or "Host Organisation"
@@ -442,6 +449,9 @@ def generate_presentation_script(project: ReportProject) -> str:
     Generates a timed oral defence presentation script (approx 5-7 minutes)
     for the student to rehearse before panel defence.
     """
+    if not is_feature_enabled('defence_preparation'):
+        raise RuntimeError("Feature 'defence_preparation' is disabled by system feature flags.")
+
     student_name = project.full_name or "Student"
     matric = project.matric_number or "SIWES Intern"
     company = project.organization_name or "Host Organisation"

@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
-    RegisterView, LoginView, CurrentUserView, AIStatusView,
+    RegisterView, LoginView, CurrentUserView, AIStatusView, FeatureFlagsView,
     PasswordResetRequestView, PasswordResetConfirmView,
     ProjectListCreateView, ProjectDetailView, GuidelineUploadView,
     DocumentListUploadView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
@@ -29,6 +29,8 @@ urlpatterns = [
     path('auth/me', CurrentUserView.as_view()),
     path('ai/status/', AIStatusView.as_view(), name='ai-status'),
     path('ai/status', AIStatusView.as_view()),
+    path('config/flags/', FeatureFlagsView.as_view(), name='config-flags'),
+    path('config/flags', FeatureFlagsView.as_view()),
 
     # Projects
     path('projects/', ProjectListCreateView.as_view(), name='project-list-create'),

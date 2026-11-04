@@ -43,6 +43,21 @@ from .defence_generator import (
     generate_presentation_script
 )
 from .ai_provider import get_ai_status
+from .feature_flags import get_all_feature_flags, is_feature_enabled, require_feature_flag
+
+
+# --- Configuration & Feature Flag Views ---
+
+@extend_schema(
+    tags=['Configuration'],
+    summary='Get all feature flags',
+    description='Returns runtime status of all system feature flags.'
+)
+class FeatureFlagsView(views.APIView):
+    permission_classes = (AllowAny,)
+
+    def get(self, request):
+        return Response(get_all_feature_flags(), status=status.HTTP_200_OK)
 
 
 # --- Auth Views ---
@@ -732,6 +747,7 @@ class ExportPdfView(views.APIView):
 
 # --- Defence Views ---
 
+@require_feature_flag('defence_preparation')
 class DefenceGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
     throttle_classes = (HeavyGenerationRateThrottle,)
@@ -749,6 +765,7 @@ class DefenceGenerateView(views.APIView):
         return Response(DefenceQuestionSerializer(questions, many=True).data)
 
 
+@require_feature_flag('defence_preparation')
 class DefenceQuestionListView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -775,6 +792,7 @@ class DefenceQuestionListView(views.APIView):
 
 
 
+@require_feature_flag('defence_preparation')
 class DefenceQuestionDetailView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -797,6 +815,7 @@ class DefenceQuestionDetailView(views.APIView):
         return Response(DefenceQuestionSerializer(question).data)
 
 
+@require_feature_flag('defence_preparation')
 class DefenceSessionView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -922,6 +941,7 @@ class ReportVersionRevertView(views.APIView):
         return Response(ReportSerializer(report).data)
 
 
+@require_feature_flag('slide_generation')
 class DefenceSlidesView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
@@ -959,6 +979,7 @@ class DefenceSlidesView(views.APIView):
         })
 
 
+@require_feature_flag('defence_preparation')
 class DefenceScriptView(views.APIView):
     permission_classes = (IsAuthenticated,)
 

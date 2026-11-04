@@ -9,6 +9,7 @@ from rest_framework import status
 import docx
 import pymupdf
 from PIL import Image
+from unittest.mock import patch
 
 from .models import (
     ReportProject, SourceDocument, ExtractedPage, 
@@ -17,7 +18,12 @@ from .models import (
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
 from .document_exporter import generate_docx_report, convert_docx_to_pdf, export_report_documents
-from .defence_generator import generate_defence_questions
+from .defence_generator import (
+    generate_defence_questions,
+    generate_presentation_slides,
+    generate_presentation_script
+)
+from .feature_flags import DEFAULT_FEATURE_FLAGS, is_feature_enabled, get_all_feature_flags
 
 
 class Log2DefBackendTests(TestCase):
@@ -284,7 +290,8 @@ class Log2DefBackendTests(TestCase):
         self.assertEqual(self.project1.status, 'exported')
         self.assertIsNotNone(self.project1.report.last_exported_at)
 
-    def test_defence_questions_generation_and_mastery(self):
+    @patch('api.feature_flags.is_feature_enabled', return_value=True)
+    def test_defence_questions_generation_and_mastery(self, mock_flags):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
         
         # Generate defence questions
@@ -532,4 +539,101 @@ class Log2DefBackendTests(TestCase):
         })
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('token', resp.data)
+
+    def test_feature_flags_endpoint_and_defaults(self):
+        # Anonymous client can fetch feature flags
+        anon_client = APIClient()
+        resp = anon_client.get('/api/config/flags/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        data = resp.data
+        # Ensure all 22 required flags are present
+        for flag_name, expected_val in DEFAULT_FEATURE_FLAGS.items():
+            self.assertIn(flag_name, data, f"Missing flag: {flag_name}")
+            self.assertEqual(data[flag_name], expected_val, f"Flag {flag_name} mismatch")
+
+        # Confirm critical out-of-scope flags are OFF by default
+        self.assertFalse(data['defence_preparation'])
+        self.assertFalse(data['slide_generation'])
+        self.assertFalse(data['payment_processing'])
+        self.assertFalse(data['print_fulfilment'])
+        self.assertFalse(data['delivery_management'])
+        self.assertFalse(data['supervisor_portal'])
+        self.assertFalse(data['institution_management'])
+        self.assertFalse(data['advanced_analytics'])
+        self.assertFalse(data['ai_chat_assistant'])
+
+        # Confirm critical MVP flags are ON by default
+        self.assertTrue(data['logbook_camera_capture'])
+        self.assertTrue(data['logbook_bulk_upload'])
+        self.assertTrue(data['logbook_pdf_upload'])
+        self.assertTrue(data['ocr_extraction'])
+        self.assertTrue(data['report_generation'])
+        self.assertTrue(data['report_editor'])
+        self.assertTrue(data['report_docx_export'])
+        self.assertTrue(data['report_pdf_export'])
+
+    def test_disabled_feature_endpoints_return_404(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # 1. Defence generate
+        resp_gen = self.client.post(f'/api/projects/{self.project1.id}/defence/generate/')
+        self.assertEqual(resp_gen.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("Feature 'defence_preparation' is disabled", str(resp_gen.data))
+
+        # 2. Defence questions list
+        resp_qs = self.client.get(f'/api/projects/{self.project1.id}/defence/questions/')
+        self.assertEqual(resp_qs.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 3. Defence question detail
+        resp_q_detail = self.client.patch(f'/api/projects/{self.project1.id}/defence/questions/1/')
+        self.assertEqual(resp_q_detail.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 4. Defence session
+        resp_session = self.client.post(f'/api/projects/{self.project1.id}/defence/session/')
+        self.assertEqual(resp_session.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 5. Defence slides (slide_generation flag)
+        resp_slides_get = self.client.get(f'/api/projects/{self.project1.id}/defence/slides/')
+        self.assertEqual(resp_slides_get.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn("Feature 'slide_generation' is disabled", str(resp_slides_get.data))
+
+        resp_slides_post = self.client.post(f'/api/projects/{self.project1.id}/defence/slides/')
+        self.assertEqual(resp_slides_post.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 6. Defence script
+        resp_script_get = self.client.get(f'/api/projects/{self.project1.id}/defence/script/')
+        self.assertEqual(resp_script_get.status_code, status.HTTP_404_NOT_FOUND)
+
+        resp_script_post = self.client.post(f'/api/projects/{self.project1.id}/defence/script/')
+        self.assertEqual(resp_script_post.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_disabled_feature_generators_raise_runtime_error(self):
+        # Direct calls to background generation functions must refuse to run
+        with self.assertRaises(RuntimeError) as ctx1:
+            generate_defence_questions(self.project1)
+        self.assertIn("defence_preparation' is disabled", str(ctx1.exception))
+
+        with self.assertRaises(RuntimeError) as ctx2:
+            generate_presentation_slides(self.project1)
+        self.assertIn("slide_generation' is disabled", str(ctx2.exception))
+
+        with self.assertRaises(RuntimeError) as ctx3:
+            generate_presentation_script(self.project1)
+        self.assertIn("defence_preparation' is disabled", str(ctx3.exception))
+
+    def test_feature_flag_env_override(self):
+        import os
+        from .feature_flags import is_feature_enabled
+
+        # Default is False
+        self.assertFalse(is_feature_enabled('defence_preparation'))
+
+        # Set env override
+        os.environ['LOG2DEF_FLAG_DEFENCE_PREPARATION'] = 'true'
+        try:
+            self.assertTrue(is_feature_enabled('defence_preparation'))
+        finally:
+            del os.environ['LOG2DEF_FLAG_DEFENCE_PREPARATION']
+
 
