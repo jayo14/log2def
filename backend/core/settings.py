@@ -10,10 +10,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 load_dotenv(BASE_DIR.parent / '.env')
 
-SECRET_KEY = os.getenv(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-log2def-production-key-change-in-production-19827391'
-)
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes'):
+        SECRET_KEY = 'django-insecure-dev-only-local-secret-key-replace-in-env'
+    else:
+        raise RuntimeError("DJANGO_SECRET_KEY environment variable must be set in your .env file.")
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
@@ -80,7 +82,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# Database configuration: support DATABASE_URL, PostgreSQL, and SQLite fallback
+# Database configuration: pulled strictly from environment / .env
 import sys
 
 is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate'])
@@ -90,7 +92,7 @@ if is_migration_command:
 else:
     DATABASE_URL = os.getenv('DATABASE_URL_POOLED') or os.getenv('DATABASE_URL', '').strip()
 
-DB_ENGINE = os.getenv('DB_ENGINE', 'postgres' if DATABASE_URL else 'sqlite').strip().lower()
+DB_ENGINE = os.getenv('DB_ENGINE', '').strip().lower()
 
 if DATABASE_URL:
     import urllib.parse as urlparse
@@ -117,7 +119,7 @@ if DATABASE_URL:
             'OPTIONS': db_options,
         }
     }
-elif DB_ENGINE == 'postgres' and os.getenv('DB_NAME'):
+elif os.getenv('DB_NAME'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -128,13 +130,18 @@ elif DB_ENGINE == 'postgres' and os.getenv('DB_NAME'):
             'PORT': os.getenv('DB_PORT', '5432'),
         }
     }
-else:
+elif DB_ENGINE == 'sqlite':
+    # Only enabled if DB_ENGINE=sqlite is explicitly requested in the environment
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': BASE_DIR / os.getenv('SQLITE_DB_NAME', 'db.sqlite3'),
         }
     }
+else:
+    raise RuntimeError(
+        "No PostgreSQL database configuration found. Please provide DATABASE_URL in your .env file."
+    )
 
 AUTH_PASSWORD_VALIDATORS = [
     {
