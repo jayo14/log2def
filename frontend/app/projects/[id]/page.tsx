@@ -13,6 +13,7 @@ import {
   useReportStore,
   useDefenceStore,
   useUIStore,
+  useFeatureFlags,
 } from '@/lib/store';
 
 function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +21,8 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
   const projectId = resolvedParams.id;
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const { isEnabled: isFeatureEnabled, fetchFlags: fetchFeatureFlags } = useFeatureFlags();
+  const isDefenceEnabled = isFeatureEnabled('defence_preparation');
 
   // Active Workspace Tab: 'sources' | 'report' | 'export' | 'defence' | 'details'
   const [activeTab, setActiveTab] = useState<'sources' | 'report' | 'export' | 'defence' | 'details'>('sources');
@@ -124,6 +127,7 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
       return;
     }
     if (user && projectId) {
+      fetchFeatureFlags();
       loadProject();
     }
   }, [user, authLoading, projectId]);
@@ -449,11 +453,15 @@ function ProjectWorkspaceContent({ params }: { params: Promise<{ id: string }> }
             ariaLabel="Workspace utilities"
             items={[
               { key: 'export', label: 'Document Export', icon: 'download' },
-              {
-                key: 'defence',
-                label: `Defence Prep (${defenceQuestions.length})`,
-                icon: 'school',
-              },
+              ...(isDefenceEnabled
+                ? [
+                    {
+                      key: 'defence' as const,
+                      label: `Defence Prep (${defenceQuestions.length})`,
+                      icon: 'school',
+                    },
+                  ]
+                : []),
             ]}
             activeKey={activeTab === 'export' || activeTab === 'defence' ? activeTab : null}
             onSelect={(item) => setActiveTab(item.key as 'export' | 'defence')}
@@ -973,7 +981,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
         )}
 
         {/* TAB 4: DEFENCE PREPARATION */}
-        {activeTab === 'defence' && (
+        {activeTab === 'defence' && isDefenceEnabled && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl border border-border p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -1157,6 +1165,22 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
             )}
           </div>
         )}
+
+        {activeTab === 'defence' && !isDefenceEnabled && (
+          <div className="bg-white rounded-xl border border-border p-12 text-center max-w-lg mx-auto space-y-4">
+            <MaterialIcon name="school" size={48} className="text-muted-foreground mx-auto" />
+            <h2 className="text-lg font-bold text-foreground">Defence Preparation Disabled</h2>
+            <p className="text-sm text-muted-foreground">
+              Per the approved MVP specification, mock oral defence drills and questions are disabled in this release.
+            </p>
+            <button
+              onClick={() => setActiveTab('report')}
+              className="px-4 py-2 bg-emerald-800 text-white text-sm font-medium rounded-md hover:bg-emerald-900 cursor-pointer"
+            >
+              Back to Report Editor
+            </button>
+          </div>
+        )}
       </div>
 
       {/* MODAL: Correct Extracted Page Text */}
@@ -1309,7 +1333,7 @@ Wednesday: Assisted supervisor with fiber optic OTDR measurements."
       )}
 
       {/* FULL-SCREEN MOCK ORAL EXAMINATION MODAL */}
-      {mockExamActive && defenceQuestions.length > 0 && (
+      {isDefenceEnabled && mockExamActive && defenceQuestions.length > 0 && (
         <div className="fixed inset-0 z-50 bg-[#111827] text-white flex flex-col" role="dialog" aria-modal="true" aria-label="Mock oral defence examination">
           <div className="p-4 border-b border-gray-800 flex items-center justify-between max-w-5xl mx-auto w-full">
             <div className="flex items-center gap-3">
