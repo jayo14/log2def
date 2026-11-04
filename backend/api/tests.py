@@ -572,11 +572,143 @@ class Log2DefBackendTests(TestCase):
         pdf_resp = self.client.get(f'/api/projects/{self.project1.id}/export/pdf/')
         self.assertEqual(pdf_resp.status_code, status.HTTP_200_OK)
         self.assertEqual(pdf_resp.get('Content-Type'), 'application/pdf')
+        self.assertTrue(pdf_resp.content.startswith(b'%PDF-'))
+        self.assertGreater(len(pdf_resp.content), 1000)
 
         # Check export metadata
         self.project1.refresh_from_db()
         self.assertEqual(self.project1.status, 'exported')
         self.assertIsNotNone(self.project1.report.last_exported_at)
+
+    def test_docx_academic_formatting_sections_and_tables(self):
+        report = generate_full_report(self.project1)
+        
+        # Add a rich section with an academic table to test HTML-to-Docx table conversion
+        table_html = (
+            "<p>Summary of Hardware Specifications:</p>"
+            "<table>"
+            "<tr><th>Device Name</th><th>Model</th><th>Function</th></tr>"
+            "<tr><td>Edge Router</td><td>Cisco 4331</td><td>WAN Gateway</td></tr>"
+            "<tr><td>Core Switch</td><td>Catalyst 3850</td><td>VLAN Distribution</td></tr>"
+            "</table>"
+        )
+        sec = report.sections.filter(chapter_number=3).first()
+        if sec:
+            sec.content = table_html
+            sec.save()
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+        docx_resp = self.client.get(f'/api/projects/{self.project1.id}/export/docx/')
+        self.assertEqual(docx_resp.status_code, status.HTTP_200_OK)
+
+        # Inspect generated Word document with python-docx
+        docx_bytes = b"".join(docx_resp.streaming_content) if hasattr(docx_resp, 'streaming_content') else docx_resp.content
+        parsed_doc = docx.Document(io.BytesIO(docx_bytes))
+
+        # Check multi-section structure (Cover, Prelims, Main Body)
+        self.assertGreaterEqual(len(parsed_doc.sections), 3)
+
+        # Check binding margin: section 2 and 3 must have 1.5 inch left margin
+        body_section = parsed_doc.sections[2]
+        self.assertAlmostEqual(body_section.left_margin.inches, 1.5, places=1)
+        self.assertAlmostEqual(body_section.right_margin.inches, 1.0, places=1)
+
+        # Check that table was parsed into a real Word table
+        self.assertGreaterEqual(len(parsed_doc.tables), 2)
+        hardware_tbl = next((t for t in parsed_doc.tables if len(t.rows) == 3), None)
+        self.assertIsNotNone(hardware_tbl, "Expected a 3-row hardware table in Word document")
+        self.assertEqual(len(hardware_tbl.rows), 3)
+        self.assertEqual(len(hardware_tbl.columns), 3)
+        self.assertEqual(hardware_tbl.cell(0, 0).text.strip(), "Device Name")
+        self.assertEqual(hardware_tbl.cell(1, 0).text.strip(), "Edge Router")
+        self.assertEqual(hardware_tbl.cell(2, 1).text.strip(), "Catalyst 3850")
+
+    def test_section_optimistic_concurrency_locking(self):
+        generate_full_report(self.project1)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        sec = self.project1.report.sections.first()
+        initial_ts = sec.updated_at.isoformat()
+
+        # 1. Update with matching timestamp succeeds
+        ok_resp = self.client.patch(
+            f'/api/projects/{self.project1.id}/report/sections/{sec.id}/',
+            {
+                'content': '<p>First legitimate client edit</p>',
+                'expected_updated_at': initial_ts
+            },
+            format='json'
+        )
+        self.assertEqual(ok_resp.status_code, status.HTTP_200_OK)
+        sec.refresh_from_db()
+
+        # 2. Concurrent/stale update using old initial_ts must return HTTP 409 Conflict
+        conflict_resp = self.client.patch(
+            f'/api/projects/{self.project1.id}/report/sections/{sec.id}/',
+            {
+                'content': '<p>Conflicting overwrite from tab B</p>',
+                'expected_updated_at': initial_ts
+            },
+            format='json'
+        )
+        self.assertEqual(conflict_resp.status_code, status.HTTP_409_CONFLICT)
+        self.assertTrue(conflict_resp.data.get('conflict'))
+        self.assertIn('First legitimate client edit', conflict_resp.data.get('current_content'))
+
+        # 3. Forcing overwrite explicitly resolves conflict
+        force_resp = self.client.patch(
+            f'/api/projects/{self.project1.id}/report/sections/{sec.id}/',
+            {
+                'content': '<p>Forced intentional resolution overwrite</p>',
+                'expected_updated_at': initial_ts,
+                'force_overwrite': True
+            },
+            format='json'
+        )
+        self.assertEqual(force_resp.status_code, status.HTTP_200_OK)
+        sec.refresh_from_db()
+        self.assertIn('Forced intentional resolution overwrite', sec.content)
+
+    def test_async_export_status_and_signed_download(self):
+        generate_full_report(self.project1)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')
+
+        # 1. Query export status with trigger=true
+        status_resp = self.client.get(
+            f'/api/projects/{self.project1.id}/export/status/?format=docx&trigger=true'
+        )
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK, getattr(status_resp, 'data', status_resp.content))
+        self.assertIn(status_resp.data['status'], ['ready', 'processing'])
+
+        # Generate DOCX to ensure file is ready
+        generate_docx_report(self.project1.report)
+
+        # 2. Query status again -> ready with signed download URL
+        status_resp2 = self.client.get(
+            f'/api/projects/{self.project1.id}/export/status/?format=docx'
+        )
+        self.assertEqual(status_resp2.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_resp2.data['status'], 'ready')
+        self.assertIsNotNone(status_resp2.data['download_url'])
+        download_url = status_resp2.data['download_url']
+
+        # 3. Unauthenticated client with signed URL can download
+        anon_client = APIClient()
+        dl_resp = anon_client.get(download_url)
+        self.assertEqual(dl_resp.status_code, status.HTTP_200_OK)
+        self.assertIn('attachment', dl_resp.get('Content-Disposition', ''))
+
+        # 4. Tampered token returns 403 Forbidden
+        tampered_url = download_url + "tampered"
+        tampered_resp = anon_client.get(tampered_url)
+        self.assertEqual(tampered_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 5. User2 cannot access User1's export status or download
+        user2_client = APIClient()
+        login2 = user2_client.post('/api/auth/login/', {'username': 'student2', 'password': 'StrongPassword123!'})
+        user2_client.credentials(HTTP_AUTHORIZATION=f"Bearer {login2.data['access']}")
+        u2_resp = user2_client.get(f'/api/projects/{self.project1.id}/export/status/?format=docx')
+        self.assertEqual(u2_resp.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_template_version_pinning_immutability(self):
         # 1. Add verified logbook entry and generate report
