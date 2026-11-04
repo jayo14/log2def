@@ -10,6 +10,7 @@ import {
   useReportStore,
   useDefenceStore,
   useUIStore,
+  useFeatureFlags,
 } from '@/lib/store';
 import { projectsApi } from '@/lib/api';
 import {
@@ -86,9 +87,11 @@ export default function DashboardPage() {
   } = useDefenceStore();
 
   const { showToast } = useUIStore();
+  const { isEnabled: isFeatureEnabled, fetchFlags: fetchFeatureFlags, flags: systemFlags } = useFeatureFlags();
+  const isDefenceEnabled = isFeatureEnabled('defence_preparation');
 
-  // Navigation tab state: 'home' | 'logbook' | 'report' | 'defence' | 'new'
-  const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'defence' | 'new'>('home');
+  // Navigation tab state: 'home' | 'logbook' | 'report' | 'settings' | 'defence' | 'new'
+  const [currentTab, setCurrentTab] = useState<'home' | 'logbook' | 'report' | 'settings' | 'defence' | 'new'>('home');
   const [logbookTab, setLogbookTab] = useState<'entries' | 'docs'>('entries');
   const [reportTab, setReportTab] = useState<'editor' | 'preview' | 'versions' | 'export'>('editor');
   const [defenceTab, setDefenceTab] = useState<'quiz' | 'interview' | 'slides' | 'script'>('interview');
@@ -219,19 +222,28 @@ export default function DashboardPage() {
         useAuthStore.getState().refreshUser();
       });
     }
+    fetchFeatureFlags();
     const hash = window.location.hash.replace('#/', '').split('/')[0];
-    if (['home', 'logbook', 'report', 'defence', 'new'].includes(hash)) {
-      setCurrentTab(hash as any);
+    if (['home', 'logbook', 'report', 'settings', 'defence', 'new'].includes(hash)) {
+      if (hash === 'defence' && !isDefenceEnabled) {
+        setCurrentTab('home');
+      } else {
+        setCurrentTab(hash as any);
+      }
     }
     const handleHashChange = () => {
       const h = window.location.hash.replace('#/', '').split('/')[0];
-      if (['home', 'logbook', 'report', 'defence', 'new'].includes(h)) {
-        setCurrentTab(h as any);
+      if (['home', 'logbook', 'report', 'settings', 'defence', 'new'].includes(h)) {
+        if (h === 'defence' && !isDefenceEnabled) {
+          setCurrentTab('home');
+        } else {
+          setCurrentTab(h as any);
+        }
       }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [fetchFeatureFlags, isDefenceEnabled]);
 
   // Auth redirect
   useEffect(() => {
@@ -372,7 +384,10 @@ export default function DashboardPage() {
   };
 
   // Switch Tab
-  const navigateTab = (newTab: 'home' | 'logbook' | 'report' | 'defence' | 'new', dir: 'fw' | 'bw' = 'fw') => {
+  const navigateTab = (newTab: 'home' | 'logbook' | 'report' | 'settings' | 'defence' | 'new', dir: 'fw' | 'bw' = 'fw') => {
+    if (newTab === 'defence' && !isDefenceEnabled) {
+      newTab = 'home';
+    }
     setAnimDir(dir);
     setCurrentTab(newTab);
     if (typeof window !== 'undefined') {
@@ -468,11 +483,18 @@ export default function DashboardPage() {
         tab: 'report' as const,
         icon: 'auto_awesome',
       }
-    : {
+    : isDefenceEnabled
+    ? {
         title: 'Practise your defence',
         desc: 'Rehearse with mock questions',
         tab: 'defence' as const,
         icon: 'school',
+      }
+    : {
+        title: 'Review your report',
+        desc: 'Edit chapters, view preview, and export',
+        tab: 'report' as const,
+        icon: 'description',
       };
 
   // Chapter sections
@@ -1446,12 +1468,21 @@ export default function DashboardPage() {
                       </span>
                       Generate
                     </button>
-                    <button type="button" onClick={() => navigateTab('defence')}>
-                      <span className="ms" aria-hidden="true">
-                        quiz
-                      </span>
-                      Practise
-                    </button>
+                    {isDefenceEnabled ? (
+                      <button type="button" onClick={() => navigateTab('defence')}>
+                        <span className="ms" aria-hidden="true">
+                          quiz
+                        </span>
+                        Practise
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => navigateTab('settings')}>
+                        <span className="ms" aria-hidden="true">
+                          settings
+                        </span>
+                        Settings
+                      </button>
+                    )}
                   </div>
 
                   {/* FAB: Start new report project */}
@@ -2314,7 +2345,7 @@ export default function DashboardPage() {
           )}
 
           {/* ======================= TAB: DEFENCE ======================= */}
-          {currentTab === 'defence' && (
+          {currentTab === 'defence' && isDefenceEnabled && (
             <div className="view">
               <header className="top">
                 <button
@@ -2851,6 +2882,170 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {currentTab === 'defence' && !isDefenceEnabled && (
+            <div className="view">
+              <header className="top">
+                <button
+                  className="ib"
+                  type="button"
+                  aria-label="Back to home"
+                  onClick={() => navigateTab('home', 'bw')}
+                >
+                  <span className="ms" aria-hidden="true">arrow_back</span>
+                </button>
+                <div style={{ flex: 1 }}>
+                  <h1>Defence Preparation</h1>
+                  <span className="sub">Outside MVP Scope</span>
+                </div>
+              </header>
+              <div style={{ padding: '24px 18px', textAlign: 'center' }}>
+                <div className="c" style={{ padding: '32px 20px', textAlign: 'center' }}>
+                  <span className="ms" style={{ fontSize: '48px', color: '#888', marginBottom: '12px' }}>school</span>
+                  <h2 style={{ fontSize: '18px', margin: '0 0 8px' }}>Defence Preparation is Disabled</h2>
+                  <p className="mut" style={{ fontSize: '14px', maxWidth: '420px', margin: '0 auto 20px' }}>
+                    Per the approved Log2Def MVP specification, mock oral defences, slide decks, and oral rehearsal timers are disabled.
+                  </p>
+                  <button className="btn" type="button" onClick={() => navigateTab('report')}>
+                    Go to Technical Report
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ======================= TAB: SETTINGS ======================= */}
+          {currentTab === 'settings' && (
+            <div className="view">
+              <header className="top">
+                <button
+                  className="ib"
+                  type="button"
+                  aria-label="Back to home"
+                  onClick={() => navigateTab('home', 'bw')}
+                >
+                  <span className="ms" aria-hidden="true">arrow_back</span>
+                </button>
+                <div style={{ flex: 1 }}>
+                  <h1>Settings</h1>
+                  <span className="sub">Account & system configurations</span>
+                </div>
+              </header>
+
+              <div style={{ padding: '16px 18px 90px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Account card */}
+                <div className="c">
+                  <div className="row sb" style={{ alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <div>
+                      <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px' }}>{studentName}</h2>
+                      <p className="mut" style={{ fontSize: '13px', margin: 0 }}>
+                        {effectiveUser?.email || 'Logged in student'}
+                      </p>
+                    </div>
+                    <span className="ms" style={{ color: '#00703c', fontSize: '32px' }}>account_circle</span>
+                  </div>
+
+                  {projects.length > 1 && (
+                    <div className="f" style={{ marginTop: '12px', marginBottom: '14px' }}>
+                      <label htmlFor="settings-switch-proj">Active SIWES Project</label>
+                      <select
+                        id="settings-switch-proj"
+                        value={activeProject?.id || ''}
+                        onChange={(e) => {
+                          const id = Number(e.target.value);
+                          fetchActiveProject(id);
+                        }}
+                      >
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title} ({p.university_name || 'SIWES'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginTop: '12px', fontSize: '13px' }}>
+                    <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.03)', borderRadius: '8px' }}>
+                      <span className="mut" style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>Matric Number</span>
+                      <strong>{activeProject?.matric_number || (effectiveUser as any)?.student_profile?.matric_number || 'Not provided'}</strong>
+                    </div>
+                    <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.03)', borderRadius: '8px' }}>
+                      <span className="mut" style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>Department</span>
+                      <strong>{activeProject?.department || 'Not provided'}</strong>
+                    </div>
+                    <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.03)', borderRadius: '8px', gridColumn: '1 / -1' }}>
+                      <span className="mut" style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase' }}>Institution</span>
+                      <strong>{activeProject?.university_name || 'Lagos State University of Science and Technology (LASUSTECH)'}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feature Flags Status Card */}
+                <div className="c">
+                  <div className="row sb" style={{ marginBottom: '8px' }}>
+                    <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>System Feature Flags</h2>
+                    <span className="ms mut" style={{ fontSize: '20px' }}>toggle_on</span>
+                  </div>
+                  <p className="mut" style={{ fontSize: '12.5px', margin: '0 0 14px' }}>
+                    Runtime feature flags synchronised with the server. Out-of-scope backend endpoints return 404.
+                  </p>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="row sb" style={{ padding: '8px 10px', background: 'rgba(0,112,60,0.06)', borderRadius: '6px', fontSize: '13px' }}>
+                      <span>Logbook Extraction & Processing (OCR)</span>
+                      <strong style={{ color: '#00703c' }}>ACTIVE (MVP)</strong>
+                    </div>
+                    <div className="row sb" style={{ padding: '8px 10px', background: 'rgba(0,112,60,0.06)', borderRadius: '6px', fontSize: '13px' }}>
+                      <span>Report Generation (5 Chapters)</span>
+                      <strong style={{ color: '#00703c' }}>ACTIVE (MVP)</strong>
+                    </div>
+                    <div className="row sb" style={{ padding: '8px 10px', background: 'rgba(0,112,60,0.06)', borderRadius: '6px', fontSize: '13px' }}>
+                      <span>DOCX & PDF Export</span>
+                      <strong style={{ color: '#00703c' }}>ACTIVE (MVP)</strong>
+                    </div>
+                    <div className="row sb" style={{ padding: '8px 10px', background: 'rgba(0,0,0,0.03)', borderRadius: '6px', fontSize: '13px' }}>
+                      <span className="mut">Defence Preparation (Questions & Quiz)</span>
+                      <span className="mut" style={{ fontWeight: 600 }}>{isDefenceEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                    </div>
+                    <div className="row sb" style={{ padding: '8px 10px', background: 'rgba(0,0,0,0.03)', borderRadius: '6px', fontSize: '13px' }}>
+                      <span className="mut">Slide Generation & Oral Script</span>
+                      <span className="mut" style={{ fontWeight: 600 }}>{systemFlags.slide_generation ? 'ENABLED' : 'DISABLED'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Institutional Guidelines Card */}
+                <div className="c">
+                  <div className="row sb" style={{ marginBottom: '8px' }}>
+                    <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>Institutional Guidelines</h2>
+                    <span className="ms mut" style={{ fontSize: '20px' }}>school</span>
+                  </div>
+                  <p className="mut" style={{ fontSize: '12.5px', margin: '0 0 14px' }}>
+                    Default template follows the approved LASUSTECH standard for SIWES technical reports.
+                  </p>
+                  <button
+                    className="btn w"
+                    type="button"
+                    style={{ background: '#f4f4f4', color: '#111', border: '1px solid #ddd' }}
+                    onClick={() => setActiveSheet('uploadGuideline')}
+                  >
+                    View or Upload Custom Guidelines
+                  </button>
+                </div>
+
+                {/* Sign Out Card */}
+                <button
+                  className="btn w"
+                  type="button"
+                  style={{ background: '#e53e3e', color: '#fff', border: 'none', padding: '12px' }}
+                  onClick={logout}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ======================= TAB: WIZARD (NEW REPORT) ======================= */}
           {currentTab === 'new' && (
             <div className="view">
@@ -2990,7 +3185,10 @@ export default function DashboardPage() {
             className="tb-glide"
             aria-hidden="true"
             style={{
-              '--i': ['home', 'logbook', 'report', 'defence'].indexOf(currentTab),
+              '--i': (isDefenceEnabled
+                ? ['home', 'logbook', 'report', 'defence', 'settings']
+                : ['home', 'logbook', 'report', 'settings']
+              ).indexOf(currentTab),
             } as React.CSSProperties}
           />
           <button
@@ -3013,7 +3211,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               menu_book
             </span>
-            <span className="tab-label">Logbook</span>
+            <span className="tab-label">My Logbooks</span>
           </button>
           <button
             className="tab-btn"
@@ -3024,18 +3222,31 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               description
             </span>
-            <span className="tab-label">Report</span>
+            <span className="tab-label">My Reports</span>
           </button>
+          {isDefenceEnabled && (
+            <button
+              className="tab-btn"
+              type="button"
+              aria-current={currentTab === 'defence' ? 'page' : undefined}
+              onClick={() => navigateTab('defence')}
+            >
+              <span className="ms" aria-hidden="true">
+                school
+              </span>
+              <span className="tab-label">Defence</span>
+            </button>
+          )}
           <button
             className="tab-btn"
             type="button"
-            aria-current={currentTab === 'defence' ? 'page' : undefined}
-            onClick={() => navigateTab('defence')}
+            aria-current={currentTab === 'settings' ? 'page' : undefined}
+            onClick={() => navigateTab('settings')}
           >
             <span className="ms" aria-hidden="true">
-              school
+              settings
             </span>
-            <span className="tab-label">Defence</span>
+            <span className="tab-label">Settings</span>
           </button>
         </nav>
 

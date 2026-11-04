@@ -43,18 +43,32 @@ export function Navbar() {
           {user && (
             <nav className="hidden md:flex items-center gap-1 text-sm font-medium" aria-label="Main navigation">
               <Link
-                href="/dashboard"
+                href="/dashboard#home"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
               >
-                <MaterialIcon name="dashboard" size={18} className="text-emerald-700" />
-                Dashboard
+                <MaterialIcon name="home" size={18} className="text-emerald-700" />
+                Home
               </Link>
               <Link
-                href="/projects/new"
+                href="/dashboard#logbook"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
               >
-                <MaterialIcon name="add_circle" size={18} className="text-emerald-700" />
-                New Report Project
+                <MaterialIcon name="menu_book" size={18} className="text-emerald-700" />
+                My Logbooks
+              </Link>
+              <Link
+                href="/dashboard#report"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
+              >
+                <MaterialIcon name="description" size={18} className="text-emerald-700" />
+                My Reports
+              </Link>
+              <Link
+                href="/dashboard#settings"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-foreground/80 hover:text-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:outline-none transition-colors"
+              >
+                <MaterialIcon name="settings" size={18} className="text-emerald-700" />
+                Settings
               </Link>
             </nav>
           )}
