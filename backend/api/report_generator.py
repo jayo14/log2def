@@ -42,7 +42,7 @@ def build_rule_based_section_content(
     prog = project.programme or project.department or "[Programme Name]"
     level = project.level or "400"
     univ = project.university_name or "Lagos State University of Science and Technology (LASUSTECH)"
-    faculty = project.faculty_school or "College of Applied Sciences and Technology"
+    faculty = project.faculty_school or "College of Basic Science"
     company = project.organization_name or "[Host Organization Name]"
     address = project.organization_address or "[Host Organization Address]"
     unit = project.placement_department or "Engineering / IT Unit"

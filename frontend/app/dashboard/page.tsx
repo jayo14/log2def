@@ -158,7 +158,7 @@ export default function DashboardPage() {
   const [details, setDetails] = useState<Record<string, string>>({
     name: userFullName,
     inst: 'Lagos State University of Science and Technology',
-    fac: 'College of Applied Sciences and Technology',
+    fac: 'College of Basic Science',
     dept: '',
     matric: '',
     co: '',
@@ -287,7 +287,7 @@ export default function DashboardPage() {
           const newProj = await createProject({
             title: 'LASUSTECH SIWES Technical Report',
             department: 'Computer Science',
-            faculty_school: 'College of Applied Sciences and Technology',
+            faculty_school: 'College of Basic Science',
             university_name: 'Lagos State University of Science and Technology',
           });
           projId = newProj.id;
@@ -316,7 +316,7 @@ export default function DashboardPage() {
       name: activeProject.full_name || prev.name || userFullName,
       matric: activeProject.matric_number || prev.matric || '',
       dept: activeProject.department || prev.dept || 'Computer Science',
-      fac: activeProject.faculty_school || prev.fac || 'College of Applied Sciences and Technology',
+      fac: activeProject.faculty_school || prev.fac || 'College of Basic Science',
       inst: activeProject.university_name || prev.inst || 'Lagos State University of Science and Technology',
       co: activeProject.organization_name || prev.co || '',
       addr: activeProject.organization_address || prev.addr || '',
@@ -1904,7 +1904,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Faculty or College</div>
-                <div className="s-val">{details.fac || 'College of Applied Sciences and Technology'}</div>
+                <div className="s-val">{details.fac || 'College of Basic Science'}</div>
               </div>
             </div>
 
@@ -2091,7 +2091,7 @@ export default function DashboardPage() {
                 setDetails({
                   name: userFullName,
                   inst: 'Lagos State University of Science and Technology',
-                  fac: 'College of Applied Sciences and Technology',
+                  fac: 'College of Basic Science',
                   dept: '',
                   matric: '',
                   co: '',
@@ -2258,7 +2258,7 @@ export default function DashboardPage() {
                 <select
                   id="fac"
                   name="fac"
-                  value={details.fac || 'College of Applied Sciences and Technology'}
+                  value={details.fac || 'College of Basic Science'}
                   onChange={(e) => setDetails((prev) => ({ ...prev, fac: e.target.value }))}
                   required
                 >
@@ -2883,11 +2883,10 @@ export default function DashboardPage() {
                   </label>
                   <select
                     id={`a_${x.key}`}
-                    value={answers[x.key] || ''}
+                    value={answers[x.key] || 'College of Basic Science'}
                     onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
                     required
                   >
-                    <option value="" disabled>Select your faculty or college</option>
                     {COLLEGES.map((c) => (
                       <option key={c} value={c}>
                         {c}
@@ -3342,7 +3341,7 @@ export default function DashboardPage() {
               <select
                 id="fv"
                 aria-label={activeSheet.label}
-                value={getVal(activeSheet.key) || 'College of Applied Sciences and Technology'}
+                value={getVal(activeSheet.key) || 'College of Basic Science'}
                 onChange={(e) => {
                   const val = e.target.value.trim();
                   setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
@@ -3427,7 +3426,7 @@ export default function DashboardPage() {
                   <label htmlFor={`d_${key}`}>{label}</label>
                   <select
                     id={`d_${key}`}
-                    value={details[key] || 'College of Applied Sciences and Technology'}
+                    value={details[key] || 'College of Basic Science'}
                     onChange={(e) => {
                       const val = e.target.value.trim();
                       setDetails((prev) => ({ ...prev, [key]: val }));
