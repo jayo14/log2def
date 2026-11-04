@@ -264,6 +264,7 @@ def process_source_document(doc_id: int):
                 extracted_page = ExtractedPage.objects.create(
                     document=doc,
                     page_number=page_num,
+                    page_index=page_index,
                     extracted_text=text,
                     confidence_score=confidence,
                     status=page_status,
@@ -302,6 +303,7 @@ def process_source_document(doc_id: int):
             extracted_page = ExtractedPage.objects.create(
                 document=doc,
                 page_number=1,
+                page_index=doc.page_index,
                 extracted_text=text,
                 confidence_score=confidence,
                 status=page_status,
@@ -357,6 +359,7 @@ def process_source_document(doc_id: int):
             extracted_page = ExtractedPage.objects.create(
                 document=doc,
                 page_number=1,
+                page_index=doc.page_index,
                 extracted_text=full_text,
                 confidence_score=0.98,
                 status='processed',
@@ -371,6 +374,7 @@ def process_source_document(doc_id: int):
             page = ExtractedPage.objects.create(
                 document=doc,
                 page_number=1,
+                page_index=doc.page_index,
                 extracted_text=doc.error_message or "", # Note content stored temporarily in error_message or separate note
                 confidence_score=1.0,
                 status='processed',
