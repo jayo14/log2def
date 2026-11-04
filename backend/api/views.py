@@ -1,4 +1,7 @@
 import os
+import sys
+import threading
+from django.db import transaction
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
@@ -29,7 +32,8 @@ from .serializers import (
     ReportVersionSerializer, ReportVersionCreateRequestSerializer,
     PresentationSlidesResponseSerializer, PresentationScriptResponseSerializer,
     DefenceQuestionSerializer, DefenceSessionSerializer,
-    DocumentUploadRequestSerializer, ReportGenerateRequestSerializer,
+    DocumentUploadRequestSerializer, DocumentReorderRequestSerializer,
+    ReportGenerateRequestSerializer,
     BulkVerifyRequestSerializer, SectionUpdateRequestSerializer,
     DefenceQuestionUpdateRequestSerializer, AIStatusResponseSerializer,
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer
@@ -361,9 +365,9 @@ class DocumentListUploadView(views.APIView):
     @extend_schema(
         tags=['Source Documents'],
         summary='Upload document or typed note for extraction',
-        description='Uploads a PDF, JPG, PNG, DOCX, or direct typed note, triggers OCR/extraction, and populates logbook entries.',
+        description='Uploads a PDF, JPG, PNG, WEBP, DOCX, or direct typed note, triggers OCR/extraction, and populates logbook entries. Supports idempotency via client_upload_id.',
         request=DocumentUploadRequestSerializer,
-        responses={201: SourceDocumentSerializer}
+        responses={201: SourceDocumentSerializer, 200: SourceDocumentSerializer}
     )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
@@ -371,6 +375,23 @@ class DocumentListUploadView(views.APIView):
         file_list = request.FILES.getlist('files') or request.FILES.getlist('file')
         raw_text = request.data.get('text', '').strip()
         doc_type = request.data.get('file_type', '')
+        client_upload_id = request.data.get('client_upload_id') or request.headers.get('X-Client-Upload-Id', '')
+        client_upload_id = str(client_upload_id).strip()
+
+        # Idempotency check: if client_upload_id was already uploaded for this project, return the existing doc
+        if client_upload_id:
+            existing_doc = project.source_documents.filter(client_upload_id=client_upload_id).first()
+            if existing_doc:
+                return Response(SourceDocumentSerializer(existing_doc).data, status=status.HTTP_200_OK)
+
+        raw_page_index = request.data.get('page_index') or request.headers.get('X-Page-Index')
+        try:
+            start_page_index = int(raw_page_index) if raw_page_index is not None else project.source_documents.count()
+        except (ValueError, TypeError):
+            start_page_index = project.source_documents.count()
+
+        is_async = request.data.get('async', 'false').lower() in ('1', 'true') or request.headers.get('X-Async-Processing', '').lower() in ('1', 'true')
+        is_testing = 'test' in sys.argv or getattr(settings, 'IS_TESTING', False)
 
         if not file_list and not raw_text:
             return Response({"error": "Either an upload file or typed text must be provided."}, status=status.HTTP_400_BAD_REQUEST)
@@ -380,19 +401,22 @@ class DocumentListUploadView(views.APIView):
 
         created_docs = []
         if file_list:
-            for file_obj in file_list:
+            for idx, file_obj in enumerate(file_list):
                 try:
                     verified_type = validate_file_content(file_obj)
                 except ValidationError as ve:
                     err_msg = ve.messages[0] if hasattr(ve, 'messages') else str(ve)
                     return Response({"error": err_msg}, status=status.HTTP_400_BAD_REQUEST)
 
+                item_upload_id = client_upload_id if len(file_list) == 1 else (f"{client_upload_id}_{idx}" if client_upload_id else "")
                 doc = SourceDocument.objects.create(
                     project=project,
                     file=file_obj,
                     original_filename=file_obj.name,
                     file_type=verified_type,
                     file_size=file_obj.size,
+                    page_index=start_page_index + idx,
+                    client_upload_id=item_upload_id,
                     status='uploaded'
                 )
                 try:
@@ -402,8 +426,14 @@ class DocumentListUploadView(views.APIView):
                             upload_object(key=doc.file.name, body=f.read())
                 except Exception:
                     pass
-                process_source_document(doc.id)
-                doc.refresh_from_db()
+
+                if is_async and not is_testing:
+                    t = threading.Thread(target=process_source_document, args=(doc.id,), daemon=True)
+                    t.start()
+                else:
+                    process_source_document(doc.id)
+                    doc.refresh_from_db()
+
                 created_docs.append(doc)
 
             if len(created_docs) == 1:
@@ -416,12 +446,55 @@ class DocumentListUploadView(views.APIView):
                 original_filename=title,
                 file_type='note',
                 file_size=len(raw_text.encode('utf-8')),
+                page_index=start_page_index,
+                client_upload_id=client_upload_id,
                 error_message=raw_text,
                 status='uploaded'
             )
-            process_source_document(doc.id)
-            doc.refresh_from_db()
+            if is_async and not is_testing:
+                t = threading.Thread(target=process_source_document, args=(doc.id,), daemon=True)
+                t.start()
+            else:
+                process_source_document(doc.id)
+                doc.refresh_from_db()
             return Response(SourceDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+
+@require_feature_flag('logbook_bulk_upload')
+class DocumentReorderView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Source Documents'],
+        summary='Reorder source documents',
+        description='Updates explicit page_index ordering for source documents in a project.',
+        request=DocumentReorderRequestSerializer,
+        responses={200: SourceDocumentSerializer(many=True), 400: OpenApiResponse(description="Invalid request")}
+    )
+    def patch(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        serializer = DocumentReorderRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        order_items = serializer.validated_data.get('order', [])
+        doc_ids = [item['id'] for item in order_items]
+
+        docs = {doc.id: doc for doc in project.source_documents.filter(id__in=doc_ids)}
+        if len(docs) != len(doc_ids):
+            return Response(
+                {"error": "One or more document IDs do not exist or do not belong to this project."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            for item in order_items:
+                doc = docs[item['id']]
+                doc.page_index = item['page_index']
+                doc.save(update_fields=['page_index'])
+
+        ordered_docs = project.source_documents.all().order_by('page_index', 'uploaded_at')
+        return Response(SourceDocumentSerializer(ordered_docs, many=True).data, status=status.HTTP_200_OK)
 
 
 class DocumentDetailView(views.APIView):

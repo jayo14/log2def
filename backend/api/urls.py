@@ -4,7 +4,7 @@ from .views import (
     RegisterView, LoginView, CurrentUserView, AIStatusView, FeatureFlagsView,
     PasswordResetRequestView, PasswordResetConfirmView,
     ProjectListCreateView, ProjectDetailView, GuidelineUploadView,
-    DocumentListUploadView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
+    DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
     ReportVersionListView, ReportVersionRevertView,
@@ -40,6 +40,9 @@ urlpatterns = [
 
     # Documents & Pages
     path('projects/<int:project_id>/documents/', DocumentListUploadView.as_view(), name='document-list-upload'),
+    path('projects/<int:project_id>/documents', DocumentListUploadView.as_view()),
+    path('projects/<int:project_id>/documents/reorder/', DocumentReorderView.as_view(), name='document-reorder'),
+    path('projects/<int:project_id>/documents/reorder', DocumentReorderView.as_view()),
     path('projects/<int:project_id>/documents/<int:doc_id>/', DocumentDetailView.as_view(), name='document-detail'),
     path('projects/<int:project_id>/documents/<int:doc_id>/download/', DocumentDownloadView.as_view(), name='document-download'),
     path('projects/<int:project_id>/documents/<int:doc_id>/reprocess/', DocumentReprocessView.as_view(), name='document-reprocess'),

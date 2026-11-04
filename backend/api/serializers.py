@@ -190,7 +190,7 @@ class ReportProjectDetailSerializer(serializers.ModelSerializer):
 # --- Documentation & Request Helper Serializers ---
 
 class DocumentUploadRequestSerializer(serializers.Serializer):
-    file = serializers.FileField(required=False, help_text="Upload scanned or digital file (PDF, JPG, PNG, DOCX)")
+    file = serializers.FileField(required=False, help_text="Upload scanned or digital file (PDF, JPG, PNG, WEBP, DOCX)")
     text = serializers.CharField(required=False, help_text="Direct typed or pasted logbook notes")
     title = serializers.CharField(required=False, default="Manual Log Note", help_text="Title for typed note")
     file_type = serializers.ChoiceField(
@@ -198,6 +198,25 @@ class DocumentUploadRequestSerializer(serializers.Serializer):
         required=False, 
         help_text="Optional explicit document type override"
     )
+    client_upload_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Client-side unique upload ID for idempotency"
+    )
+    page_index = serializers.IntegerField(
+        required=False,
+        default=0,
+        help_text="Explicit sequential order of the document page"
+    )
+
+
+class DocumentOrderItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(help_text="SourceDocument ID")
+    page_index = serializers.IntegerField(help_text="New zero-based page index")
+
+
+class DocumentReorderRequestSerializer(serializers.Serializer):
+    order = DocumentOrderItemSerializer(many=True, help_text="List of document IDs and their new page indices")
 
 
 class ReportGenerateRequestSerializer(serializers.Serializer):
