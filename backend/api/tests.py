@@ -578,6 +578,200 @@ class Log2DefBackendTests(TestCase):
         self.assertEqual(self.project1.status, 'exported')
         self.assertIsNotNone(self.project1.report.last_exported_at)
 
+    def test_template_version_pinning_immutability(self):
+        # 1. Add verified logbook entry and generate report
+        LogbookEntry.objects.create(
+            project=self.project1,
+            week_number=1,
+            day_of_week='Monday',
+            raw_text='Configured network router',
+            verified_text='Configured network router',
+            activity_summary='Configured network router',
+            is_verified=True
+        )
+        report = generate_full_report(self.project1)
+
+        # Verify initial pinning
+        self.assertEqual(report.template_version, 'lasustech-standard:1.0.0')
+        self.assertEqual(report.template_snapshot['template_id'], 'lasustech-standard')
+        self.assertEqual(report.template_snapshot['version'], '1.0.0')
+        self.assertEqual(report.template_snapshot['name'], 'LASUSTECH Standard SIWES Technical Report Template')
+
+        # 2. Mutate database template row to simulate template upgrade
+        tmpl = report.template
+        if tmpl:
+            tmpl.name = 'LASUSTECH Upgraded 2027 Format'
+            tmpl.version = '2.0.0'
+            tmpl.save()
+
+        # 3. Reload report and re-run generation or section update
+        report.refresh_from_db()
+        # Pinned version and snapshot on previously generated report must NEVER change!
+        self.assertEqual(report.template_version, 'lasustech-standard:1.0.0')
+        self.assertEqual(report.template_snapshot['name'], 'LASUSTECH Standard SIWES Technical Report Template')
+        self.assertEqual(report.template_snapshot['version'], '1.0.0')
+
+    def test_no_source_material_flagged_not_invented(self):
+        # Create a project with empty optional and narrative fields
+        sparse_proj = ReportProject.objects.create(
+            user=self.user1,
+            title='Sparse Logbook Project',
+            full_name='Test Student',
+            matric_number='STE/2021/0001',
+            department='Computer Engineering',
+            university_name='LASUSTECH',
+            organization_name='Acme Systems Ltd',
+            organization_address='5 Broad Street, Lagos Island',
+            training_start_date=date(2024, 3, 1),
+            training_end_date=date(2024, 8, 31),
+            organization_activities='',
+            tasks_performed='',
+            projects_undertaken='',
+            problems_encountered='',
+            skills_acquired='',
+        )
+        LogbookEntry.objects.create(
+            project=sparse_proj,
+            week_number=1,
+            day_of_week='Monday',
+            raw_text='Attended morning briefing',
+            verified_text='Attended morning briefing',
+            activity_summary='Attended morning briefing',
+            is_verified=True
+        )
+
+        report = generate_full_report(sparse_proj)
+
+        # 1. Organization structure: no source material -> flagged with [INPUT NEEDED], not invented
+        sec_structure = report.sections.get(section_key='ch2_org_structure')
+        self.assertIn('[INPUT NEEDED', sec_structure.content)
+        self.assertTrue(any('lacks source material' in w for w in sec_structure.warnings))
+
+        # 2. Specific projects: no source material -> flagged with [INPUT NEEDED], not invented
+        sec_projects = report.sections.get(section_key='ch3_projects')
+        self.assertIn('[INPUT NEEDED', sec_projects.content)
+        self.assertTrue(any('source material' in w for w in sec_projects.warnings))
+
+        # 3. Challenges & solutions: no source material -> flagged with [INPUT NEEDED], not invented
+        sec_challenges = report.sections.get(section_key='ch4_challenges')
+        self.assertIn('[INPUT NEEDED', sec_challenges.content)
+        sec_solutions = report.sections.get(section_key='ch4_solutions')
+        self.assertIn('[INPUT NEEDED', sec_solutions.content)
+
+        # 4. Estimated pages and length feedback: report is under target -> provides actionable recommendations
+        breakdown = report.page_estimate_breakdown
+        self.assertTrue(breakdown['is_under_target'])
+        self.assertGreater(len(report.readiness_feedback), 0)
+        self.assertTrue(any('verified entries' in tip for tip in report.readiness_feedback))
+
+    def test_generated_report_structure_snapshot(self):
+        LogbookEntry.objects.create(
+            project=self.project1,
+            week_number=1,
+            day_of_week='Monday',
+            raw_text='Configured router interface',
+            verified_text='Configured router interface',
+            activity_summary='Configured router interface',
+            is_verified=True
+        )
+        report = generate_full_report(self.project1)
+        sections = list(report.sections.all().order_by('chapter_number', 'order', 'id'))
+
+        expected_sequence = [
+            # Prelims (Ch 0)
+            ('cover', 0),
+            ('title_page', 0),
+            ('declaration', 0),
+            ('certification', 0),
+            ('dedication', 0),
+            ('acknowledgements', 0),
+            ('abstract', 0),
+            ('table_of_contents', 0),
+            # Chapter 1
+            ('ch1_background', 1),
+            ('ch1_objectives', 1),
+            ('ch1_scope', 1),
+            # Chapter 2
+            ('ch2_org_profile', 2),
+            ('ch2_org_structure', 2),
+            ('ch2_placement_unit', 2),
+            # Chapter 3
+            ('ch3_training_env', 3),
+            ('ch3_tools', 3),
+            ('ch3_weekly_log', 3),
+            ('ch3_technical_procedures', 3),
+            ('ch3_projects', 3),
+            # Chapter 4
+            ('ch4_skills', 4),
+            ('ch4_challenges', 4),
+            ('ch4_solutions', 4),
+            ('ch4_lessons', 4),
+            # Chapter 5
+            ('ch5_summary', 5),
+            ('ch5_objectives_achievement', 5),
+            ('ch5_recommendations', 5),
+            # Back Matter (Ch 6)
+            ('references', 6),
+            ('appendices', 6),
+        ]
+
+        actual_sequence = [(s.section_key, s.chapter_number) for s in sections]
+        self.assertEqual(actual_sequence, expected_sequence)
+
+    def test_docx_multi_section_pagination_and_formatting(self):
+        from .document_exporter import generate_docx_report
+        import docx
+        from docx.shared import Inches, Pt
+
+        LogbookEntry.objects.create(
+            project=self.project1,
+            week_number=1,
+            day_of_week='Monday',
+            raw_text='Terminated fiber cable',
+            verified_text='Terminated fiber cable',
+            activity_summary='Terminated fiber cable',
+            is_verified=True
+        )
+        report = generate_full_report(self.project1)
+        docx_path = generate_docx_report(report)
+
+        self.assertTrue(os.path.exists(docx_path))
+        doc = docx.Document(docx_path)
+
+        # 1. Multi-section document structure: Cover (0), Prelims (1), Main Body (2)
+        self.assertGreaterEqual(len(doc.sections), 3)
+
+        # Section 0 (Cover): no visible page number on first page
+        sec_cover = doc.sections[0]
+        self.assertTrue(sec_cover.different_first_page_header_footer)
+        self.assertEqual(sec_cover.left_margin, Inches(1.5))
+        self.assertEqual(sec_cover.right_margin, Inches(1.0))
+        self.assertEqual(sec_cover.top_margin, Inches(1.0))
+        self.assertEqual(sec_cover.bottom_margin, Inches(1.0))
+
+        # Section 1 (Prelims): Lowercase Roman numerals
+        sec_prelim = doc.sections[1]
+        self.assertEqual(sec_prelim.left_margin, Inches(1.5))
+        xml_prelim = sec_prelim._sectPr.xml
+        self.assertIn('lowerRoman', xml_prelim)
+
+        # Section 2 (Body): Decimal Arabic numerals starting at 1
+        sec_body = doc.sections[2]
+        self.assertEqual(sec_body.left_margin, Inches(1.5))
+        xml_body = sec_body._sectPr.xml
+        self.assertIn('decimal', xml_body)
+        self.assertIn('w:start="1"', xml_body)
+
+        # 2. Typography: Times New Roman, 12pt
+        normal_style = doc.styles['Normal']
+        self.assertEqual(normal_style.font.name, 'Times New Roman')
+        self.assertEqual(normal_style.font.size, Pt(12))
+
+        # 3. Table of Contents rendered in document
+        full_text = " ".join([p.text for p in doc.paragraphs])
+        self.assertIn('TABLE OF CONTENTS', full_text)
+        self.assertIn('CHAPTER ONE: INTRODUCTION', full_text)
+
     @patch('api.feature_flags.is_feature_enabled', return_value=True)
     def test_defence_questions_generation_and_mastery(self, mock_flags):
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token1}')

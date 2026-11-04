@@ -527,9 +527,9 @@ def calculate_report_estimated_pages(report: Report) -> Dict[str, Any]:
     """
     sections = list(report.sections.all().order_by('chapter_number', 'order', 'id'))
 
-    # Preliminary pages count: each section in chapter 0 occupies 1 page (8 pages total)
+    # Preliminary pages count: Cover (1), Title (1), Declaration/Cert (1), Ded/Ack (1), Abstract (1), TOC (1) = approx 5 pages
     preliminary_sections = [s for s in sections if s.chapter_number == 0]
-    preliminary_pages = max(1, len(preliminary_sections))
+    preliminary_pages = min(5, max(1, len(preliminary_sections)))
 
     # Body sections (Chapter 1 through 6)
     body_sections = [s for s in sections if s.chapter_number > 0]
@@ -550,15 +550,13 @@ def calculate_report_estimated_pages(report: Report) -> Dict[str, Any]:
 
     # Academic density estimate: ~350 words per page at 1.5 line spacing
     prose_pages = body_words / 350.0
-    # Tables in Chapter 3 take additional vertical space (approx 12-14 rows per page)
-    table_pages = max(0.0, (table_rows_count - 2) / 12.0)
+    # Tables in Chapter 3 take additional vertical space (approx 14 rows per page)
+    table_pages = max(0.0, table_rows_count / 14.0)
+    # Chapter transition and heading spacing (~0.2 page per major chapter)
+    heading_overhead = 0.2 * 5
 
-    # Chapter transition breaks: each of the 6 main chapters (1, 2, 3, 4, 5, 6) starts on a new page
-    # Minimum 1 page per chapter
-    chapter_break_pages = 6.0
-
-    raw_body_pages = max(chapter_break_pages, prose_pages + table_pages)
-    body_pages = round(raw_body_pages)
+    raw_body_pages = prose_pages + table_pages + heading_overhead
+    body_pages = max(1, round(raw_body_pages))
 
     total_estimated_pages = preliminary_pages + body_pages
 
