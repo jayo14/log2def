@@ -2399,6 +2399,77 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <>
+                    {/* Pinned Template & Page Target Assessment */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'var(--paper)',
+                        border: '1px solid var(--line)',
+                        borderRadius: '12px',
+                        padding: '10px 14px',
+                        marginBottom: '12px',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            background: 'rgba(59, 130, 246, 0.15)',
+                            color: '#3b82f6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <span className="ms" style={{ fontSize: '14px' }}>lock</span>
+                          Pinned Template: {report.template_version || 'LASUSTECH Standard v1.0.0'}
+                        </span>
+
+                        <span
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            background: (report.estimated_pages || 0) >= 12 && (report.estimated_pages || 0) <= 15
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : 'rgba(245, 158, 11, 0.15)',
+                            color: (report.estimated_pages || 0) >= 12 && (report.estimated_pages || 0) <= 15
+                              ? '#10b981'
+                              : '#f59e0b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <span className="ms" style={{ fontSize: '14px' }}>
+                            {(report.estimated_pages || 0) >= 12 && (report.estimated_pages || 0) <= 15 ? 'check_circle' : 'straighten'}
+                          </span>
+                          Est. Length: {report.estimated_pages || 1} pages (Target: 12–15 pages)
+                        </span>
+                      </div>
+
+                      {(report.estimated_pages || 0) < 12 && report.readiness_feedback && report.readiness_feedback.length > 0 && (
+                        <div style={{ width: '100%', marginTop: '4px', fontSize: '12px', color: 'var(--mut)', background: 'rgba(245, 158, 11, 0.05)', padding: '8px 10px', borderRadius: '8px', border: '1px dashed rgba(245, 158, 11, 0.3)' }}>
+                          <p style={{ fontWeight: 600, color: '#d97706', marginBottom: '3px' }}>
+                            Tips to reach 12–15 pages without padding:
+                          </p>
+                          <ul style={{ paddingLeft: '16px', margin: 0, lineHeight: 1.4 }}>
+                            {report.readiness_feedback.map((tip: string, idx: number) => (
+                              <li key={idx}>{tip}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
                     {/* Chapter selector pills */}
                     <div className="pills" role="tablist" aria-label="Chapters">
                       {CHAPTER_NAMES.map((name, i) => (
