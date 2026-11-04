@@ -23,6 +23,8 @@ import {
   QueuedUpload,
 } from '@/lib/offline-queue';
 import CameraCapture, { CapturedPage } from '@/components/CameraCapture';
+import PageReviewModal from '@/components/PageReviewModal';
+import MissingInfoModal from '@/components/MissingInfoModal';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import Image from 'next/image';
 import UtilityTabs from '@/components/UtilityTabs';
@@ -37,8 +39,12 @@ export default function DashboardPage() {
     projects,
     activeProject,
     isLoadingProjects,
+    completeness,
+    isLoadingCompleteness,
     fetchProjects,
     fetchActiveProject,
+    fetchCompleteness,
+    updateMissingInfo: storeUpdateMissingInfo,
     createProject,
     uploadGuideline: storeUploadGuideline,
     uploadDocument: storeUploadDocument,
@@ -136,6 +142,11 @@ export default function DashboardPage() {
   >(null);
   const [correctingDocIdx, setCorrectingDocIdx] = useState<number>(0);
   const [correctingText, setCorrectingText] = useState<string>('');
+
+  // Page Review & Missing Info Modal states
+  const [reviewingDoc, setReviewingDoc] = useState<any | null>(null);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isMissingInfoOpen, setIsMissingInfoOpen] = useState(false);
 
   // Guideline upload draft
   const [guidelineInputUniversity, setGuidelineInputUniversity] = useState('Lagos State University of Science and Technology (LASUSTECH)');
@@ -276,6 +287,7 @@ export default function DashboardPage() {
   // Load active project details (logbook, report, defence, versions, slides, script, upload queue)
   useEffect(() => {
     if (activeProject?.id) {
+      fetchCompleteness(activeProject.id).catch(() => null);
       fetchReport(activeProject.id).catch(() => null);
       fetchQuestions(activeProject.id).catch(() => []);
       storeFetchVersions(activeProject.id).catch(() => []);
@@ -868,9 +880,61 @@ export default function DashboardPage() {
     }
   };
 
-  // Report Generation
+  // Save page inspection / review corrections
+  const handleSavePageReview = async (
+    pageId: number,
+    updatedText: string,
+    metadata?: { has_supervisor_signature?: boolean }
+  ) => {
+    if (!activeProject?.id) return;
+    try {
+      await storeUpdatePage(activeProject.id, pageId, {
+        extracted_text: updatedText,
+        status: 'processed',
+        is_reviewed: true,
+        has_supervisor_signature: metadata?.has_supervisor_signature,
+      });
+      await fetchActiveProject(activeProject.id);
+      await fetchCompleteness(activeProject.id);
+      triggerToast('Page corrections and verification saved');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to update page');
+      throw err;
+    }
+  };
+
+  // Submit targeted missing info
+  const handleSaveMissingInfo = async (data: Record<string, any>) => {
+    if (!activeProject?.id) return;
+    try {
+      await storeUpdateMissingInfo(activeProject.id, data);
+      triggerToast('Required information updated successfully');
+    } catch (err: any) {
+      triggerToast(err.message || 'Failed to update information');
+      throw err;
+    }
+  };
+
+  // Report Generation with Completeness Guard
   const handleGenerateReport = async () => {
     if (!activeProject?.id) return;
+
+    let comp = completeness;
+    if (!comp || comp.missing_required_fields === undefined) {
+      try {
+        comp = await fetchCompleteness(activeProject.id);
+      } catch {
+        // fallback
+      }
+    }
+
+    if (comp && !comp.can_generate) {
+      setIsMissingInfoOpen(true);
+      const reason = comp.blocking_reasons?.[0] || 'Required information is missing. Please provide it before generating your technical report.';
+      triggerToast(reason);
+      return;
+    }
+
     try {
       triggerToast('AI is compiling verified logbook and generating report...');
       await storeGenerateReport(activeProject.id, false);
@@ -878,6 +942,9 @@ export default function DashboardPage() {
       setCurrentChapterIdx(0);
       triggerToast('Report generated successfully');
     } catch (err: any) {
+      if (err.message && (err.message.includes('missing') || err.message.includes('required') || err.message.includes('essential'))) {
+        setIsMissingInfoOpen(true);
+      }
       triggerToast(err.message || 'Report generation failed');
     }
   };
@@ -1661,6 +1728,64 @@ export default function DashboardPage() {
                 <p>{effectiveProject?.organization_name || 'Upload handwritten notes & scans'}</p>
               </div>
 
+              {/* Report Readiness & Completeness Banner */}
+              {completeness && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '14px',
+                    background: completeness.can_generate ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.1)',
+                    border: `1px solid ${completeness.can_generate ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.4)'}`,
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: completeness.can_generate ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.25)',
+                        color: completeness.can_generate ? '#10b981' : '#f59e0b',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span className="ms" style={{ fontSize: '15px' }}>
+                        {completeness.can_generate ? 'check_circle' : 'warning'}
+                      </span>
+                      {completeness.can_generate
+                        ? `Ready (${completeness.overall_score}% Complete)`
+                        : `Missing Required Info (${completeness.missing_required_fields.length})`}
+                    </span>
+                    <span style={{ fontSize: '12.5px', color: 'var(--ink)' }}>
+                      {completeness.can_generate
+                        ? 'All essential logbook information is verified. You can generate your report.'
+                        : completeness.blocking_reasons?.[0] || 'Provide missing required details before generating report.'}
+                    </span>
+                  </div>
+
+                  {!completeness.can_generate && (
+                    <button
+                      type="button"
+                      className="btn s"
+                      style={{ padding: '6px 12px', fontSize: '12px', background: '#f59e0b', color: '#090d16' }}
+                      onClick={() => setIsMissingInfoOpen(true)}
+                    >
+                      <span className="ms" style={{ fontSize: '15px' }}>edit_note</span>
+                      Fix Missing Info
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Upload & Camera Actions */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '14px' }}>
                 <button
@@ -2051,15 +2176,14 @@ export default function DashboardPage() {
                           className="tx"
                           type="button"
                           onClick={() => {
-                            setCorrectingDocIdx(idx);
-                            setCorrectingText(d.extracted_pages?.[0]?.extracted_text || '');
-                            setActiveSheet('correctText');
+                            setReviewingDoc(d);
+                            setIsReviewModalOpen(true);
                           }}
                         >
                           <span className="ms" aria-hidden="true">
-                            edit
+                            rate_review
                           </span>
-                          Correct text
+                          Inspect & Correct
                         </button>
                         {d.id && (
                           <>
@@ -2146,6 +2270,64 @@ export default function DashboardPage() {
                   {effectiveProject?.guideline_preset === 'custom' ? 'Update Guidelines' : 'Custom Guidelines'}
                 </button>
               </div>
+
+              {/* Report Readiness & Completeness Banner */}
+              {completeness && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '14px',
+                    background: completeness.can_generate ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.1)',
+                    border: `1px solid ${completeness.can_generate ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.4)'}`,
+                    borderRadius: '14px',
+                    padding: '12px 16px',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: completeness.can_generate ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.25)',
+                        color: completeness.can_generate ? '#10b981' : '#f59e0b',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span className="ms" style={{ fontSize: '15px' }}>
+                        {completeness.can_generate ? 'check_circle' : 'warning'}
+                      </span>
+                      {completeness.can_generate
+                        ? `Ready (${completeness.overall_score}% Complete)`
+                        : `Report Generation Blocked (${completeness.missing_required_fields.length} missing)`}
+                    </span>
+                    <span style={{ fontSize: '12.5px', color: 'var(--ink)' }}>
+                      {completeness.can_generate
+                        ? 'All essential logbook information is verified. You can generate your report.'
+                        : completeness.blocking_reasons?.[0] || 'Provide missing required details before generating report.'}
+                    </span>
+                  </div>
+
+                  {!completeness.can_generate && (
+                    <button
+                      type="button"
+                      className="btn s"
+                      style={{ padding: '6px 12px', fontSize: '12px', background: '#f59e0b', color: '#090d16' }}
+                      onClick={() => setIsMissingInfoOpen(true)}
+                    >
+                      <span className="ms" style={{ fontSize: '15px' }}>edit_note</span>
+                      Fix Missing Info
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Primary tabs: Editor | Academic Preview */}
               <div className="seg" role="tablist" aria-label="Report view">
@@ -4177,6 +4359,31 @@ export default function DashboardPage() {
             onCaptureComplete={handleCameraCaptureComplete}
             onCancel={() => setIsCameraOpen(false)}
             existingPageCount={sortedDocuments.length}
+          />
+        )}
+
+        {/* Full Side-by-Side Page Review & OCR Inspection Modal */}
+        {isReviewModalOpen && reviewingDoc && (
+          <PageReviewModal
+            isOpen={isReviewModalOpen}
+            onClose={() => {
+              setIsReviewModalOpen(false);
+              setReviewingDoc(null);
+            }}
+            document={reviewingDoc}
+            onSave={handleSavePageReview}
+            onReprocess={handleReprocessDoc}
+          />
+        )}
+
+        {/* Targeted Missing Information Modal */}
+        {isMissingInfoOpen && (
+          <MissingInfoModal
+            isOpen={isMissingInfoOpen}
+            onClose={() => setIsMissingInfoOpen(false)}
+            completeness={completeness}
+            project={effectiveProject}
+            onSubmit={handleSaveMissingInfo}
           />
         )}
 
