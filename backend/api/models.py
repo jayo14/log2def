@@ -328,3 +328,46 @@ class DefenceSession(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class PaymentOrder(models.Model):
+    ORDER_TYPES = [
+        ('digital', 'Digital Report Download (NGN 2,000)'),
+        ('delivery', 'Physical Print & Spiral Binding Delivery (NGN 4,000)'),
+    ]
+    PAYMENT_METHODS = [
+        ('card', 'Debit / Credit Card'),
+        ('transfer', 'Bank Transfer'),
+        ('ussd', 'USSD'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('paid', 'Paid'),
+        ('failed', 'Failed'),
+    ]
+
+    project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='payment_orders')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payment_orders')
+    order_type = models.CharField(max_length=20, choices=ORDER_TYPES)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=2000.00)
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='card')
+    transaction_reference = models.CharField(max_length=64, unique=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='paid')
+
+    # Delivery details (for order_type == 'delivery')
+    recipient_name = models.CharField(max_length=255, blank=True, default='')
+    phone_number = models.CharField(max_length=32, blank=True, default='')
+    campus_location = models.CharField(max_length=255, blank=True, default='')
+    custom_address = models.TextField(blank=True, default='')
+    delivery_date = models.CharField(max_length=32, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.project_id} - {self.order_type} - {self.transaction_reference} ({self.status})"
+

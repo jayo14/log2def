@@ -342,6 +342,18 @@ export const projectsApi = {
     });
   },
 
+  // Payment & Delivery Orders
+  getPayments: async (projectId: number | string) => {
+    return apiRequest<any[]>(`/projects/${projectId}/payments/`);
+  },
+
+  createPayment: async (projectId: number | string, data: any) => {
+    return apiRequest(`/projects/${projectId}/payments/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Document Export Download URLs & Asynchronous Status
   getExportDocxUrl: (projectId: number | string) => {
     return `${getApiBaseUrl()}/projects/${projectId}/export/docx/`;

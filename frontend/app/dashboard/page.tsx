@@ -82,14 +82,17 @@ const CAMPUS_LOCATIONS = [
 ];
 
 interface LogPage {
+  id?: number;
   n: string;
   pdf: boolean;
   th: string;
   q?: string;
   file?: File;
+  status?: string;
 }
 
 interface LogEntry {
+  id?: number;
   w: number;
   t: string;
   area: string;
@@ -108,14 +111,31 @@ export default function DashboardPage() {
     activeProject,
     fetchProjects,
     fetchActiveProject,
+    createProject,
     updateActiveProject,
     uploadDocument,
+    deleteDocument,
+    reorderDocuments,
+    fetchLogbookEntries,
+    createLogbookEntry,
+    updateLogbookEntry,
+    deleteLogbookEntry,
+    bulkVerifyEntries,
+    fetchCompleteness,
+    updateMissingInfo,
+    payments,
+    fetchPayments,
+    recordPayment,
   } = useProjectStore();
 
   const {
+    report: dbReport,
+    fetchReport,
+    generateReport: storeGenerateReport,
+    saveSection,
     downloadDocx,
     downloadPdf,
-    generateReport: storeGenerateReport,
+    isGeneratingReport,
   } = useReportStore();
 
   // Primary navigation tab: 'home' | 'logbooks' | 'reports' | 'settings'
@@ -256,36 +276,148 @@ export default function DashboardPage() {
     }
   }, [user]);
 
-  // Sync active project if already present
+  // Initialize and synchronize project from PostgreSQL database
   useEffect(() => {
-    fetchProjects()
-      .then((list) => {
-        if (list && list.length > 0) {
-          fetchActiveProject(list[0].id).catch(() => {});
+    let isMounted = true;
+    const initProject = async () => {
+      try {
+        const list = await fetchProjects();
+        let projId = list && list.length > 0 ? list[0].id : null;
+        if (!projId) {
+          const newProj = await createProject({
+            title: 'LASUSTECH SIWES Technical Report',
+            department: 'Computer Science',
+            faculty_school: 'College of Applied Sciences and Technology',
+            university_name: 'Lagos State University of Science and Technology',
+          });
+          projId = newProj.id;
         }
-      })
-      .catch(() => {});
-  }, [fetchProjects, fetchActiveProject]);
+        if (projId && isMounted) {
+          await fetchActiveProject(projId);
+          await fetchLogbookEntries(projId).catch(() => {});
+          await fetchReport(projId).catch(() => {});
+          await fetchPayments(projId).catch(() => {});
+        }
+      } catch (err) {
+        console.error('Failed to init project from database:', err);
+      }
+    };
+    initProject();
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchProjects, createProject, fetchActiveProject, fetchLogbookEntries, fetchReport, fetchPayments]);
 
+  // Synchronize state directly from active database project
   useEffect(() => {
-    if (activeProject) {
-      setDetails((prev) => ({
-        ...prev,
-        matric: prev.matric || activeProject.matric_number || '',
-        dept: prev.dept || activeProject.department || '',
-        fac: prev.fac || activeProject.faculty_school || 'College of Applied Sciences and Technology',
-        inst: prev.inst || activeProject.university_name || 'Lagos State University of Science and Technology',
-        co: prev.co || activeProject.organization_name || '',
-        addr: prev.addr || activeProject.organization_address || '',
-        start: prev.start || (activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : ''),
-        end: prev.end || (activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : ''),
-        sup: prev.sup || activeProject.industry_supervisor_name || '',
-        isup: prev.isup || activeProject.institution_supervisor_name || '',
-      }));
-    }
-  }, [activeProject]);
+    if (!activeProject) return;
 
-  // 1. Initial hydration: restore state from localStorage and synchronize with URL parameters
+    setDetails((prev) => ({
+      name: activeProject.full_name || prev.name || userFullName,
+      matric: activeProject.matric_number || prev.matric || '',
+      dept: activeProject.department || prev.dept || 'Computer Science',
+      fac: activeProject.faculty_school || prev.fac || 'College of Applied Sciences and Technology',
+      inst: activeProject.university_name || prev.inst || 'Lagos State University of Science and Technology',
+      co: activeProject.organization_name || prev.co || '',
+      addr: activeProject.organization_address || prev.addr || '',
+      unit: activeProject.industry_department || prev.unit || '',
+      start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : prev.start,
+      end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : prev.end,
+      sup: activeProject.industry_supervisor_name || prev.sup || '',
+      isup: activeProject.institution_supervisor_name || prev.isup || '',
+    }));
+
+    if (activeProject.source_documents && activeProject.source_documents.length > 0) {
+      setPages(
+        activeProject.source_documents.map((doc: any, i: number) => ({
+          id: doc.id,
+          n: doc.original_filename || `Page ${i + 1}`,
+          pdf: doc.file_type === 'pdf',
+          th: doc.file || '',
+          status: doc.status,
+        }))
+      );
+    }
+
+    if (activeProject.logbook_entries && activeProject.logbook_entries.length > 0) {
+      setEntries(
+        activeProject.logbook_entries.map((e: any) => ({
+          id: e.id,
+          w: e.week_number || 1,
+          t: e.verified_text || e.raw_text || e.activity_summary || '',
+          area: e.technical_area || 'Practical Engineering',
+          tools: e.tools_used || '',
+          u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
+          ph: e.department_unit || 'activity details',
+          ok: e.is_verified ? 1 : 0,
+        }))
+      );
+      setReadDone(true);
+    }
+  }, [activeProject, userFullName]);
+
+  // Synchronize compiled report sections from PostgreSQL
+  useEffect(() => {
+    if (dbReport && dbReport.sections && dbReport.sections.length > 0) {
+      setGenState(2);
+      const edits: Record<number, string> = {};
+      dbReport.sections.forEach((s: any, idx: number) => {
+        edits[idx] = s.content;
+      });
+      setChapterEdits(edits);
+    }
+  }, [dbReport]);
+
+  // Synchronize payment records directly from PostgreSQL
+  useEffect(() => {
+    if (payments && payments.length > 0) {
+      const digitalPaid = payments.find((p: any) => p.order_type === 'digital' && p.status === 'successful');
+      if (digitalPaid) {
+        setHasPaidDigital(true);
+      }
+      const deliveryPaid = payments.find((p: any) => p.order_type === 'physical_delivery' && p.status === 'successful');
+      if (deliveryPaid) {
+        setDeliveryData((prev) => ({
+          ...prev,
+          recipientName: deliveryPaid.recipient_name || prev.recipientName,
+          phone: deliveryPaid.phone_number || prev.phone,
+          campusLocation: deliveryPaid.campus_location || prev.campusLocation,
+          customAddress: deliveryPaid.custom_address || prev.customAddress,
+          deliveryDate: deliveryPaid.delivery_date ? deliveryPaid.delivery_date.slice(0, 10) : prev.deliveryDate,
+        }));
+      }
+    }
+  }, [payments]);
+
+  // Auto-save student details directly to database (debounced)
+  const detailsDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!isHydrated || !activeProject?.id) return;
+
+    if (detailsDebounceTimer.current) clearTimeout(detailsDebounceTimer.current);
+    detailsDebounceTimer.current = setTimeout(() => {
+      updateActiveProject(activeProject.id, {
+        full_name: details.name || undefined,
+        matric_number: details.matric || undefined,
+        department: details.dept || undefined,
+        faculty_school: details.fac || undefined,
+        university_name: details.inst || undefined,
+        organization_name: details.co || undefined,
+        organization_address: details.addr || undefined,
+        industry_department: details.unit || undefined,
+        training_start_date: details.start || undefined,
+        training_end_date: details.end || undefined,
+        industry_supervisor_name: details.sup || undefined,
+        institution_supervisor_name: details.isup || undefined,
+      }).catch(() => {});
+    }, 800);
+
+    return () => {
+      if (detailsDebounceTimer.current) clearTimeout(detailsDebounceTimer.current);
+    };
+  }, [details, activeProject?.id, isHydrated, updateActiveProject]);
+
+  // 1. Initial hydration: parse URL parameters and hash to set active screen/phase
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -297,45 +429,7 @@ export default function DashboardPage() {
     let restoredCheckout: 'digital' | 'delivery' | null = null;
     let restoredPaymentSuccess: any = null;
 
-    // A. Read saved state from localStorage
-    try {
-      const raw = localStorage.getItem('log2def_dashboard_state');
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (saved.details && typeof saved.details === 'object') {
-          setDetails((prev) => ({
-            ...prev,
-            ...saved.details,
-            name: saved.details.name?.trim() || prev.name,
-          }));
-        }
-        if (saved.fieldSources) setFieldSources(saved.fieldSources);
-        if (saved.answers) setAnswers(saved.answers);
-        if (saved.method) setMethod(saved.method);
-        if (Array.isArray(saved.pages) && saved.pages.length > 0) {
-          setPages(saved.pages);
-        }
-        if (typeof saved.readDone === 'boolean') setReadDone(saved.readDone);
-        if (Array.isArray(saved.entries) && saved.entries.length > 0) {
-          setEntries(saved.entries);
-        }
-        if (typeof saved.step === 'number') restoredStep = saved.step;
-        if (typeof saved.inFlow === 'boolean') restoredInFlow = saved.inFlow;
-        if (saved.currentTab) restoredTab = saved.currentTab;
-        if (saved.logbookView) restoredView = saved.logbookView;
-        if (typeof saved.genState === 'number') restoredGenState = saved.genState;
-        if (saved.chapterEdits) setChapterEdits(saved.chapterEdits);
-        if (typeof saved.currentSectionIdx === 'number') setCurrentSectionIdx(saved.currentSectionIdx);
-        if (saved.editorTab) setEditorTab(saved.editorTab);
-        if (typeof saved.hasPaidDigital === 'boolean') setHasPaidDigital(saved.hasPaidDigital);
-        if (saved.paymentSuccess) restoredPaymentSuccess = saved.paymentSuccess;
-        if (saved.deliveryData) setDeliveryData((prev) => ({ ...prev, ...saved.deliveryData }));
-      }
-    } catch (e) {
-      console.warn('Could not read state from localStorage:', e);
-    }
-
-    // B. Parse URL parameters and hash to determine the active screen/phase
+    // Parse URL parameters and hash to determine the active screen/phase
     const searchParams = new URLSearchParams(window.location.search);
     const hash = window.location.hash.replace('#/', '').replace('#', '').toLowerCase();
 
@@ -403,19 +497,15 @@ export default function DashboardPage() {
     }
 
     if (paramStatus === 'paid' || hash === 'payment-success') {
-      if (!restoredPaymentSuccess) {
-        restoredPaymentSuccess = {
-          type: 'digital',
-          txRef: `L2D_PAID_${Date.now().toString().slice(-6)}`,
-        };
-      }
+      restoredPaymentSuccess = {
+        type: 'digital',
+        txRef: `L2D_PAID_${Date.now().toString().slice(-6)}`,
+      };
     } else if (paramStatus === 'delivery-confirmed' || hash === 'delivery-success') {
-      if (!restoredPaymentSuccess) {
-        restoredPaymentSuccess = {
-          type: 'delivery',
-          txRef: `L2D_DEL_${Date.now().toString().slice(-6)}`,
-        };
-      }
+      restoredPaymentSuccess = {
+        type: 'delivery',
+        txRef: `L2D_DEL_${Date.now().toString().slice(-6)}`,
+      };
     }
 
     setStep(restoredStep);
@@ -428,71 +518,6 @@ export default function DashboardPage() {
 
     setIsHydrated(true);
   }, []);
-
-  // 2. Auto-save all state changes to localStorage so contents never clear upon refresh
-  useEffect(() => {
-    if (!isHydrated || typeof window === 'undefined') return;
-
-    const stateToSave = {
-      details,
-      fieldSources,
-      answers,
-      method,
-      pages: pages.map((p) => ({
-        n: p.n,
-        pdf: p.pdf,
-        th: p.th && p.th.length < 50000 ? p.th : '',
-        q: p.q,
-      })),
-      readDone,
-      entries,
-      step,
-      inFlow,
-      currentTab,
-      logbookView,
-      genState,
-      chapterEdits,
-      currentSectionIdx,
-      editorTab,
-      hasPaidDigital,
-      paymentSuccess,
-      deliveryData,
-    };
-
-    try {
-      localStorage.setItem('log2def_dashboard_state', JSON.stringify(stateToSave));
-    } catch {
-      try {
-        const lightweight = {
-          ...stateToSave,
-          pages: pages.map((p) => ({ n: p.n, pdf: p.pdf, q: p.q })),
-        };
-        localStorage.setItem('log2def_dashboard_state', JSON.stringify(lightweight));
-      } catch {
-        // storage quota full
-      }
-    }
-  }, [
-    isHydrated,
-    details,
-    fieldSources,
-    answers,
-    method,
-    pages,
-    readDone,
-    entries,
-    step,
-    inFlow,
-    currentTab,
-    logbookView,
-    genState,
-    chapterEdits,
-    currentSectionIdx,
-    editorTab,
-    hasPaidDigital,
-    paymentSuccess,
-    deliveryData,
-  ]);
 
   // 3. Keep the URL search parameters and hash updated across all phases, screens, and modals
   useEffect(() => {
@@ -683,70 +708,36 @@ export default function DashboardPage() {
     return hasMissing || badDate;
   };
 
-  // Populate mock OCR entries if empty
-  const populateEntries = () => {
-    const sampleEntries: LogEntry[] = [
-      {
-        w: 1,
-        t: 'Introduction to HTML. Learnt tags and created a simple webpage.',
-        area: 'Frontend Web Development',
-        tools: 'HTML',
-      },
-      {
-        w: 1,
-        t: 'CSS styling and worked on a login page.',
-        area: 'Frontend Web Development',
-        tools: 'CSS',
-      },
-      {
-        w: 2,
-        t: 'Built a to-do app using JavaScript and local storage.',
-        area: 'Frontend Web Development',
-        tools: 'JavaScript',
-        u: 1,
-        ph: 'local storage',
-      },
-      {
-        w: 3,
-        t: 'Version control with Git and GitHub.',
-        area: 'Software Engineering practice',
-        tools: 'Git, GitHub',
-      },
-      {
-        w: 4,
-        t: 'Worked on a team project, a company dashboard. Fixed layout bugs.',
-        area: 'Frontend Web Development',
-        tools: 'HTML, CSS',
-        u: 1,
-        ph: 'dashboard',
-      },
-      {
-        w: 5,
-        t: 'Deployed the project and wrote documentation.',
-        area: 'Software Engineering practice',
-        tools: 'Deployment tools',
-      },
-    ];
-
-    setEntries(sampleEntries);
-
-    if (!details.start) {
-      setDetails((prev) => ({ ...prev, start: '2026-01-12' }));
-      setFieldSources((prev) => ({ ...prev, start: 'logbook' }));
-    }
-    if (method === 'photos' && !details.co) {
-      setDetails((prev) => ({ ...prev, co: 'Sample Tech Ltd' }));
-      setFieldSources((prev) => ({ ...prev, co: 'logbook' }));
-    }
-  };
-
-  // Step 3 Reading simulation
-  const startReading = () => {
+  // Step 3 Reading logic: fetches real logbook entries from PostgreSQL database
+  const startReading = async () => {
     setReading(true);
     setReadProgress(0);
     const n = Math.max(pages.length, 1);
+
+    if (activeProject?.id) {
+      try {
+        const dbEntries = await fetchLogbookEntries(activeProject.id);
+        if (dbEntries && dbEntries.length > 0) {
+          setEntries(
+            dbEntries.map((e: any) => ({
+              id: e.id,
+              w: e.week_number || 1,
+              t: e.verified_text || e.raw_text || e.activity_summary || '',
+              area: e.technical_area || 'Practical Engineering',
+              tools: e.tools_used || '',
+              u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
+              ph: e.department_unit || 'activity details',
+              ok: e.is_verified ? 1 : 0,
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn('Could not fetch logbook entries from DB:', err);
+      }
+    }
+
     let p = 0;
-    const intervalTime = Math.max(120, Math.min(400, 4000 / n));
+    const intervalTime = Math.max(120, Math.min(400, 3000 / n));
 
     const iv = setInterval(() => {
       p++;
@@ -755,27 +746,40 @@ export default function DashboardPage() {
         clearInterval(iv);
         setReading(false);
         setReadDone(true);
-        populateEntries();
       }
     }, intervalTime);
   };
 
-  // Step 5 Report Generation
-  const startGenerating = () => {
+  // Step 5 Report Generation: triggers real generation in PostgreSQL
+  const startGenerating = async () => {
     setGenState(1);
     setGenProgress(0);
-    let g = 0;
+
     const iv = setInterval(() => {
-      g++;
-      setGenProgress(g);
-      if (g >= GS.length) {
-        clearInterval(iv);
-        setGenState(2);
-        if (activeProject?.id) {
-          storeGenerateReport(activeProject.id).catch(() => {});
+      setGenProgress((prev) => (prev < GS.length ? prev + 1 : prev));
+    }, 450);
+
+    try {
+      if (activeProject?.id) {
+        const rep = await storeGenerateReport(activeProject.id, true);
+        if (rep && rep.sections && rep.sections.length > 0) {
+          const edits: Record<number, string> = {};
+          rep.sections.forEach((sec: any, idx: number) => {
+            edits[idx] = sec.content;
+          });
+          setChapterEdits(edits);
         }
       }
-    }, 450);
+      clearInterval(iv);
+      setGenProgress(GS.length);
+      setGenState(2);
+      showToast('Institutional report compiled!');
+    } catch (err: any) {
+      clearInterval(iv);
+      setGenProgress(GS.length);
+      setGenState(2);
+      showToast(err.message || 'Report generated');
+    }
   };
 
   // Report chapter templates
@@ -804,7 +808,11 @@ export default function DashboardPage() {
   };
 
   const getSectionHtml = (i: number): string => {
-    return chapterEdits[i] !== undefined ? chapterEdits[i] : getSectionDefaultHtml(i);
+    if (chapterEdits[i] !== undefined) return chapterEdits[i];
+    if (dbReport && dbReport.sections && dbReport.sections[i]) {
+      return dbReport.sections[i].content || getSectionDefaultHtml(i);
+    }
+    return getSectionDefaultHtml(i);
   };
 
   // Academic Layout calculations
@@ -889,10 +897,12 @@ export default function DashboardPage() {
     });
   };
 
-  // File uploads
+  // File uploads directly to Neon S3 storage bucket and DB
   const handleFilesAdded = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const newItems: LogPage[] = [];
+
+    showToast(`Uploading ${files.length} document(s)...`);
 
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
@@ -909,11 +919,21 @@ export default function DashboardPage() {
         const fd = new FormData();
         fd.append('file', f);
         fd.append('page_index', String(pages.length + i));
-        uploadDocument(activeProject.id, fd).catch(() => {});
+        try {
+          await uploadDocument(activeProject.id, fd);
+        } catch (err: any) {
+          showToast(err.message || 'Upload failed');
+        }
       }
     }
 
-    setPages((prev) => [...prev, ...newItems]);
+    if (activeProject?.id) {
+      await fetchActiveProject(activeProject.id);
+      await fetchLogbookEntries(activeProject.id).catch(() => {});
+    } else {
+      setPages((prev) => [...prev, ...newItems]);
+    }
+    showToast('Upload complete!');
   };
 
   // In-app Camera
@@ -1018,6 +1038,26 @@ export default function DashboardPage() {
     setCameraFlash(true);
     setTimeout(() => setCameraFlash(false), 200);
 
+    // Save camera photo blob to S3 bucket & DB
+    c.toBlob(async (blob) => {
+      if (!blob) return;
+      const file = new File([blob], `camera_page_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      if (activeProject?.id) {
+        showToast('Saving photo to logbook...');
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('page_index', String(retakeIndex >= 0 ? retakeIndex : pages.length));
+        try {
+          await uploadDocument(activeProject.id, fd);
+          await fetchActiveProject(activeProject.id);
+          await fetchLogbookEntries(activeProject.id).catch(() => {});
+          showToast('Photo saved to logbook');
+        } catch (err: any) {
+          showToast(err.message || 'Failed to save photo');
+        }
+      }
+    }, 'image/jpeg', 0.85);
+
     if (retakeIndex >= 0) {
       setPages((prev) => {
         const copy = [...prev];
@@ -1034,87 +1074,119 @@ export default function DashboardPage() {
     }
   };
 
-  const movePage = (index: number, delta: number) => {
+  const movePage = async (index: number, delta: number) => {
     const target = index + delta;
     if (target < 0 || target >= pages.length) return;
-    setPages((prev) => {
-      const copy = [...prev];
-      const temp = copy[index];
-      copy[index] = copy[target];
-      copy[target] = temp;
-      return copy;
-    });
+    const reordered = [...pages];
+    const temp = reordered[index];
+    reordered[index] = reordered[target];
+    reordered[target] = temp;
+    setPages(reordered);
+
+    if (activeProject?.id) {
+      const orderPayload = reordered
+        .filter((p) => p.id !== undefined)
+        .map((p, idx) => ({ id: p.id as number, page_index: idx }));
+      if (orderPayload.length > 0) {
+        await reorderDocuments(activeProject.id, orderPayload).catch(() => {});
+      }
+    }
   };
 
-  const removePage = (index: number) => {
-    setPages((prev) => prev.filter((_, i) => i !== index));
+  const removePage = async (index: number) => {
+    const page = pages[index];
+    if (activeProject?.id && page?.id) {
+      try {
+        await deleteDocument(activeProject.id, page.id);
+        await fetchActiveProject(activeProject.id);
+        showToast('Page removed');
+      } catch (err: any) {
+        showToast(err.message || 'Failed to remove page');
+      }
+    } else {
+      setPages((prev) => prev.filter((_, i) => i !== index));
+    }
   };
 
   // ========================================================
-  // REAL DOWNLOAD EXECUTION (PDF / DOCX)
+  // REAL DOWNLOAD EXECUTION (PDF / DOCX FROM DATABASE)
   // ========================================================
   const executeRealFileDownload = async (format: 'PDF' | 'Word') => {
     try {
       if (activeProject?.id) {
+        showToast(`Generating ${format} download...`);
         if (format === 'Word') {
           await downloadDocx(activeProject.id);
         } else {
           await downloadPdf(activeProject.id);
         }
+        showToast(`Download started!`);
       } else {
-        const content = computeLayout().rows.map((r) => `<h1>${r.t}</h1>${r.h}`).join('<hr/>');
-        const blob = new Blob([content], {
-          type: format === 'Word' ? 'application/msword' : 'text/html',
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `SIWES_Technical_Report.${format === 'Word' ? 'doc' : 'html'}`;
-        a.click();
-        URL.revokeObjectURL(url);
+        showToast('No active project found for download');
       }
-    } catch {
-      const content = computeLayout().rows.map((r) => `<h1>${r.t}</h1>${r.h}`).join('<hr/>');
-      const blob = new Blob([content], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `SIWES_Technical_Report.html`;
-      a.click();
-      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      showToast(err.message || `Download failed. Check connection.`);
     }
-    showToast(`Downloading ${format} report...`);
   };
 
   // ========================================================
-  // PAYMENT COMPLETION HANDLERS
+  // PAYMENT COMPLETION HANDLERS (PERSISTED IN POSTGRESQL)
   // ========================================================
-  const processDigitalPayment = () => {
+  const processDigitalPayment = async () => {
     setIsProcessingPayment(true);
-    setTimeout(() => {
+    const txRef = `L2D_PAY_${Date.now().toString().slice(-6)}`;
+    try {
+      if (activeProject?.id) {
+        await recordPayment(activeProject.id, {
+          order_type: 'digital',
+          amount: '2000.00',
+          payment_method: paymentMethod,
+          transaction_reference: txRef,
+          status: 'successful',
+          recipient_name: details.name || userFullName,
+        });
+        await fetchPayments(activeProject.id).catch(() => {});
+      }
       setIsProcessingPayment(false);
       setHasPaidDigital(true);
       setCheckoutModal(null);
-      const txRef = `L2D_PAY_${Date.now().toString().slice(-6)}`;
       setPaymentSuccess({
         type: 'digital',
         txRef,
       });
       showToast('Payment confirmed! NGN 2,000');
-    }, 1200);
+    } catch (err: any) {
+      setIsProcessingPayment(false);
+      showToast(err.message || 'Payment recording failed');
+    }
   };
 
-  const processDeliveryPayment = () => {
+  const processDeliveryPayment = async () => {
     if (!deliveryData.phone.trim()) {
       showToast('Please enter your phone number');
       return;
     }
 
     setIsProcessingPayment(true);
-    setTimeout(() => {
+    const txRef = `L2D_DEL_${Date.now().toString().slice(-6)}`;
+    try {
+      if (activeProject?.id) {
+        await recordPayment(activeProject.id, {
+          order_type: 'physical_delivery',
+          amount: '4000.00',
+          payment_method: paymentMethod,
+          transaction_reference: txRef,
+          status: 'successful',
+          recipient_name: deliveryData.recipientName || details.name || userFullName,
+          phone_number: deliveryData.phone,
+          campus_location: deliveryData.campusLocation,
+          custom_address: deliveryData.customAddress,
+          delivery_date: deliveryData.deliveryDate || undefined,
+        });
+        await fetchPayments(activeProject.id).catch(() => {});
+      }
       setIsProcessingPayment(false);
       setCheckoutModal(null);
-      const txRef = `L2D_DEL_${Date.now().toString().slice(-6)}`;
       setPaymentSuccess({
         type: 'delivery',
         txRef,
@@ -1122,12 +1194,15 @@ export default function DashboardPage() {
           location: deliveryData.campusLocation,
           customAddress: deliveryData.customAddress,
           date: deliveryData.deliveryDate,
-          recipient: deliveryData.recipientName || details.name,
+          recipient: deliveryData.recipientName || details.name || userFullName,
           phone: deliveryData.phone,
         },
       });
       showToast('Delivery order confirmed! NGN 4,000');
-    }, 1200);
+    } catch (err: any) {
+      setIsProcessingPayment(false);
+      showToast(err.message || 'Delivery order failed');
+    }
   };
 
   // Step 1 Submission
@@ -1452,8 +1527,18 @@ export default function DashboardPage() {
                   const val = e.currentTarget.innerHTML;
                   setChapterEdits((prev) => ({ ...prev, [currentSectionIdx]: val }));
                   if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-                  saveTimerRef.current = setTimeout(() => {
+                  saveTimerRef.current = setTimeout(async () => {
                     setSaveStatusText('saved');
+                    if (activeProject?.id && dbReport?.sections) {
+                      const sec = dbReport.sections[currentSectionIdx];
+                      if (sec?.id) {
+                        try {
+                          await saveSection(activeProject.id, sec.id, val, sec.title);
+                        } catch (err) {
+                          console.warn('Failed to save section to DB:', err);
+                        }
+                      }
+                    }
                   }, 600);
                 }}
               />
@@ -1996,16 +2081,13 @@ export default function DashboardPage() {
 
         {/* 6. Storage & Account Actions */}
         <div className="settings-group">
-          <div className="settings-group-title">Account &amp; Storage</div>
+          <div className="settings-group-title">Account &amp; Project</div>
           <button
             className="btn o w"
             type="button"
             style={{ marginBottom: '10px' }}
-            onClick={() => {
-              if (typeof window !== 'undefined' && window.confirm('Clear all saved draft entries and start fresh?')) {
-                try {
-                  localStorage.removeItem('log2def_dashboard_state');
-                } catch {}
+            onClick={async () => {
+              if (typeof window !== 'undefined' && window.confirm('Reset this report project and start fresh?')) {
                 setDetails({
                   name: userFullName,
                   inst: 'Lagos State University of Science and Technology',
@@ -2030,14 +2112,25 @@ export default function DashboardPage() {
                 setInFlow(false);
                 setHasPaidDigital(false);
                 setPaymentSuccess(null);
-                showToast('Saved draft cleared');
+                if (activeProject?.id) {
+                  try {
+                    await updateActiveProject(activeProject.id, {
+                      matric_number: '',
+                      organization_name: '',
+                      organization_address: '',
+                      training_start_date: null,
+                      training_end_date: null,
+                    });
+                  } catch {}
+                }
+                showToast('Report project reset');
               }
             }}
           >
             <span className="ms" aria-hidden="true">
               restart_alt
             </span>
-            Clear draft &amp; start over
+            Reset project &amp; start over
           </button>
 
           <button
@@ -2045,9 +2138,6 @@ export default function DashboardPage() {
             type="button"
             onClick={() => {
               showToast('Logged out');
-              try {
-                localStorage.removeItem('log2def_dashboard_state');
-              } catch {}
               logout();
             }}
           >
@@ -2554,6 +2644,12 @@ export default function DashboardPage() {
                           copy[i] = { ...copy[i], t: val };
                           return copy;
                         });
+                        if (activeProject?.id && e.id) {
+                          updateLogbookEntry(activeProject.id, e.id, {
+                            verified_text: val,
+                            raw_text: val,
+                          }).catch(() => {});
+                        }
                       }}
                       style={{ minHeight: '84px', fontSize: '16px', borderRadius: '16px' }}
                     />
@@ -2567,9 +2663,15 @@ export default function DashboardPage() {
                     onClick={() => {
                       setEntries((prev) => {
                         const copy = [...prev];
-                        copy[i] = { ...copy[i], ok: 1 };
+                        copy[i] = { ...copy[i], ok: 1, u: 0 };
                         return copy;
                       });
+                      if (activeProject?.id && e.id) {
+                        updateLogbookEntry(activeProject.id, e.id, {
+                          is_verified: true,
+                          is_flagged: false,
+                        }).catch(() => {});
+                      }
                     }}
                   >
                     <span className="ms" aria-hidden="true">
@@ -2592,41 +2694,132 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <p className="gt">ALL ENTRIES</p>
-        <div className="card" style={{ padding: '4px 16px' }}>
-          {rest.map((e) => {
-            const i = entries.indexOf(e);
-            return (
-              <div key={i} className="en">
-                <div style={{ flex: 1 }}>
-                  <small>WEEK {e.w}</small>
-                  <p>{e.t}</p>
-                  <div className="row" style={{ marginTop: '6px', gap: '6px', flexWrap: 'wrap' }}>
-                    <span className="chip">
-                      <span className="ms" aria-hidden="true">
-                        menu_book
-                      </span>
-                      Recorded
-                    </span>
-                    <span className="chip" style={{ background: '#e6ecff', color: '#1d3fbf' }}>
-                      <span className="ms" aria-hidden="true">
-                        lightbulb
-                      </span>
-                      Inferred: {e.area}
-                    </span>
+        {entries.length === 0 ? (
+          <div className="card big" style={{ margin: '14px 0' }}>
+            <div className="ok">
+              <span className="ms" aria-hidden="true">
+                event_note
+              </span>
+            </div>
+            <h2>No entries recorded yet</h2>
+            <p>Upload your logbook pages or add a weekly activity directly to the database.</p>
+            <button
+              className="btn w"
+              type="button"
+              onClick={async () => {
+                if (activeProject?.id) {
+                  try {
+                    const newEntry = await createLogbookEntry(activeProject.id, {
+                      week_number: 1,
+                      verified_text: 'Completed introductory departmental orientation and engineering workstation configuration.',
+                      technical_area: 'Engineering Practice',
+                      tools_used: 'Workstation, Git, Terminal',
+                      is_verified: true,
+                    });
+                    setEntries([
+                      {
+                        id: newEntry.id,
+                        w: newEntry.week_number || 1,
+                        t: newEntry.verified_text || newEntry.raw_text || '',
+                        area: newEntry.technical_area || 'Engineering Practice',
+                        tools: newEntry.tools_used || '',
+                        ok: 1,
+                        u: 0,
+                      },
+                    ]);
+                    showToast('Week 1 entry created in database');
+                  } catch (err: any) {
+                    showToast(err.message || 'Failed to create entry');
+                  }
+                }
+              }}
+              style={{ marginTop: '16px' }}
+            >
+              <span className="ms" aria-hidden="true">
+                add
+              </span>
+              Add Week 1 Entry
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="gt">ALL ENTRIES ({entries.length})</p>
+            <div className="card" style={{ padding: '4px 16px' }}>
+              {rest.map((e) => {
+                const i = entries.indexOf(e);
+                return (
+                  <div key={i} className="en">
+                    <div style={{ flex: 1 }}>
+                      <small>WEEK {e.w}</small>
+                      <p>{e.t}</p>
+                      <div className="row" style={{ marginTop: '6px', gap: '6px', flexWrap: 'wrap' }}>
+                        <span className="chip">
+                          <span className="ms" aria-hidden="true">
+                            menu_book
+                          </span>
+                          Recorded
+                        </span>
+                        <span className="chip" style={{ background: '#e6ecff', color: '#1d3fbf' }}>
+                          <span className="ms" aria-hidden="true">
+                            lightbulb
+                          </span>
+                          Inferred: {e.area}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      className="tx"
+                      type="button"
+                      onClick={() => setActiveSheet({ type: 'editWeek', index: i })}
+                    >
+                      Edit
+                    </button>
                   </div>
-                </div>
-                <button
-                  className="tx"
-                  type="button"
-                  onClick={() => setActiveSheet({ type: 'editWeek', index: i })}
-                >
-                  Edit
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+
+            <button
+              className="btn o w s"
+              type="button"
+              onClick={async () => {
+                if (activeProject?.id) {
+                  try {
+                    const nextWeek = entries.length + 1;
+                    const newEntry = await createLogbookEntry(activeProject.id, {
+                      week_number: nextWeek,
+                      verified_text: `Week ${nextWeek} technical tasks, system implementation, and supervisory review.`,
+                      technical_area: 'Engineering Practice',
+                      tools_used: 'Engineering Tools',
+                      is_verified: true,
+                    });
+                    setEntries((prev) => [
+                      ...prev,
+                      {
+                        id: newEntry.id,
+                        w: nextWeek,
+                        t: newEntry.verified_text || '',
+                        area: newEntry.technical_area || 'Engineering Practice',
+                        tools: newEntry.tools_used || '',
+                        ok: 1,
+                        u: 0,
+                      },
+                    ]);
+                    showToast(`Week ${nextWeek} entry added`);
+                  } catch (err: any) {
+                    showToast(err.message || 'Failed to add entry');
+                  }
+                }
+              }}
+              style={{ marginTop: '12px' }}
+            >
+              <span className="ms" aria-hidden="true">
+                add
+              </span>
+              Add another week
+            </button>
+          </>
+        )}
       </div>
     );
   };
@@ -3022,10 +3215,20 @@ export default function DashboardPage() {
           type="button"
           id="c4"
           disabled={isStep4Invalid()}
-          onClick={() => {
+          onClick={async () => {
             Object.entries(answers).forEach(([k, v]) => {
               if (v) setDetails((prev) => ({ ...prev, [k]: v }));
             });
+            if (activeProject?.id) {
+              await updateMissingInfo(activeProject.id, answers).catch(() => {});
+              await updateActiveProject(activeProject.id, {
+                organization_address: answers.addr || details.addr || undefined,
+                training_start_date: answers.start || details.start || undefined,
+                training_end_date: answers.end || details.end || undefined,
+                industry_supervisor_name: answers.sup || details.sup || undefined,
+                institution_supervisor_name: answers.isup || details.isup || undefined,
+              }).catch(() => {});
+            }
             setStep(5);
             if (scrRef.current) scrRef.current.scrollTop = 0;
           }}
@@ -3104,6 +3307,12 @@ export default function DashboardPage() {
                   copy[activeSheet.index] = { ...copy[activeSheet.index], t: val };
                   return copy;
                 });
+                if (activeProject?.id && entry?.id) {
+                  updateLogbookEntry(activeProject.id, entry.id, {
+                    verified_text: val,
+                    raw_text: val,
+                  }).catch(() => {});
+                }
               }}
             />
           </div>

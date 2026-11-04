@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, StudentProfile
+    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder
 )
 
 
@@ -355,3 +355,17 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user.set_password(self.validated_data['password'])
         user.save()
         return user
+
+
+class PaymentOrderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentOrder
+        fields = [
+            'id', 'project', 'user', 'order_type', 'amount',
+            'payment_method', 'transaction_reference', 'status',
+            'recipient_name', 'phone_number', 'campus_location',
+            'custom_address', 'delivery_date', 'notes',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+

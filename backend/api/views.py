@@ -24,7 +24,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiPara
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession
+    DefenceQuestion, DefenceSession, PaymentOrder
 )
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from .serializers import (
@@ -41,7 +41,8 @@ from .serializers import (
     BulkVerifyRequestSerializer, SectionUpdateRequestSerializer,
     ExportStatusRequestSerializer, ExportStatusResponseSerializer,
     DefenceQuestionUpdateRequestSerializer, AIStatusResponseSerializer,
-    PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+    PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
+    PaymentOrderSerializer
 )
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
@@ -1421,3 +1422,31 @@ class DefenceScriptView(views.APIView):
             "estimated_duration_minutes": 7,
             "project_title": project.title
         })
+
+
+class PaymentOrderListCreateView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Payment & Delivery'],
+        summary='List payment orders for this project',
+        responses={200: PaymentOrderSerializer(many=True)}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        orders = project.payment_orders.all()
+        return Response(PaymentOrderSerializer(orders, many=True).data)
+
+    @extend_schema(
+        tags=['Payment & Delivery'],
+        summary='Record a payment or delivery order in database',
+        request=PaymentOrderSerializer,
+        responses={201: PaymentOrderSerializer}
+    )
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        serializer = PaymentOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = serializer.save(user=request.user, project=project)
+        return Response(PaymentOrderSerializer(order).data, status=status.HTTP_201_CREATED)
+

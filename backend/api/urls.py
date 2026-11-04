@@ -11,7 +11,7 @@ from .views import (
     ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
-    DefenceSlidesView, DefenceScriptView
+    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView
 )
 
 urlpatterns = [
@@ -77,6 +77,10 @@ urlpatterns = [
     path('projects/<int:project_id>/export/status', ExportStatusView.as_view()),
     path('projects/<int:project_id>/export/download/', ExportDownloadView.as_view(), name='export-download'),
     path('projects/<int:project_id>/export/download', ExportDownloadView.as_view()),
+
+    # Payment & Delivery Orders
+    path('projects/<int:project_id>/payments/', PaymentOrderListCreateView.as_view(), name='project-payments'),
+    path('projects/<int:project_id>/payments', PaymentOrderListCreateView.as_view()),
 
     # Defence Preparation
     path('projects/<int:project_id>/defence/generate/', DefenceGenerateView.as_view(), name='defence-generate'),

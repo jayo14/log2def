@@ -35,6 +35,11 @@ export interface ProjectState {
   deleteLogbookEntry: (projectId: number | string, entryId: number | string) => Promise<void>;
   bulkVerifyEntries: (projectId: number | string, entryIds?: number[]) => Promise<any>;
 
+  // Payment orders
+  payments: any[];
+  fetchPayments: (projectId: number | string) => Promise<any[]>;
+  recordPayment: (projectId: number | string, data: any) => Promise<any>;
+
   clearActiveProject: () => void;
   setError: (error: string | null) => void;
 }
@@ -43,6 +48,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   activeProject: null,
   completeness: null,
+  payments: [],
   isLoadingProjects: false,
   isLoadingActiveProject: false,
   isLoadingCompleteness: false,
@@ -282,6 +288,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return res;
     } catch (err: any) {
       set({ error: err.message || 'Failed to bulk verify entries' });
+      throw err;
+    }
+  },
+
+  fetchPayments: async (projectId: number | string) => {
+    try {
+      const data = await projectsApi.getPayments(projectId);
+      set({ payments: data });
+      return data;
+    } catch (err: any) {
+      console.warn('Failed to load payments:', err);
+      return [];
+    }
+  },
+
+  recordPayment: async (projectId: number | string, data: any) => {
+    try {
+      const created = await projectsApi.createPayment(projectId, data);
+      set((state) => ({ payments: [created, ...state.payments] }));
+      return created;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to record payment' });
       throw err;
     }
   },
