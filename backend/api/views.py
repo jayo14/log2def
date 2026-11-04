@@ -700,16 +700,101 @@ class ReportGenerateView(views.APIView):
     @extend_schema(
         tags=['Report & Sections'],
         summary='Generate complete 5-chapter SIWES report',
-        description='Builds all 5 chapters, front matter, tables, and back matter using verified logbook entries.',
+        description='Builds all 5 chapters, front matter, tables, and back matter using verified logbook entries. Blocks generation if required fields are missing.',
         request=ReportGenerateRequestSerializer,
-        responses={200: ReportSerializer}
+        responses={200: ReportSerializer, 400: OpenApiResponse(description="Missing required fields or invalid dates")}
     )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
+        
+        # Block generation while essential required information is missing or dates invalid
+        from .completeness import check_project_completeness
+        completeness = check_project_completeness(project)
+        if not completeness['can_generate']:
+            missing_labels = [
+                completeness['fields'][k]['label'] 
+                for k in completeness['missing_required_fields'] 
+                if k in completeness['fields']
+            ]
+            return Response({
+                "error": "Cannot generate report: essential required information is missing or training dates are invalid.",
+                "missing_required_fields": completeness['missing_required_fields'],
+                "missing_labels": missing_labels,
+                "date_validation": completeness['date_validation'],
+                "completeness": completeness,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         force_all_val = request.data.get('force_all', False)
         force_all = force_all_val is True or str(force_all_val).lower() in ['true', '1']
         report = generate_full_report(project, force_all=force_all)
         return Response(ReportSerializer(report).data)
+
+
+class ProjectCompletenessView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Projects'],
+        summary='Get project completeness status and missing information checklist',
+        description='Evaluates project against institutional report template requirements and returns Found/Missing/Uncertain per field.',
+        responses={200: OpenApiResponse(response=OpenApiTypes.OBJECT)}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        from .completeness import check_project_completeness
+        return Response(check_project_completeness(project), status=status.HTTP_200_OK)
+
+
+class MissingInfoUpdateView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Projects'],
+        summary='Update missing information targeted fields',
+        description='Updates specific missing required fields (e.g. company address, training dates, department unit) without sending a full profile form.',
+        responses={200: OpenApiResponse(response=OpenApiTypes.OBJECT), 400: OpenApiResponse(description="Validation error")}
+    )
+    def patch(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        data = request.data
+        
+        field_mapping = {
+            'full_name': 'full_name',
+            'matric_number': 'matric_number',
+            'university_name': 'university_name',
+            'institution': 'university_name',
+            'faculty': 'faculty_school',
+            'department': 'department',
+            'organization_name': 'organization_name',
+            'company_name': 'organization_name',
+            'organization_address': 'organization_address',
+            'company_address': 'organization_address',
+            'training_start_date': 'training_start_date',
+            'start_date': 'training_start_date',
+            'training_end_date': 'training_end_date',
+            'end_date': 'training_end_date',
+            'placement_department': 'placement_department',
+            'department_unit': 'placement_department',
+            'industry_supervisor_name': 'industry_supervisor_name',
+            'industry_supervisor': 'industry_supervisor_name',
+            'academic_supervisor_name': 'academic_supervisor_name',
+            'institution_supervisor': 'academic_supervisor_name',
+        }
+
+        from datetime import date
+        for key, val in data.items():
+            if key in field_mapping:
+                target_field = field_mapping[key]
+                if target_field in ['training_start_date', 'training_end_date'] and val:
+                    try:
+                        val = date.fromisoformat(str(val))
+                    except ValueError:
+                        return Response({"error": f"Invalid date format for '{key}'. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+                setattr(project, target_field, val)
+
+        project.save()
+        from .completeness import check_project_completeness
+        return Response(check_project_completeness(project), status=status.HTTP_200_OK)
 
 
 @require_feature_flag('report_editor')

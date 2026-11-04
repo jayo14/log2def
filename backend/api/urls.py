@@ -3,7 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView, LoginView, CurrentUserView, AIStatusView, FeatureFlagsView,
     PasswordResetRequestView, PasswordResetConfirmView,
-    ProjectListCreateView, ProjectDetailView, GuidelineUploadView,
+    ProjectListCreateView, ProjectDetailView, ProjectCompletenessView, MissingInfoUpdateView, GuidelineUploadView,
     DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
@@ -36,6 +36,8 @@ urlpatterns = [
     path('projects/', ProjectListCreateView.as_view(), name='project-list-create'),
     path('projects', ProjectListCreateView.as_view()),
     path('projects/<int:pk>/', ProjectDetailView.as_view(), name='project-detail'),
+    path('projects/<int:project_id>/completeness/', ProjectCompletenessView.as_view(), name='project-completeness'),
+    path('projects/<int:project_id>/missing-info/', MissingInfoUpdateView.as_view(), name='project-missing-info'),
     path('projects/<int:project_id>/upload-guideline/', GuidelineUploadView.as_view(), name='project-upload-guideline'),
 
     # Documents & Pages
