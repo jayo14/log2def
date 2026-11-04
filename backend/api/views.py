@@ -30,6 +30,7 @@ from .serializers import (
     SourceDocumentSerializer, ExtractedPageSerializer,
     LogbookEntrySerializer, ReportSerializer, ReportSectionSerializer,
     ReportVersionSerializer, ReportVersionCreateRequestSerializer,
+    ReportTemplateSerializer,
     PresentationSlidesResponseSerializer, PresentationScriptResponseSerializer,
     DefenceQuestionSerializer, DefenceSessionSerializer,
     DocumentUploadRequestSerializer, DocumentReorderRequestSerializer,
@@ -673,6 +674,22 @@ class LogbookBulkVerifyView(views.APIView):
         else:
             project.logbook_entries.all().update(is_verified=True)
         return Response({"message": "Logbook entries verified."})
+
+
+class TemplateListView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Templates'],
+        summary='List versioned report templates',
+        description='Returns available institutional report templates with formatting specs and required fields.',
+        responses={200: ReportTemplateSerializer(many=True)}
+    )
+    def get(self, request):
+        from .templates import ensure_default_template_in_db
+        ensure_default_template_in_db()
+        templates = ReportTemplate.objects.all().order_by('code', '-version')
+        return Response(ReportTemplateSerializer(templates, many=True).data)
 
 
 # --- Report & Sections Views ---

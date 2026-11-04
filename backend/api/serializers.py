@@ -136,6 +136,12 @@ class ReportVersionSerializer(serializers.ModelSerializer):
         read_only_fields = ('version_number', 'created_at')
 
 
+class ReportTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReportTemplate
+        fields = '__all__'
+
+
 class ReportSerializer(serializers.ModelSerializer):
     sections = ReportSectionSerializer(many=True, read_only=True)
     versions = ReportVersionSerializer(many=True, read_only=True)

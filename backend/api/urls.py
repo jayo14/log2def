@@ -6,6 +6,7 @@ from .views import (
     ProjectListCreateView, ProjectDetailView, ProjectCompletenessView, MissingInfoUpdateView, GuidelineUploadView,
     DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
+    TemplateListView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
     ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView,
@@ -54,6 +55,10 @@ urlpatterns = [
     path('projects/<int:project_id>/logbook-entries/', LogbookEntryListCreateView.as_view(), name='logbook-entries'),
     path('projects/<int:project_id>/logbook-entries/<int:entry_id>/', LogbookEntryDetailView.as_view(), name='logbook-entry-detail'),
     path('projects/<int:project_id>/logbook-entries/bulk-verify/', LogbookBulkVerifyView.as_view(), name='logbook-bulk-verify'),
+
+    # Templates
+    path('templates/', TemplateListView.as_view(), name='template-list'),
+    path('templates', TemplateListView.as_view()),
 
     # Report & Sections
     path('projects/<int:project_id>/report/', ReportDetailView.as_view(), name='report-detail'),
