@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, useTransition } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { useFeatureFlags } from '@/lib/feature-flags';
 import './landing.css';
 
 interface SampleReport {
@@ -104,6 +105,12 @@ const DEFENCE_QUESTIONS = [
 
 export default function LandingPage() {
   const { user } = useAuth();
+  const { isEnabled: isFeatureEnabled, fetchFlags: fetchFeatureFlags } = useFeatureFlags();
+  const isDefenceEnabled = isFeatureEnabled('defence_preparation');
+
+  useEffect(() => {
+    fetchFeatureFlags();
+  }, [fetchFeatureFlags]);
 
   // Scroll Progress Bar
   const barRef = useRef<HTMLDivElement>(null);
@@ -268,7 +275,7 @@ export default function LandingPage() {
           <a href="#how">How it works</a>
           <a href="#features">Features</a>
           <a href="#reports">Reports</a>
-          <a href="#defence">Mock defence</a>
+          {isDefenceEnabled && <a href="#defence">Mock defence</a>}
           <a href="#faq">FAQ</a>
         </div>
         <Link className="btn p" href={authTarget}>
@@ -847,46 +854,48 @@ export default function LandingPage() {
       </section>
 
       {/* Defence Q&A Section */}
-      <section id="defence" style={{ paddingTop: 0 }}>
-        <div className="wrap def">
-          <div>
-            <h2 className="h2">Walk into the room already rehearsed.</h2>
-            <p className="sub">
-              Questions on tasks, tools, troubleshooting and examiner cross-examination, all drawn from your own report.
-            </p>
-          </div>
-          <div className="qcard">
-            <span className="tag" id="qt">
-              {DEFENCE_QUESTIONS[qIndex][0]}
-            </span>
-            <h3 id="qq">{DEFENCE_QUESTIONS[qIndex][1]}</h3>
-            <p className={`hint ${hintOpen ? 'on' : ''}`} id="qh">
-              {DEFENCE_QUESTIONS[qIndex][2]}
-            </p>
-            <div className="row">
-              <button
-                className="btn p"
-                id="rev"
-                type="button"
-                onClick={() => setHintOpen((prev) => !prev)}
-              >
-                {hintOpen ? 'Hide answer guidance' : 'Show how to answer'}
-              </button>
-              <button
-                className="btn g"
-                id="nxt"
-                type="button"
-                onClick={() => {
-                  setQIndex((prev) => (prev + 1) % DEFENCE_QUESTIONS.length);
-                  setHintOpen(false);
-                }}
-              >
-                Next question
-              </button>
+      {isDefenceEnabled && (
+        <section id="defence" style={{ paddingTop: 0 }}>
+          <div className="wrap def">
+            <div>
+              <h2 className="h2">Walk into the room already rehearsed.</h2>
+              <p className="sub">
+                Questions on tasks, tools, troubleshooting and examiner cross-examination, all drawn from your own report.
+              </p>
+            </div>
+            <div className="qcard">
+              <span className="tag" id="qt">
+                {DEFENCE_QUESTIONS[qIndex][0]}
+              </span>
+              <h3 id="qq">{DEFENCE_QUESTIONS[qIndex][1]}</h3>
+              <p className={`hint ${hintOpen ? 'on' : ''}`} id="qh">
+                {DEFENCE_QUESTIONS[qIndex][2]}
+              </p>
+              <div className="row">
+                <button
+                  className="btn p"
+                  id="rev"
+                  type="button"
+                  onClick={() => setHintOpen((prev) => !prev)}
+                >
+                  {hintOpen ? 'Hide answer guidance' : 'Show how to answer'}
+                </button>
+                <button
+                  className="btn g"
+                  id="nxt"
+                  type="button"
+                  onClick={() => {
+                    setQIndex((prev) => (prev + 1) % DEFENCE_QUESTIONS.length);
+                    setHintOpen(false);
+                  }}
+                >
+                  Next question
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* FAQ Accordion Section */}
       <section id="faq" style={{ paddingTop: 0 }}>
@@ -965,9 +974,11 @@ export default function LandingPage() {
                 <li>
                   <a href="#reports">Sample reports</a>
                 </li>
-                <li>
-                  <a href="#defence">Mock defence</a>
-                </li>
+                {isDefenceEnabled && (
+                  <li>
+                    <a href="#defence">Mock defence</a>
+                  </li>
+                )}
               </ul>
             </div>
             <div>
