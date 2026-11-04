@@ -92,14 +92,21 @@ class ReportProject(models.Model):
 
 class ReportTemplate(models.Model):
     name = models.CharField(max_length=255)
-    code = models.CharField(max_length=64, unique=True)
+    code = models.CharField(max_length=64)
+    version = models.CharField(max_length=32, default='1.0.0')
     description = models.TextField(blank=True)
     is_default = models.BooleanField(default=False)
-    structure = models.JSONField(default=dict)
+    required_fields = models.JSONField(default=list, blank=True)
+    section_order = models.JSONField(default=list, blank=True)
+    formatting_spec = models.JSONField(default=dict, blank=True)
+    structure = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = ('code', 'version')
+
     def __str__(self):
-        return self.name
+        return f"{self.name} (v{self.version})"
 
 
 def source_doc_path(instance, filename):
@@ -224,6 +231,11 @@ class LogbookEntry(models.Model):
 class Report(models.Model):
     project = models.OneToOneField(ReportProject, on_delete=models.CASCADE, related_name='report')
     template = models.ForeignKey(ReportTemplate, on_delete=models.SET_NULL, null=True, blank=True)
+    template_version = models.CharField(max_length=64, default='lasustech-standard:1.0.0')
+    template_snapshot = models.JSONField(default=dict, blank=True)
+    estimated_pages = models.IntegerField(default=1)
+    page_estimate_breakdown = models.JSONField(default=dict, blank=True)
+    readiness_feedback = models.JSONField(default=list, blank=True)
     title = models.CharField(max_length=255, default='SIWES Technical Report')
     version = models.IntegerField(default=1)
     docx_file = models.FileField(upload_to=f'projects/exports/docx/', null=True, blank=True)
