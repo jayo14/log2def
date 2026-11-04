@@ -2022,3 +2022,264 @@
     break-after: page !important;
   }
 }
+
+/* ==========================================================================
+   Continuous 6-Step MVP Workflow Components
+   ========================================================================== */
+
+/* 6-Step Journey Indicator */
+.dashboard-root .journey-container {
+  background: var(--card);
+  border-radius: 24px;
+  padding: 16px 18px;
+  box-shadow: 0 0 0 1px var(--line);
+  margin-bottom: 16px;
+}
+
+.dashboard-root .journey-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.dashboard-root .journey-title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--mut);
+}
+
+.dashboard-root .journey-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 800;
+  background: var(--mint);
+  color: var(--g);
+}
+
+.dashboard-root .journey-steps {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.dashboard-root .journey-step-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 6px 2px;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.15s;
+}
+
+.dashboard-root .journey-step-btn:hover {
+  background: rgba(6, 107, 77, 0.05);
+}
+
+.dashboard-root .journey-step-bubble {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  background: var(--paper);
+  color: var(--mut);
+  box-shadow: 0 0 0 1px var(--line);
+  transition: all 0.2s;
+}
+
+.dashboard-root .journey-step-btn.completed .journey-step-bubble {
+  background: var(--mint);
+  color: var(--g);
+  box-shadow: 0 0 0 1px rgba(6, 107, 77, 0.3);
+}
+
+.dashboard-root .journey-step-btn.active .journey-step-bubble {
+  background: var(--g);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(6, 107, 77, 0.25);
+  transform: scale(1.08);
+}
+
+.dashboard-root .journey-step-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--mut);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.dashboard-root .journey-step-btn.active .journey-step-label {
+  color: var(--g);
+  font-weight: 800;
+}
+
+/* Affirmation Card */
+.dashboard-root .affirmation-card {
+  background: linear-gradient(145deg, #f0f9f5, #e6f5ee);
+  border-radius: 24px;
+  padding: 20px 22px;
+  border: 1px solid rgba(6, 107, 77, 0.22);
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-root .affirmation-card::before {
+  content: '';
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(15, 163, 122, 0.15), transparent 70%);
+  pointer-events: none;
+}
+
+.dashboard-root .affirmation-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.dashboard-root .affirmation-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  background: var(--g);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.dashboard-root .affirmation-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--gd);
+  margin: 0;
+}
+
+.dashboard-root .affirmation-desc {
+  font-size: 13.5px;
+  color: #214335;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.dashboard-root .affirmation-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dashboard-root .affirmation-stat-chip {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(6, 107, 77, 0.18);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-root .affirmation-stat-chip span {
+  font-size: 11px;
+  color: var(--mut);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.dashboard-root .affirmation-stat-chip strong {
+  font-size: 14px;
+  color: var(--gd);
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+/* Document Generation Progress Box */
+.dashboard-root .gen-progress-box {
+  background: var(--card);
+  border-radius: 24px;
+  padding: 26px 20px;
+  box-shadow: 0 0 0 1px var(--line);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.dashboard-root .gen-spinner {
+  width: 52px;
+  height: 52px;
+  border: 4px solid var(--mint);
+  border-top-color: var(--g);
+  border-radius: 50%;
+  animation: spin 0.9s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-root .gen-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--ink);
+}
+
+.dashboard-root .gen-subtitle {
+  font-size: 13.5px;
+  color: var(--mut);
+  max-width: 380px;
+  margin: 0 auto 18px;
+  line-height: 1.5;
+}
+
+.dashboard-root .gen-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.dashboard-root .gen-step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+
+.dashboard-root .gen-step-item.done {
+  background: var(--mint);
+  border-color: rgba(6, 107, 77, 0.2);
+  color: var(--gd);
+  font-weight: 600;
+}
+
