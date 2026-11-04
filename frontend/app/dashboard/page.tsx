@@ -48,12 +48,29 @@ const FLD: [string, string][] = [
   ['name', 'Full name'],
   ['matric', 'Matric number'],
   ['dept', 'Department'],
-  ['fac', 'Faculty or school'],
+  ['fac', 'Faculty or College'],
   ['inst', 'Institution'],
   ['co', 'Company'],
   ['addr', 'Company address'],
   ['start', 'Training start date'],
   ['end', 'Training end date'],
+];
+
+const COLLEGES = [
+  'College of Basic Science',
+  'College of Engineering',
+  'College of Applied Arts',
+  'College of Environmental Technology',
+  'College of Applied Sciences and Technology',
+  'College of Agriculture',
+  'College of Management Sciences',
+  'College of Information and Communications Technology',
+  'Other',
+];
+
+const INSTITUTIONS = [
+  'Lagos State University of Science and Technology',
+  'Other',
 ];
 
 interface LogPage {
@@ -108,7 +125,7 @@ export default function DashboardPage() {
 
   const [details, setDetails] = useState<Record<string, string>>({
     name: userFullName,
-    inst: 'Lagos State University of Science and Technology (LASUSTECH)',
+    inst: 'Lagos State University of Science and Technology',
     fac: 'College of Applied Sciences and Technology',
     dept: '',
     matric: '',
@@ -1034,7 +1051,11 @@ export default function DashboardPage() {
         <div className="card">
           <b>Institution</b>
           <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
-            Lagos State University of Science and Technology (LASUSTECH)
+            {details.inst || 'Lagos State University of Science and Technology'}
+          </p>
+          <b style={{ display: 'block', marginTop: '14px' }}>Faculty or College</b>
+          <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
+            {details.fac || 'College of Applied Sciences and Technology'}
           </p>
           <b style={{ display: 'block', marginTop: '14px' }}>Report template</b>
           <p className="mut" style={{ fontSize: '14px', marginTop: '4px' }}>
@@ -1154,18 +1175,33 @@ export default function DashboardPage() {
 
               <div className="f" data-f="fac">
                 <label htmlFor="fac">
-                  Faculty or school <em aria-hidden="true">*</em>
+                  Faculty or College <em aria-hidden="true">*</em>
                 </label>
-                <input
+                <select
                   id="fac"
                   name="fac"
-                  type="text"
-                  value={details.fac || ''}
+                  value={details.fac || 'College of Applied Sciences and Technology'}
                   onChange={(e) => setDetails((prev) => ({ ...prev, fac: e.target.value }))}
                   required
-                />
+                >
+                  {COLLEGES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                {details.fac === 'Other' && (
+                  <input
+                    type="text"
+                    placeholder="Enter your Faculty or College"
+                    value={details.customFac || ''}
+                    onChange={(e) => setDetails((prev) => ({ ...prev, customFac: e.target.value }))}
+                    style={{ marginTop: '8px' }}
+                    required
+                  />
+                )}
                 <p className="err" id="fac-e" hidden={Boolean(details.fac?.trim())}>
-                  Please fill this in.
+                  Please select your faculty or college.
                 </p>
               </div>
 
@@ -1173,14 +1209,45 @@ export default function DashboardPage() {
                 <label htmlFor="inst">
                   Institution <em aria-hidden="true">*</em>
                 </label>
-                <input
+                <select
                   id="inst"
                   name="inst"
-                  type="text"
-                  value={details.inst || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, inst: e.target.value }))}
+                  value={
+                    details.inst === 'Lagos State University of Science and Technology'
+                      ? 'Lagos State University of Science and Technology'
+                      : 'Other'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === 'Other') {
+                      setDetails((prev) => ({ ...prev, inst: prev.customInst || 'Other' }));
+                    } else {
+                      setDetails((prev) => ({ ...prev, inst: val }));
+                    }
+                  }}
                   required
-                />
+                >
+                  {INSTITUTIONS.map((instOption) => (
+                    <option key={instOption} value={instOption}>
+                      {instOption}
+                    </option>
+                  ))}
+                </select>
+                {(details.inst === 'Other' ||
+                  (details.inst &&
+                    details.inst !== 'Lagos State University of Science and Technology' &&
+                    details.inst !== 'Lagos State University of Science and Technology (LASUSTECH)')) && (
+                  <input
+                    type="text"
+                    placeholder="Enter your institution name"
+                    value={details.inst === 'Other' ? '' : details.inst}
+                    onChange={(e) =>
+                      setDetails((prev) => ({ ...prev, inst: e.target.value, customInst: e.target.value }))
+                    }
+                    style={{ marginTop: '8px' }}
+                    required
+                  />
+                )}
                 <p className="err" id="inst-e" hidden={Boolean(details.inst?.trim())}>
                   Please fill this in.
                 </p>
@@ -1621,6 +1688,61 @@ export default function DashboardPage() {
             }
 
             const isDate = x.key === 'start' || x.key === 'end';
+            if (x.key === 'fac') {
+              return (
+                <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
+                  <label htmlFor={`a_${x.key}`}>
+                    {x.label} <em aria-hidden="true">*</em>
+                    <span className="chip w" style={{ marginLeft: '6px' }}>
+                      <span className="ms" aria-hidden="true">
+                        error
+                      </span>
+                      Missing
+                    </span>
+                  </label>
+                  <select
+                    id={`a_${x.key}`}
+                    value={answers[x.key] || ''}
+                    onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
+                    required
+                  >
+                    <option value="" disabled>Select your faculty or college</option>
+                    {COLLEGES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            if (x.key === 'inst') {
+              return (
+                <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
+                  <label htmlFor={`a_${x.key}`}>
+                    {x.label} <em aria-hidden="true">*</em>
+                    <span className="chip w" style={{ marginLeft: '6px' }}>
+                      <span className="ms" aria-hidden="true">
+                        error
+                      </span>
+                      Missing
+                    </span>
+                  </label>
+                  <select
+                    id={`a_${x.key}`}
+                    value={answers[x.key] || 'Lagos State University of Science and Technology'}
+                    onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
+                    required
+                  >
+                    {INSTITUTIONS.map((instOption) => (
+                      <option key={instOption} value={instOption}>
+                        {instOption}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
             return (
               <div key={x.key} className="f" style={{ margin: '12px 0 14px' }}>
                 <label htmlFor={`a_${x.key}`}>
@@ -2105,25 +2227,75 @@ export default function DashboardPage() {
 
     if (activeSheet.type === 'editField') {
       const isDate = activeSheet.key === 'start' || activeSheet.key === 'end';
+      const isFac = activeSheet.key === 'fac';
+      const isInst = activeSheet.key === 'inst';
       return (
         <>
           <h2>{activeSheet.label}</h2>
           <div className="f">
-            <input
-              id="fv"
-              aria-label={activeSheet.label}
-              type={isDate ? 'date' : 'text'}
-              defaultValue={getVal(activeSheet.key)}
-              onChange={(e) => {
-                const val = e.target.value.trim();
-                setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
-                setAnswers((prev) => {
-                  const copy = { ...prev };
-                  delete copy[activeSheet.key];
-                  return copy;
-                });
-              }}
-            />
+            {isFac ? (
+              <select
+                id="fv"
+                aria-label={activeSheet.label}
+                defaultValue={getVal(activeSheet.key) || 'College of Applied Sciences and Technology'}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
+                  setAnswers((prev) => {
+                    const copy = { ...prev };
+                    delete copy[activeSheet.key];
+                    return copy;
+                  });
+                }}
+              >
+                {COLLEGES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            ) : isInst ? (
+              <select
+                id="fv"
+                aria-label={activeSheet.label}
+                defaultValue={
+                  getVal(activeSheet.key) === 'Lagos State University of Science and Technology'
+                    ? 'Lagos State University of Science and Technology'
+                    : 'Other'
+                }
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
+                  setAnswers((prev) => {
+                    const copy = { ...prev };
+                    delete copy[activeSheet.key];
+                    return copy;
+                  });
+                }}
+              >
+                {INSTITUTIONS.map((instOption) => (
+                  <option key={instOption} value={instOption}>
+                    {instOption}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="fv"
+                aria-label={activeSheet.label}
+                type={isDate ? 'date' : 'text'}
+                defaultValue={getVal(activeSheet.key)}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
+                  setAnswers((prev) => {
+                    const copy = { ...prev };
+                    delete copy[activeSheet.key];
+                    return copy;
+                  });
+                }}
+              />
+            )}
           </div>
           <button
             className="btn w"
@@ -2143,20 +2315,68 @@ export default function DashboardPage() {
       return (
         <>
           <h2>Your details</h2>
-          {FLD.map(([key, label]) => (
-            <div key={key} className="f">
-              <label htmlFor={`d_${key}`}>{label}</label>
-              <input
-                id={`d_${key}`}
-                type={key === 'start' || key === 'end' ? 'date' : 'text'}
-                defaultValue={details[key] || ''}
-                onChange={(e) => {
-                  const val = e.target.value.trim();
-                  setDetails((prev) => ({ ...prev, [key]: val }));
-                }}
-              />
-            </div>
-          ))}
+          {FLD.map(([key, label]) => {
+            if (key === 'fac') {
+              return (
+                <div key={key} className="f">
+                  <label htmlFor={`d_${key}`}>{label}</label>
+                  <select
+                    id={`d_${key}`}
+                    defaultValue={details[key] || 'College of Applied Sciences and Technology'}
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      setDetails((prev) => ({ ...prev, [key]: val }));
+                    }}
+                  >
+                    {COLLEGES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            if (key === 'inst') {
+              return (
+                <div key={key} className="f">
+                  <label htmlFor={`d_${key}`}>{label}</label>
+                  <select
+                    id={`d_${key}`}
+                    defaultValue={
+                      details[key] === 'Lagos State University of Science and Technology'
+                        ? 'Lagos State University of Science and Technology'
+                        : 'Other'
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value.trim();
+                      setDetails((prev) => ({ ...prev, [key]: val }));
+                    }}
+                  >
+                    {INSTITUTIONS.map((instOption) => (
+                      <option key={instOption} value={instOption}>
+                        {instOption}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            return (
+              <div key={key} className="f">
+                <label htmlFor={`d_${key}`}>{label}</label>
+                <input
+                  id={`d_${key}`}
+                  type={key === 'start' || key === 'end' ? 'date' : 'text'}
+                  defaultValue={details[key] || ''}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    setDetails((prev) => ({ ...prev, [key]: val }));
+                  }}
+                />
+              </div>
+            );
+          })}
           <button
             className="btn w"
             type="button"
