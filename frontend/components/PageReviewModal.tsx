@@ -81,30 +81,37 @@ export default function PageReviewModal({
   const renderHighlightedText = () => {
     if (!editedText) {
       return (
-        <span className="text-slate-500 italic">
+        <span style={{ color: 'var(--mut, #5f6761)', fontStyle: 'italic', fontSize: '13px' }}>
           No extracted text available for this page.
         </span>
       );
     }
 
     if (lowConfidenceItems.length === 0) {
-      return <div className="whitespace-pre-wrap text-sm text-slate-200 leading-relaxed">{editedText}</div>;
+      return (
+        <div style={{ whiteSpace: 'pre-wrap', fontSize: '13.5px', color: 'var(--ink, #14201b)', lineHeight: '1.6' }}>
+          {editedText}
+        </div>
+      );
     }
 
-    // Escape regex characters
     const escaped = lowConfidenceItems
       .filter((s) => s.trim().length > 0)
       .map((s) => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'));
 
     if (escaped.length === 0) {
-      return <div className="whitespace-pre-wrap text-sm text-slate-200 leading-relaxed">{editedText}</div>;
+      return (
+        <div style={{ whiteSpace: 'pre-wrap', fontSize: '13.5px', color: 'var(--ink, #14201b)', lineHeight: '1.6' }}>
+          {editedText}
+        </div>
+      );
     }
 
     const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
     const parts = editedText.split(regex);
 
     return (
-      <div className="whitespace-pre-wrap text-sm text-slate-200 leading-relaxed">
+      <div style={{ whiteSpace: 'pre-wrap', fontSize: '13.5px', color: 'var(--ink, #14201b)', lineHeight: '1.6' }}>
         {parts.map((part: string, i: number) => {
           const isLow = lowConfidenceItems.some(
             (item) => item.toLowerCase() === part.toLowerCase()
@@ -113,7 +120,14 @@ export default function PageReviewModal({
             return (
               <mark
                 key={i}
-                className="bg-amber-500/30 text-amber-200 px-1 py-0.5 rounded border border-amber-500/40 font-medium"
+                style={{
+                  background: '#fbefd0',
+                  color: 'var(--amb, #8a5a00)',
+                  padding: '2px 5px',
+                  borderRadius: '6px',
+                  border: '1px solid #fde68a',
+                  fontWeight: 600,
+                }}
                 title="Low confidence OCR or uncertain handwriting"
               >
                 {part}
@@ -127,24 +141,59 @@ export default function PageReviewModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 animate-fade-in">
-      <div className="flex flex-col w-full max-w-6xl h-[92vh] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
+      style={{
+        backgroundColor: 'rgba(20, 32, 27, 0.65)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="flex flex-col w-full max-w-5xl h-[92vh] rounded-3xl overflow-hidden shadow-2xl"
+        style={{
+          background: 'var(--card, #fffefb)',
+          border: '1px solid var(--line, #e6e2d7)',
+          color: 'var(--ink, #14201b)',
+          fontFamily: "'Manrope', system-ui, sans-serif",
+        }}
+      >
         {/* Header Bar */}
-        <header className="flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-950/70">
+        <header
+          className="flex items-center justify-between px-5 py-3.5 border-b"
+          style={{
+            borderColor: 'var(--line, #e6e2d7)',
+            background: 'var(--paper, #f8f6f1)',
+          }}
+        >
           <div className="flex items-center gap-3">
-            <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+            <span
+              className="w-9 h-9 rounded-2xl flex items-center justify-center flex-none"
+              style={{
+                background: 'var(--mint, #dcf0e7)',
+                color: 'var(--g, #066b4d)',
+              }}
+            >
+              <span className="ms" style={{ fontSize: '20px' }}>find_in_page</span>
             </span>
             <div>
-              <h2 className="text-sm sm:text-base font-semibold text-slate-100 flex items-center gap-2">
+              <h2
+                style={{
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  margin: 0,
+                  color: 'var(--ink, #14201b)',
+                }}
+              >
                 Page Review & OCR Inspection
-                <span className="text-xs font-mono font-normal text-slate-400">
+                <span style={{ fontSize: '12px', fontWeight: 'normal', color: 'var(--mut, #5f6761)', marginLeft: '8px' }}>
                   (Page #{activePage?.page_index ?? document?.page_index ?? 1})
                 </span>
               </h2>
-              <p className="text-xs text-slate-400 truncate max-w-md">
+              <p style={{ fontSize: '12px', color: 'var(--mut, #5f6761)', margin: '2px 0 0' }} className="truncate max-w-md">
                 {document.original_filename || 'Logbook Page'}
               </p>
             </div>
@@ -152,32 +201,45 @@ export default function PageReviewModal({
 
           <div className="flex items-center gap-2">
             {pageStatus === 'flagged_illegible' && (
-              <span className="px-2.5 py-1 text-xs rounded-full bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+              <span
+                className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5"
+                style={{ background: '#fef2f2', color: 'var(--red, #b42318)', border: '1px solid #fecaca' }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
                 Flagged Illegible
               </span>
             )}
             {pageStatus === 'manual_correction_needed' && (
-              <span className="px-2.5 py-1 text-xs rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              <span
+                className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5"
+                style={{ background: '#fbefd0', color: 'var(--amb, #8a5a00)', border: '1px solid #fde68a' }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
                 Needs Review
               </span>
             )}
             {pageStatus === 'processed' && (
-              <span className="px-2.5 py-1 text-xs rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                Verified ({confidencePercent}%)
+              <span
+                className="px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5"
+                style={{ background: 'var(--mint, #dcf0e7)', color: 'var(--g, #066b4d)', border: '1px solid rgba(6, 107, 77, 0.2)' }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                OCR Confidence {confidencePercent}%
               </span>
             )}
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition"
+              className="w-8 h-8 rounded-full flex items-center justify-center hover:opacity-80 transition ml-2"
+              style={{
+                background: 'transparent',
+                color: 'var(--mut, #5f6761)',
+                border: 'none',
+                cursor: 'pointer',
+              }}
               title="Close modal"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <span className="ms" style={{ fontSize: '20px' }}>close</span>
             </button>
           </div>
         </header>
@@ -185,26 +247,41 @@ export default function PageReviewModal({
         {/* Split Container */}
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           {/* Left Pane: Page Image Viewer */}
-          <div className="w-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950/40 relative">
+          <div
+            className="w-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r relative"
+            style={{
+              borderColor: 'var(--line, #e6e2d7)',
+              background: 'var(--paper, #f8f6f1)',
+            }}
+          >
             {/* Image Toolbar */}
-            <div className="flex items-center justify-between px-3 py-2 bg-slate-900/60 border-b border-slate-800/80 text-xs text-slate-300">
-              <span className="text-[11px] font-mono text-slate-400">Original Logbook Image</span>
-              <div className="flex items-center gap-1.5">
+            <div
+              className="flex items-center justify-between px-3.5 py-2 border-b text-xs"
+              style={{
+                borderColor: 'var(--line, #e6e2d7)',
+                background: 'var(--card, #fffefb)',
+                color: 'var(--mut, #5f6761)',
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>Original Logbook Scan</span>
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setZoomLevel((z) => Math.max(0.5, z - 0.25))}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200"
+                  className="px-2 py-0.5 rounded-md hover:opacity-80"
+                  style={{ background: 'var(--paper, #f8f6f1)', border: '1px solid var(--line, #e6e2d7)' }}
                   title="Zoom Out"
                 >
                   -
                 </button>
-                <span className="text-[11px] font-mono w-10 text-center">
+                <span style={{ width: '38px', textAlign: 'center', fontFamily: 'monospace' }}>
                   {Math.round(zoomLevel * 100)}%
                 </span>
                 <button
                   type="button"
                   onClick={() => setZoomLevel((z) => Math.min(3, z + 0.25))}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200"
+                  className="px-2 py-0.5 rounded-md hover:opacity-80"
+                  style={{ background: 'var(--paper, #f8f6f1)', border: '1px solid var(--line, #e6e2d7)' }}
                   title="Zoom In"
                 >
                   +
@@ -212,7 +289,8 @@ export default function PageReviewModal({
                 <button
                   type="button"
                   onClick={() => setZoomLevel(1)}
-                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px]"
+                  className="px-2 py-0.5 rounded-md hover:opacity-80 text-[11px]"
+                  style={{ background: 'var(--paper, #f8f6f1)', border: '1px solid var(--line, #e6e2d7)' }}
                 >
                   Reset
                 </button>
@@ -220,7 +298,7 @@ export default function PageReviewModal({
             </div>
 
             {/* Scrollable Zoom Area */}
-            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-black/60">
+            <div className="flex-1 overflow-auto p-4 flex items-center justify-center" style={{ background: '#f0ede6' }}>
               {document.file_url ? (
                 <div
                   style={{
@@ -233,46 +311,52 @@ export default function PageReviewModal({
                   <img
                     src={document.file_url}
                     alt={document.original_filename}
-                    className="max-w-full max-h-[70vh] object-contain rounded shadow-lg border border-slate-800"
+                    className="max-w-full max-h-[65vh] object-contain rounded-xl shadow-md border"
+                    style={{ borderColor: 'var(--line, #e6e2d7)' }}
                   />
                 </div>
               ) : (
-                <div className="text-center p-8 text-slate-500">
-                  <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-xs">No direct image URL available.</p>
+                <div className="text-center p-8" style={{ color: 'var(--mut, #5f6761)' }}>
+                  <span className="ms" style={{ fontSize: '40px', opacity: 0.5 }}>image_not_supported</span>
+                  <p style={{ fontSize: '12px', marginTop: '6px' }}>No direct image preview available.</p>
                 </div>
               )}
             </div>
           </div>
 
           {/* Right Pane: Extracted Text & Inspection */}
-          <div className="w-full md:w-1/2 flex flex-col bg-slate-900/90 overflow-hidden">
+          <div className="w-full md:w-1/2 flex flex-col overflow-hidden" style={{ background: 'var(--card, #fffefb)' }}>
             {/* Tab Toolbar for Right Pane */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-950/40">
-              <div className="flex items-center gap-1">
+            <div
+              className="flex items-center justify-between px-4 py-2 border-b"
+              style={{ borderColor: 'var(--line, #e6e2d7)', background: 'var(--paper, #f8f6f1)' }}
+            >
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setViewMode('highlight')}
-                  className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
-                    viewMode === 'highlight'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
+                  className="px-3 py-1 rounded-full text-xs font-bold transition"
+                  style={{
+                    background: viewMode === 'highlight' ? 'var(--mint, #dcf0e7)' : 'transparent',
+                    color: viewMode === 'highlight' ? 'var(--g, #066b4d)' : 'var(--mut, #5f6761)',
+                    border: viewMode === 'highlight' ? '1px solid rgba(6, 107, 77, 0.2)' : 'none',
+                    cursor: 'pointer',
+                  }}
                 >
                   Highlights ({lowConfidenceItems.length} notices)
                 </button>
                 <button
                   type="button"
                   onClick={() => setViewMode('edit')}
-                  className={`px-3 py-1 text-xs rounded-lg font-medium transition ${
-                    viewMode === 'edit'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
+                  className="px-3 py-1 rounded-full text-xs font-bold transition"
+                  style={{
+                    background: viewMode === 'edit' ? 'var(--mint, #dcf0e7)' : 'transparent',
+                    color: viewMode === 'edit' ? 'var(--g, #066b4d)' : 'var(--mut, #5f6761)',
+                    border: viewMode === 'edit' ? '1px solid rgba(6, 107, 77, 0.2)' : 'none',
+                    cursor: 'pointer',
+                  }}
                 >
-                  Edit Text
+                  Edit Transcript
                 </button>
               </div>
 
@@ -280,12 +364,11 @@ export default function PageReviewModal({
                 <button
                   type="button"
                   onClick={() => onReprocess(document.id)}
-                  className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                  className="text-xs flex items-center gap-1 hover:opacity-80 transition"
+                  style={{ color: 'var(--mut, #5f6761)', background: 'transparent', border: 'none', cursor: 'pointer' }}
                   title="Reprocess OCR on this file"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
+                  <span className="ms" style={{ fontSize: '15px' }}>refresh</span>
                   Re-run OCR
                 </button>
               )}
@@ -293,14 +376,18 @@ export default function PageReviewModal({
 
             {/* Alert / Notice if low confidence items exist */}
             {lowConfidenceItems.length > 0 && (
-              <div className="bg-amber-950/40 border-b border-amber-500/30 px-4 py-2 text-xs text-amber-200/90 flex items-center justify-between">
+              <div
+                className="px-4 py-2 text-xs flex items-center justify-between border-b"
+                style={{ background: '#fffbeb', borderColor: '#fde68a', color: 'var(--amb, #8a5a00)' }}
+              >
                 <span>
-                  <strong>Human verification recommended:</strong> {lowConfidenceItems.length} unclear word(s) flagged.
+                  <strong>Human verification suggested:</strong> {lowConfidenceItems.length} uncertain word(s) detected.
                 </span>
                 {viewMode !== 'edit' && (
                   <button
                     onClick={() => setViewMode('edit')}
-                    className="underline text-amber-300 hover:text-amber-100 font-semibold text-[11px]"
+                    className="underline font-bold text-xs"
+                    style={{ background: 'transparent', border: 'none', color: 'var(--amb, #8a5a00)', cursor: 'pointer' }}
                   >
                     Edit directly
                   </button>
@@ -312,34 +399,47 @@ export default function PageReviewModal({
             <div className="flex-1 p-4 overflow-y-auto">
               {viewMode === 'highlight' ? (
                 <div className="h-full flex flex-col">
-                  <div className="flex-1 p-3 bg-slate-950/50 rounded-xl border border-slate-800 overflow-y-auto font-sans">
+                  <div
+                    className="flex-1 p-3.5 rounded-2xl border overflow-y-auto"
+                    style={{ background: 'var(--paper, #f8f6f1)', borderColor: 'var(--line, #e6e2d7)' }}
+                  >
                     {renderHighlightedText()}
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-500">
-                    Highlighted sections denote words with lower OCR certainty or handwritten marks. Switch to “Edit Text” to fix them.
+                  <p style={{ fontSize: '11.5px', color: 'var(--mut, #5f6761)', marginTop: '8px' }}>
+                    Highlighted sections denote words with lower OCR certainty or handwritten marks. Switch to &ldquo;Edit Transcript&rdquo; to fix any misreadings.
                   </p>
                 </div>
               ) : (
                 <div className="h-full flex flex-col">
-                  <label htmlFor="extracted-editor" className="text-xs font-medium text-slate-300 mb-1">
+                  <label
+                    htmlFor="extracted-editor"
+                    style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink, #14201b)', marginBottom: '4px' }}
+                  >
                     Editable OCR Transcript:
                   </label>
                   <textarea
                     id="extracted-editor"
                     value={editedText}
                     onChange={(e) => setEditedText(e.target.value)}
-                    className="flex-1 w-full bg-slate-950/70 border border-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl p-3 text-sm text-slate-100 font-mono leading-relaxed resize-none outline-none"
+                    className="flex-1 w-full p-3 text-sm leading-relaxed resize-none outline-none rounded-2xl border"
+                    style={{
+                      background: 'var(--paper, #f8f6f1)',
+                      borderColor: 'var(--line, #e6e2d7)',
+                      color: 'var(--ink, #14201b)',
+                      fontFamily: 'inherit',
+                    }}
                     placeholder="Enter or fix the logbook text extracted from this page..."
                   />
                   <div className="mt-2 flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => setEditedText(initialText)}
-                      className="text-xs text-slate-400 hover:text-slate-300 underline"
+                      className="text-xs underline hover:opacity-80"
+                      style={{ background: 'transparent', border: 'none', color: 'var(--mut, #5f6761)', cursor: 'pointer' }}
                     >
                       Reset to original OCR
                     </button>
-                    <span className="text-[11px] font-mono text-slate-500">
+                    <span style={{ fontSize: '11.5px', color: 'var(--mut, #5f6761)', fontFamily: 'monospace' }}>
                       {editedText.length} characters
                     </span>
                   </div>
@@ -348,30 +448,42 @@ export default function PageReviewModal({
             </div>
 
             {/* Supervisor Signature & Verification Checkbox */}
-            <div className="px-4 py-3 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between text-xs">
-              <label className="flex items-center gap-2.5 text-slate-300 cursor-pointer select-none">
+            <div
+              className="px-4 py-3 border-t flex items-center justify-between text-xs"
+              style={{ borderColor: 'var(--line, #e6e2d7)', background: 'var(--paper, #f8f6f1)' }}
+            >
+              <label className="flex items-center gap-2 cursor-pointer select-none" style={{ color: 'var(--ink, #14201b)' }}>
                 <input
                   type="checkbox"
                   checked={hasSignature}
                   onChange={(e) => setHasSignature(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-slate-900"
+                  style={{ accentColor: 'var(--g, #066b4d)', width: '16px', height: '16px' }}
                 />
-                <span>Supervisor stamp / signature verified on this page</span>
+                <span style={{ fontWeight: 600 }}>Supervisor stamp / signature verified on this page</span>
               </label>
               {activePage?.supervisor_signature_confidence && (
-                <span className="text-[11px] text-slate-400 font-mono">
-                  Detector confidence: {Math.round(activePage.supervisor_signature_confidence * 100)}%
+                <span style={{ fontSize: '11.5px', color: 'var(--mut, #5f6761)', fontFamily: 'monospace' }}>
+                  Signature confidence: {Math.round(activePage.supervisor_signature_confidence * 100)}%
                 </span>
               )}
             </div>
 
             {/* Modal Footer Controls */}
-            <footer className="px-4 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-end gap-3">
+            <footer
+              className="px-4 py-3 border-t flex items-center justify-end gap-3"
+              style={{ borderColor: 'var(--line, #e6e2d7)', background: 'var(--card, #fffefb)' }}
+            >
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isSaving}
-                className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white rounded-lg bg-slate-800 hover:bg-slate-700 transition"
+                className="px-4 py-2 rounded-full text-xs font-bold hover:opacity-80 transition"
+                style={{
+                  background: 'var(--paper, #f8f6f1)',
+                  border: '1px solid var(--line, #e6e2d7)',
+                  color: 'var(--ink, #14201b)',
+                  cursor: 'pointer',
+                }}
               >
                 Cancel
               </button>
@@ -379,7 +491,13 @@ export default function PageReviewModal({
                 type="button"
                 onClick={handleSave}
                 disabled={isSaving}
-                className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg flex items-center gap-2 shadow-sm transition disabled:opacity-50"
+                className="px-5 py-2 rounded-full text-xs font-extrabold flex items-center gap-2 shadow-sm transition hover:opacity-90 disabled:opacity-40"
+                style={{
+                  background: 'var(--g, #066b4d)',
+                  color: '#fff',
+                  border: 'none',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                }}
               >
                 {isSaving ? (
                   <>
@@ -388,9 +506,7 @@ export default function PageReviewModal({
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                    <span className="ms" style={{ fontSize: '16px' }}>check</span>
                     <span>Save & Mark Verified</span>
                   </>
                 )}
