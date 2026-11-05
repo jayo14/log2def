@@ -11,7 +11,9 @@ from .views import (
     ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
-    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView,
+    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView
+)
+from .squad_views import (
     SquadInitializeView, SquadCallbackView, SquadWebhookView, SquadVerifyView,
     SecureDigitalDownloadView
 )
