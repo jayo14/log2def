@@ -722,8 +722,10 @@ class Log2DefBackendTests(TestCase):
         comp_resp = self.client.get(f'/api/projects/{incomplete_proj.id}/completeness/')
         self.assertEqual(comp_resp.status_code, status.HTTP_200_OK)
         self.assertFalse(comp_resp.data['can_generate'])
-        self.assertIn('organization_address', comp_resp.data['missing_required_fields'])
-        self.assertIn('training_end_date', comp_resp.data['missing_required_fields'])
+        self.assertIn('organisation_address', comp_resp.data['missing_required_fields'])
+        self.assertIn('training_duration', comp_resp.data['missing_required_fields'])
+        self.assertIn('college', comp_resp.data['missing_required_fields'])
+        self.assertIn('degree', comp_resp.data['missing_required_fields'])
         self.assertIn('logbook_entries', comp_resp.data['missing_required_fields'])
 
         # 3. Attempting report generation must be blocked with HTTP 400
@@ -755,9 +757,13 @@ class Log2DefBackendTests(TestCase):
             is_verified=True
         )
 
-        # 6. Completeness is now satisfied -> generation succeeds
-        gen_ok = self.client.post(f'/api/projects/{incomplete_proj.id}/report/generate/', {})
-        self.assertEqual(gen_ok.status_code, status.HTTP_200_OK)
+        # A legacy verified entry is not a confirmed Fact. Thin material and
+        # remaining manifest fields must continue to block generation.
+        final_completeness = self.client.get(f'/api/projects/{incomplete_proj.id}/completeness/')
+        self.assertFalse(final_completeness.data['can_generate'])
+        self.assertIn('material_sufficiency', final_completeness.data['missing_required_fields'])
+        gen_still_blocked = self.client.post(f'/api/projects/{incomplete_proj.id}/report/generate/', {})
+        self.assertEqual(gen_still_blocked.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_report_generation_and_section_editing(self):
         # Add a verified logbook entry
