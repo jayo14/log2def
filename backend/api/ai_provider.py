@@ -131,7 +131,7 @@ def generate_completion(system_prompt: str, user_prompt: str, temperature: float
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 temperature=temperature,
-                response_json=True,
+                response_json=return_metadata,
                 return_metadata=return_metadata,
             )
         except AIProviderUnavailableError:
