@@ -1945,7 +1945,7 @@ class SquadWebhookSignatureTests(TestCase):
         valid_sig = hmac.new(secret.encode('utf-8'), body, hashlib.sha512).hexdigest()
 
         # Valid signature should pass
-        with override_settings(SQUAD_SECRET_KEY=secret):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', secret):
             self.assertTrue(verify_webhook_signature(body, valid_sig))
 
         # Tampered body should fail
