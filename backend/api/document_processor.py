@@ -737,6 +737,26 @@ def process_source_document(doc_id: int):
                         )
                 elif text:
                     extract_logbook_entries_from_text(doc.project, extracted_page, text, fallback_week=page_fallback_week)
+                else:
+                    LogbookEntry.objects.create(
+                        project=doc.project,
+                        source_page=extracted_page,
+                        week_number=page_fallback_week,
+                        entry_date=None,
+                        day_of_week="Weekly Log",
+                        raw_text="",
+                        verified_text="",
+                        activity_summary=f"Week {page_fallback_week} Log (Transcribe from uploaded page)",
+                        tools_used="",
+                        equipment_used="",
+                        technical_area="Practical Training",
+                        has_supervisor_signature=False,
+                        confidence_scores={'overall': 0.25},
+                        field_provenance={'status': 'MISSING', 'reasoning': 'Page requires manual review or transcription'},
+                        is_flagged=True,
+                        is_verified=False,
+                        order=LogbookEntry.objects.filter(project=doc.project, week_number=page_fallback_week).count() + 1
+                    )
 
                 # Step 4: Finalize page status
                 if confidence < 0.35:
@@ -843,15 +863,26 @@ def process_source_document(doc_id: int):
                     )
             elif text:
                 extract_logbook_entries_from_text(doc.project, extracted_page, text, fallback_week=fallback_week)
-
-            # Step 4: Finalize page status
-            if confidence < 0.35:
-                extracted_page.status = 'flagged_illegible'
-            elif confidence < 0.65 or len(text.strip()) < 15:
-                extracted_page.status = 'manual_correction_needed'
             else:
-                extracted_page.status = 'completed'
-            extracted_page.save(update_fields=['status'])
+                LogbookEntry.objects.create(
+                    project=doc.project,
+                    source_page=extracted_page,
+                    week_number=fallback_week,
+                    entry_date=None,
+                    day_of_week="Weekly Log",
+                    raw_text="",
+                    verified_text="",
+                    activity_summary=f"Week {fallback_week} Log (Transcribe from uploaded page)",
+                    tools_used="",
+                    equipment_used="",
+                    technical_area="Practical Training",
+                    has_supervisor_signature=False,
+                    confidence_scores={'overall': 0.25},
+                    field_provenance={'status': 'MISSING', 'reasoning': 'Handwriting requires manual review or transcription'},
+                    is_flagged=True,
+                    is_verified=False,
+                    order=LogbookEntry.objects.filter(project=doc.project, week_number=fallback_week).count() + 1
+                )
 
             # Step 4: Finalize page status
             if confidence < 0.35:
