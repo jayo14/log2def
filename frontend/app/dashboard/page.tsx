@@ -186,6 +186,8 @@ export default function DashboardPage() {
   });
   const [fieldSources, setFieldSources] = useState<Record<string, string>>({});
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [isSavingStep4, setIsSavingStep4] = useState(false);
+  const [step4SaveError, setStep4SaveError] = useState<string | null>(null);
 
   const [pages, setPages] = useState<LogPage[]>([]);
   const [reading, setReading] = useState<boolean>(false);
@@ -4008,6 +4010,13 @@ export default function DashboardPage() {
             The end date must be after the start date.
           </p>
         )}
+        {isSavingStep4 && (
+          <p className="wd" role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+            <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
+            Saving your details… Please wait.
+          </p>
+        )}
+        {step4SaveError && <p className="err" role="alert">{step4SaveError}</p>}
       </div>
     );
   };
@@ -4308,35 +4317,64 @@ export default function DashboardPage() {
           className="btn"
           type="button"
           id="c4"
-          disabled={isStep4Invalid()}
+          disabled={isStep4Invalid() || isSavingStep4}
+          aria-busy={isSavingStep4}
           onClick={async () => {
+            if (isStep4Invalid() || isSavingStep4) return;
+            setIsSavingStep4(true);
+            setStep4SaveError(null);
             const updatedDetails = { ...details };
             for (const [k, v] of Object.entries(answers)) {
               if (v && v.trim() && !updatedDetails[k]) {
                 updatedDetails[k] = v.trim();
               }
             }
-            setDetails(updatedDetails);
-            if (activeProject?.id) {
-              await updateMissingInfo(activeProject.id, updatedDetails).catch(() => {});
-              await updateActiveProject(activeProject.id, {
-                organization_name: updatedDetails.co || undefined,
-                organization_address: updatedDetails.addr || undefined,
-                training_start_date: updatedDetails.start || undefined,
-                training_end_date: updatedDetails.end || undefined,
-                industry_supervisor_name: updatedDetails.sup || undefined,
-                institution_supervisor_name: updatedDetails.isup || undefined,
-              }).catch(() => {});
+            try {
+              let projectId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+              if (!projectId) {
+                const ensured = await ensureActiveProject().catch(() => null);
+                projectId = ensured?.id;
+              }
+              if (!projectId) throw new Error('Could not find your report project. Please try again.');
+              await updateActiveProject(projectId, {
+                full_name: updatedDetails.name,
+                matric_number: updatedDetails.matric,
+                department: updatedDetails.dept,
+                college: updatedDetails.fac,
+                university_name: updatedDetails.inst,
+                degree: updatedDetails.degree,
+                organization_name: updatedDetails.co,
+                organization_address: updatedDetails.addr,
+                placement_department: updatedDetails.unit,
+                training_start_date: updatedDetails.start,
+                training_end_date: updatedDetails.end,
+                industry_supervisor_name: updatedDetails.sup,
+                academic_supervisor_name: updatedDetails.isup,
+              });
+              setDetails(updatedDetails);
+              setStep(5);
+              if (scrRef.current) scrRef.current.scrollTop = 0;
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : 'Could not save your details. Please try again.';
+              setStep4SaveError(message);
+              showToast(message);
+            } finally {
+              setIsSavingStep4(false);
             }
-            setStep(5);
-            if (scrRef.current) scrRef.current.scrollTop = 0;
           }}
           style={{ flex: 1 }}
         >
-          Next
-          <span className="ms" aria-hidden="true">
-            arrow_forward
-          </span>
+          {isSavingStep4 ? (
+            <>
+              <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
+              Saving details…
+            </>
+          ) : (
+            <>
+              Next
+              <span className="ms" aria-hidden="true">arrow_forward</span>
+            </>
+          )}
         </button>
       );
     }
