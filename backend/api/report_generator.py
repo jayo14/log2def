@@ -705,9 +705,6 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         report.template = template
         report.template_version = "lasustech_cs:2.0.0"
         report.template_snapshot = LASUSTECH_CS_V2
-    entries = list(project.logbook_entries.filter(is_verified=True).order_by("week_number", "order", "entry_date", "id"))
-    verified_ids = [entry.id for entry in entries]
-    entry_text = lambda entry: (entry.verified_text or entry.activity_summary or "").strip()
     start = project.training_start_date.strftime("%-d %B %Y") if project.training_start_date else ""
     end = project.training_end_date.strftime("%-d %B %Y") if project.training_end_date else ""
     duration = ""
@@ -715,6 +712,9 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         days = (project.training_end_date - project.training_start_date).days + 1
         duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
 
+    # Reviewed source lines are evidence, not report prose. They remain in the
+    # transcript/Fact layer until a separately confirmed normalized paragraph
+    # can be linked to its Fact IDs.
     source_text = {
         "title_page": "\n".join(filter(None, [project.full_name, project.matric_number, project.department, project.college, project.degree,
             project.organization_name, project.organization_address, f"{start} – {end}" if start and end else ""])),
@@ -729,50 +729,26 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "ch1_scope": " ".join(filter(None, [
             f"My training took place at {project.organization_name}." if project.organization_name else "",
             f"I was attached to {project.placement_department}." if project.placement_department else "",
-            f"The recorded training areas included {', '.join(sorted({e.technical_area for e in entries if e.technical_area}))}." if any(e.technical_area for e in entries) else "",
         ])),
         "ch1_duration": f"The training ran from {start} to {end} ({duration})." if start and end else "",
         "ch2_history": "",
         "ch2_objectives": "",
         "ch2_structure": "",
         "ch2_organogram": "",
-        "ch3_duties": "\n".join(dict.fromkeys(entry_text(e) for e in entries if entry_text(e))),
+        "ch3_duties": "",
         "ch3_activities": "",
         "ch3_skills": project.skills_acquired.strip(),
-        "ch3_tools": "\n".join(dict.fromkeys(filter(None, [
-            ", ".join(filter(None, [e.tools_used, e.equipment_used])).strip(", ") for e in entries
-        ] + [project.tools_used]))),
+        "ch3_tools": project.tools_used.strip(),
         "ch3_challenges": project.problems_encountered.strip(),
         "ch3_solutions": "",
-        "ch4_summary": "\n".join(dict.fromkeys(entry_text(e) for e in entries if entry_text(e))),
+        "ch4_summary": "",
         "ch4_conclusion": "",
         "ch4_recommendations": "",
         "references": LASUSTECH_CS_V2["fixed_text"]["itf_reference"],
         "appendices": "",
     }
-    # Weekly activities are prose blocks headed by the actual consecutive week range.
-    weekly: dict[int, list[str]] = {}
-    for entry in entries:
-        text = entry_text(entry)
-        if text:
-            weekly.setdefault(entry.week_number, []).append(text)
-    week_numbers = sorted(weekly)
-    groups: list[tuple[int, int, list[str]]] = []
-    for week in week_numbers:
-        if groups and week == groups[-1][1] + 1:
-            first, _, collected = groups[-1]
-            groups[-1] = (first, week, collected + weekly[week])
-        else:
-            groups.append((week, week, weekly[week]))
-    source_text["ch3_activities"] = "\n\n".join(
-        f"WEEK {first}-{last}: {activities[0]}\n" + "\n".join(activities)
-        for first, last, activities in groups
-    )
-    # Do not repeat a single entry as both a heading and prose.
-    source_text["ch3_activities"] = "\n\n".join(
-        f"WEEK {first}-{last}: {activities[0]}" + ("\n" + "\n".join(activities[1:]) if len(activities) > 1 else "")
-        for first, last, activities in groups
-    )
+    # Activity prose is supplied only through confirmed, normalized paragraph
+    # records. Raw transcript lines are never copied into report sections.
     if project.full_name and project.matric_number and project.department and project.organization_name and duration:
         certification = LASUSTECH_CS_V2["fixed_text"]["certification"].format(
             name=project.full_name, matric=project.matric_number, department=project.department,
@@ -809,7 +785,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.is_required = definition.get("required", False)
         section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
         section.warnings = ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
-        section.source_links = verified_ids if definition.get("source") in {"LOGBOOK", "INFERRED"} else []
+        section.source_links = []
         section.save()
     allowed_keys = {item["key"] for item in LASUSTECH_CS_V2["sections"]}
     report.sections.exclude(section_key__in=allowed_keys).delete()

@@ -9,6 +9,8 @@ Once `is_reviewed` is true, deterministic parsing creates `WeekRecord` and
 `DayEntry` rows. Each entry stores its exact line and character offsets in
 `source_span`, its source page, parsed date/weekday when unambiguous, and the
 page quality score. Reprocessing a reviewed page replaces only that page's day
+entries. Short and table-like lines are retained with exact source spans;
+blank lines remain in the reviewed transcript and are not converted into
 entries.
 
 The provenance model is:
@@ -46,6 +48,12 @@ The provenance model is:
    Normalisation may improve grammar but must preserve all student-specific
    quantities and tool names, and may not add tools, outcomes, people, dates,
    metrics, projects or domain claims.
+
+The current v2 generator does not yet create normalized Fact-linked paragraphs.
+It therefore leaves logbook-derived duties, activities, and summary sections
+empty instead of copying transcript lines verbatim. Chapter 3 tools can use
+the explicitly student-provided profile field; legacy tool values from parsed
+entries are not copied.
 
 ### Future LLM prompt contract
 
@@ -92,6 +100,8 @@ only under ignored evaluation directories. Synthetic fixtures may be committed.
 
 No real logbook fixture or ground truth was available during this implementation,
 so no extraction accuracy, field accuracy, or missed-error rate is claimed.
+The Fact confirmation endpoint and client review cards are also not yet
+implemented; proposed facts can currently be created by the service layer only.
 
 ## Failure modes
 

@@ -30,7 +30,7 @@ from .defence_generator import (
 from .feature_flags import DEFAULT_FEATURE_FLAGS, is_feature_enabled, get_all_feature_flags
 from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requirements, ensure_default_template_in_db
 from .ocr_trace import save_tesseract_tsv, trace_root
-from .extraction import validate_fact_candidate, persist_fact_candidate, material_sufficiency, classify_page
+from .extraction import validate_fact_candidate, persist_fact_candidate, material_sufficiency, classify_page, review_ambiguities, parse_reviewed_page
 
 
 class TemplateV2ContractTests(TestCase):
@@ -137,6 +137,35 @@ class ProvenanceExtractionTests(TestCase):
     def test_page_classifier_does_not_invent_domain_or_tool(self):
         self.assertEqual(classify_page(""), "blank")
         self.assertEqual(classify_page("Waste Redution Marketplace setup"), "other")
+        review = review_ambiguities("Waste Redution Marketplace setup")
+        self.assertIn("built, configured, or used", review["clarifying_questions"][0])
+        self.assertEqual(review["spelling_suggestions"][0]["suggestion"], "Reduction")
+        self.assertFalse(review["spelling_suggestions"][0]["accepted"])
+
+    def test_line_parser_preserves_short_and_table_like_transcript_text(self):
+        document = SourceDocument.objects.create(
+            project=self.project, original_filename="synthetic-page.jpg", file_type="image", page_index=0,
+        )
+        extracted = ExtractedPage.objects.create(
+            document=document, page_index=0, extracted_text=" Wk 2\n| 4/11/26 |\n-\n",
+        )
+        page = LogbookPage.objects.create(extracted_page=extracted, page_index=0)
+        entries = parse_reviewed_page(page)
+        self.assertEqual([entry.text for entry in entries], [" Wk 2", "| 4/11/26 |", "-"])
+        self.assertEqual([entry.source_span for entry in entries], [
+            {"start": 0, "end": 5}, {"start": 6, "end": 17}, {"start": 18, "end": 19},
+        ])
+
+    def test_v2_report_does_not_copy_raw_logbook_lines(self):
+        LogbookEntry.objects.create(
+            project=self.project, week_number=1, verified_text="RAW transcript typo Redution",
+            activity_summary="RAW transcript typo Redution", is_verified=True,
+        )
+        report = generate_full_report(self.project)
+        for key in ("ch3_duties", "ch3_activities", "ch4_summary"):
+            section = report.sections.get(section_key=key)
+            self.assertNotIn("RAW transcript typo Redution", section.content)
+            self.assertEqual(section.source_links, [])
 
 
 class Log2DefBackendTests(TestCase):

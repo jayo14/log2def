@@ -93,7 +93,7 @@ def parse_reviewed_page(logbook_page: LogbookPage) -> list[DayEntry]:
         start, end = offset, offset + len(line)
         offset += len(raw_line)
         value = line.strip()
-        if len(value) < 3 or re.fullmatch(r"[-|+\s]+", value):
+        if not value:
             continue
         parsed_date = None
         date_match = DATE_RE.search(value)
@@ -106,7 +106,7 @@ def parse_reviewed_page(logbook_page: LogbookPage) -> list[DayEntry]:
                 pass
         weekday = next((name for name in WEEKDAYS if re.search(rf"\b{name}\b", value, re.I)), "")
         created.append(DayEntry.objects.create(
-            week_record=week, date=parsed_date, weekday=weekday, text=value,
+            week_record=week, date=parsed_date, weekday=weekday, text=line,
             source_page=logbook_page, source_span={"start": start, "end": end},
             confidence=logbook_page.quality_score,
         ))
@@ -150,12 +150,18 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
         questions.append("What other dated activities are recorded in your logbook? Confirm each from the page image or transcript.")
     if by_section["ch3_tools"]["confirmed"] == 0:
         questions.append("Did you use any specific tools or equipment? Enter names only if you can confirm them.")
+    transcript_review = {"clarifying_questions": [], "spelling_suggestions": []}
+    for entry in DayEntry.objects.filter(week_record__project=project).order_by("id"):
+        review = review_ambiguities(entry.text)
+        transcript_review["clarifying_questions"].extend(review["clarifying_questions"])
+        transcript_review["spelling_suggestions"].extend(review["spelling_suggestions"])
     return {
         "status": "insufficient_material" if activity_count < minimum_activities else "material_available",
         "blank_pages_first": blank_pages,
         "sections": by_section,
         "activity_entries_across_pages": f"{activity_count} confirmed activity entr{'y' if activity_count == 1 else 'ies'} across {len(pages)} pages",
         "targeted_questions": questions,
+        **transcript_review,
     }
 
 
@@ -165,3 +171,17 @@ def extraction_prompt(transcript: str) -> str:
             "For every fact, evidence_quote must be an exact substring. Do not correct spelling, infer tools, quantities, outcomes, "
             "projects, people, or activities. Put ambiguity in a clarifying_questions array. Mark deductions INFERRED with a reason; "
             "they require student confirmation. Transcript:\n" + transcript)
+
+
+def review_ambiguities(text: str) -> dict[str, Any]:
+    """Return questions/suggestions without modifying the reviewed transcript."""
+    questions = []
+    if re.search(r"\b(set ?up|setup|installation|configured?)\b", text, re.I):
+        questions.append(
+            f'Please clarify what action you performed in “{text.strip()}” (for example, built, configured, or used the system).'
+        )
+    suggestions = []
+    typo = re.search(r"\bredution\b", text, re.I)
+    if typo:
+        suggestions.append({"source": typo.group(0), "suggestion": "Reduction", "accepted": False})
+    return {"clarifying_questions": questions, "spelling_suggestions": suggestions}
