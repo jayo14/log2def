@@ -754,10 +754,20 @@ class ReportGenerateView(views.APIView):
                 "completeness": completeness,
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        force_all_val = request.data.get('force_all', False)
+        force_all_val = False
+        if hasattr(request, 'data') and isinstance(request.data, dict):
+            force_all_val = request.data.get('force_all', False)
         force_all = force_all_val is True or str(force_all_val).lower() in ['true', '1']
-        report = generate_full_report(project, force_all=force_all)
-        return Response(ReportSerializer(report).data)
+
+        try:
+            report = generate_full_report(project, force_all=force_all)
+            return Response(ReportSerializer(report).data)
+        except Exception as e:
+            logger.exception(f"Error generating report for project {project_id}: {e}")
+            return Response(
+                {"error": f"Report generation failed: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class ProjectCompletenessView(views.APIView):
