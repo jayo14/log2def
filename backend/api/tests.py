@@ -153,6 +153,7 @@ class ProvenanceExtractionTests(TestCase):
         self.assertEqual(result["activity_entries_across_pages"], "1 confirmed activity entry across 14 pages")
         self.assertIn("ch2_history", result["sections"])
         self.assertIn("ch4_recommendations", result["sections"])
+        self.assertTrue(result["sections"]["ch2_history"]["enrichment_question"])
         self.assertEqual(result["sections"]["ch3_activities"]["confirmed"], 1)
         completeness = check_project_completeness(self.project)
         self.assertFalse(completeness["can_generate"])

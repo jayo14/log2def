@@ -182,6 +182,17 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
         "ch3_solutions": ["solution"], "ch4_summary": ["activity", "duty", "skill"],
         "ch4_conclusion": ["activity", "duty", "skill"],
     }
+    enrichment_questions = {
+        "ch2_history": "What are the organisation's confirmed history and key milestones?",
+        "ch2_objectives": "What objectives has the organisation stated in a source you can identify?",
+        "ch2_structure": "Which roles or units report to one another in the organisation?",
+        "ch2_organogram": "Can you provide the reporting tree or upload an organogram image?",
+        "ch3_duties": "What duties did you personally perform, with a source entry or your confirmation?",
+        "ch3_skills": "Which skills did you acquire and can personally confirm?",
+        "ch3_challenges": "What challenge did you personally encounter, if any?",
+        "ch3_solutions": "How was a recorded challenge addressed? Describe only what happened.",
+        "ch4_recommendations": "What specific, observed problem should a recommendation address?",
+    }
     by_section = {}
     for section in manifest["sections"]:
         key = section["key"]
@@ -196,6 +207,7 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
         by_section[key] = {
             "label": section["title"], "required": section.get("required", False),
             "source": section["source"], "confirmed": count, "pages": len(pages), "status": status_value,
+            "enrichment_question": enrichment_questions.get(key, ""),
         }
     questions = []
     if activity_count < minimum_activities:
@@ -206,6 +218,10 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
         questions.append("What challenge did you personally encounter during the placement, if any?")
     if by_section["ch3_solutions"]["confirmed"] == 0 and by_section["ch3_challenges"]["confirmed"]:
         questions.append("How was the recorded challenge addressed? Describe only what happened.")
+    for key, question in enrichment_questions.items():
+        section = by_section.get(key, {})
+        if section.get("required") and section.get("confirmed", 0) == 0 and question not in questions:
+            questions.append(question)
     transcript_review = {"clarifying_questions": [], "spelling_suggestions": []}
     for entry in DayEntry.objects.filter(week_record__project=project).order_by("id"):
         review = review_ambiguities(entry.text)
