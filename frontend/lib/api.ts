@@ -221,7 +221,7 @@ export const projectsApi = {
 
   // Documents
   uploadDocument: async (projectId: number | string, formData: FormData) => {
-    return apiRequest(`/projects/${projectId}/documents/`, {
+    return apiRequest(`/projects/${projectId}/documents`, {
       method: 'POST',
       body: formData,
     });

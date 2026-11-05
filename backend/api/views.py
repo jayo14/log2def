@@ -437,8 +437,14 @@ class DocumentListUploadView(views.APIView):
                     t = threading.Thread(target=process_source_document, args=(doc.id,), daemon=True)
                     t.start()
                 else:
-                    process_source_document(doc.id)
-                    doc.refresh_from_db()
+                    try:
+                        process_source_document(doc.id)
+                        doc.refresh_from_db()
+                    except Exception as pe:
+                        logger.warning(f"Error during document extraction for doc {doc.id}: {pe}")
+                        doc.status = 'error'
+                        doc.error_message = str(pe)
+                        doc.save(update_fields=['status', 'error_message'])
 
                 created_docs.append(doc)
 

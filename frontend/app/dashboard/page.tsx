@@ -91,6 +91,8 @@ interface LogPage {
   q?: string;
   file?: File;
   status?: string;
+  isUploading?: boolean;
+  uploadProgress?: number;
 }
 
 interface LogEntry {
@@ -908,55 +910,78 @@ export default function DashboardPage() {
   };
 
   // Step 3 Reading logic: runs OCR & fetches real logbook entries from PostgreSQL database
-  const startReading = async () => {
+  const startReading = async (forceReread = false) => {
     setReading(true);
     setReadProgress(0);
-    const n = Math.max(pages.length, 1);
 
-    const iv = setInterval(() => {
-      setReadProgress((prev) => (prev < n ? prev + 1 : prev));
-    }, Math.max(120, Math.min(350, 2000 / n)));
-
-    if (activeProject?.id) {
-      try {
-        let dbEntries = await fetchLogbookEntries(activeProject.id);
-
-        // If no entries exist yet, check if project has source documents and trigger extraction/reprocess
-        if ((!dbEntries || dbEntries.length === 0) && activeProject.source_documents?.length > 0) {
-          showToast('Reading and analyzing logbook pages with AI OCR...');
-          for (const doc of activeProject.source_documents) {
-            try {
-              await reprocessDocument(activeProject.id, doc.id);
-            } catch (e) {
-              console.warn('Document OCR reprocess error:', e);
-            }
-          }
-          dbEntries = await fetchLogbookEntries(activeProject.id);
-        }
-
-        if (dbEntries && dbEntries.length > 0) {
-          setEntries(
-            dbEntries.map((e: any) => ({
-              id: e.id,
-              w: e.week_number || 1,
-              t: e.verified_text || e.raw_text || e.activity_summary || '',
-              area: e.technical_area || 'Practical Engineering',
-              tools: e.tools_used || '',
-              u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
-              ph: e.department_unit || 'activity details',
-              ok: e.is_verified ? 1 : 0,
-            }))
-          );
-        }
-      } catch (err) {
-        console.warn('Could not fetch logbook entries from DB:', err);
-      }
+    const projId = activeProject?.id;
+    if (!projId) {
+      setReading(false);
+      showToast('No active report project found');
+      return;
     }
 
-    clearInterval(iv);
-    setReadProgress(n);
-    setReading(false);
-    setReadDone(true);
+    try {
+      const freshProj = await fetchActiveProject(projId).catch(() => activeProject);
+      const docs = freshProj?.source_documents || activeProject?.source_documents || [];
+      const totalDocs = Math.max(docs.length, pages.length, 1);
+
+      const iv = setInterval(() => {
+        setReadProgress((prev) => (prev < totalDocs ? prev + 1 : prev));
+      }, 350);
+
+      let dbEntries = await fetchLogbookEntries(projId).catch(() => []);
+
+      if (docs.length === 0 && pages.length === 0 && dbEntries.length === 0) {
+        clearInterval(iv);
+        setReading(false);
+        showToast('No logbook pages uploaded yet. Please upload pages in Step 2 first.');
+        return;
+      }
+
+      if (forceReread || dbEntries.length === 0) {
+        if (docs.length > 0) {
+          showToast(`Analyzing ${docs.length} logbook page${docs.length > 1 ? 's' : ''} with AI OCR...`);
+          for (let dIdx = 0; dIdx < docs.length; dIdx++) {
+            const doc = docs[dIdx];
+            setReadProgress(dIdx + 1);
+            try {
+              await reprocessDocument(projId, doc.id);
+            } catch (e) {
+              console.warn(`OCR reprocess error on doc ${doc.id}:`, e);
+            }
+          }
+          dbEntries = await fetchLogbookEntries(projId).catch(() => []);
+        }
+      }
+
+      clearInterval(iv);
+      setReadProgress(totalDocs);
+
+      if (dbEntries && dbEntries.length > 0) {
+        setEntries(
+          dbEntries.map((e: any) => ({
+            id: e.id,
+            w: e.week_number || 1,
+            t: e.verified_text || e.raw_text || e.activity_summary || '',
+            area: e.technical_area || 'Practical Engineering',
+            tools: e.tools_used || '',
+            u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
+            ph: e.department_unit || 'activity details',
+            ok: e.is_verified ? 1 : 0,
+          }))
+        );
+        showToast(`AI OCR reading complete: ${dbEntries.length} entries extracted & structured`);
+      } else {
+        showToast('Pages scanned. You can confirm or add weekly entries directly below.');
+      }
+    } catch (err: any) {
+      console.warn('Could not re-read logbook with OCR:', err);
+      showToast(err.message || 'OCR reading error');
+    } finally {
+      setReading(false);
+      setReadDone(true);
+    }
   };
 
   // Step 5 Report Generation: triggers real generation in PostgreSQL
@@ -1106,28 +1131,104 @@ export default function DashboardPage() {
     const count = files.length;
     showToast(`Uploading ${count} logbook page${count > 1 ? 's' : ''}...`);
 
+    const startingIndex = pages.length;
+    const fileArr = Array.from(files);
+    const initialPlaceholders: LogPage[] = fileArr.map((f: File) => ({
+      n: f.name,
+      pdf: f.type === 'application/pdf',
+      th: '',
+      file: f,
+      isUploading: true,
+      uploadProgress: 15,
+    }));
+
+    setPages((prev) => [...prev, ...initialPlaceholders]);
+
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
-      const isPdf = f.type === 'application/pdf';
-      const th = await generateThumbnail(f);
+      const pageIdx = startingIndex + i;
 
-      setPages((prev) => [
-        ...prev,
-        {
-          n: f.name,
-          pdf: isPdf,
-          th,
-          file: f,
-        },
-      ]);
+      // Animate progress smoothly while uploading
+      const progressTimer = setInterval(() => {
+        setPages((prev) => {
+          const next = [...prev];
+          if (next[pageIdx] && next[pageIdx].isUploading) {
+            const current = next[pageIdx].uploadProgress || 15;
+            if (current < 85) {
+              next[pageIdx] = { ...next[pageIdx], uploadProgress: current + 12 };
+            }
+          }
+          return next;
+        });
+      }, 140);
+
+      const localThPromise = generateThumbnail(f);
 
       if (projId) {
         const fd = new FormData();
         fd.append('file', f);
-        fd.append('page_index', String(pages.length + i));
+        fd.append('page_index', String(pageIdx));
+
         try {
-          await uploadDocument(projId, fd);
+          const uploadedDoc = await uploadDocument(projId, fd);
+          clearInterval(progressTimer);
+
+          const localTh = await localThPromise;
+          let finalTh = localTh;
+          if (uploadedDoc) {
+            if (uploadedDoc.presigned_url) {
+              finalTh = uploadedDoc.presigned_url;
+            } else if (uploadedDoc.file) {
+              finalTh = uploadedDoc.file.startsWith('http')
+                ? uploadedDoc.file
+                : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${uploadedDoc.file.startsWith('/') ? '' : '/'}${uploadedDoc.file}`;
+            }
+          }
+
+          // Complete loader line to 100%
+          setPages((prev) => {
+            const next = [...prev];
+            if (next[pageIdx]) {
+              next[pageIdx] = {
+                ...next[pageIdx],
+                id: uploadedDoc?.id,
+                uploadProgress: 100,
+              };
+            }
+            return next;
+          });
+
+          // Short 250ms pause so the student sees the filled progress line
+          await new Promise((r) => setTimeout(r, 250));
+
+          setPages((prev) => {
+            const next = [...prev];
+            if (next[pageIdx]) {
+              next[pageIdx] = {
+                ...next[pageIdx],
+                id: uploadedDoc?.id,
+                th: finalTh,
+                isUploading: false,
+                uploadProgress: 100,
+              };
+            }
+            return next;
+          });
         } catch (err: any) {
+          clearInterval(progressTimer);
+          const localTh = await localThPromise;
+          setPages((prev) => {
+            const next = [...prev];
+            if (next[pageIdx]) {
+              next[pageIdx] = {
+                ...next[pageIdx],
+                th: localTh,
+                isUploading: false,
+                q: 'error',
+              };
+            }
+            return next;
+          });
           showToast(`Upload error: ${err.message || 'failed'}`);
         }
       }
@@ -2113,7 +2214,72 @@ export default function DashboardPage() {
             <div className="t3" role="list">
               {pages.map((p, i) => (
                 <div key={i} className="th" role="listitem">
-                  {p.th ? (
+                  {p.isUploading ? (
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '10px 8px',
+                        boxSizing: 'border-box',
+                        background: 'var(--bg)',
+                      }}
+                    >
+                      <span
+                        className="ms"
+                        style={{
+                          fontSize: '32px',
+                          color: p.pdf ? '#ef4444' : 'var(--g)',
+                          animation: 'pulse 1.8s infinite',
+                        }}
+                        aria-hidden="true"
+                      >
+                        {p.pdf ? 'picture_as_pdf' : 'image'}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--ink)',
+                          maxWidth: '90%',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          margin: '4px 0',
+                        }}
+                        title={p.n}
+                      >
+                        {p.n}
+                      </span>
+                      {/* Small loader line that fills up to the end */}
+                      <div
+                        style={{
+                          width: '84%',
+                          height: '4px',
+                          background: 'rgba(16, 185, 129, 0.16)',
+                          borderRadius: '999px',
+                          overflow: 'hidden',
+                          margin: '4px 0 3px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${p.uploadProgress || 15}%`,
+                            background: 'linear-gradient(90deg, #10b981, #34d399)',
+                            borderRadius: '999px',
+                            transition: 'width 0.35s ease-out',
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--g)' }}>
+                        {p.uploadProgress ? `${p.uploadProgress}%` : 'Uploading…'}
+                      </span>
+                    </div>
+                  ) : p.th ? (
                     <img src={p.th} alt={`Page ${i + 1}`} />
                   ) : (
                     <span className="ms" style={{ fontSize: '34px', color: 'var(--g)' }} aria-hidden="true">
@@ -2957,7 +3123,72 @@ export default function DashboardPage() {
             <div className="t3" role="list">
               {pages.map((p, i) => (
                 <div key={i} className="th" role="listitem">
-                  {p.th ? (
+                  {p.isUploading ? (
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '10px 8px',
+                        boxSizing: 'border-box',
+                        background: 'var(--bg)',
+                      }}
+                    >
+                      <span
+                        className="ms"
+                        style={{
+                          fontSize: '32px',
+                          color: p.pdf ? '#ef4444' : 'var(--g)',
+                          animation: 'pulse 1.8s infinite',
+                        }}
+                        aria-hidden="true"
+                      >
+                        {p.pdf ? 'picture_as_pdf' : 'image'}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: 'var(--ink)',
+                          maxWidth: '90%',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          margin: '4px 0',
+                        }}
+                        title={p.n}
+                      >
+                        {p.n}
+                      </span>
+                      {/* Small loader line that fills up to the end */}
+                      <div
+                        style={{
+                          width: '84%',
+                          height: '4px',
+                          background: 'rgba(16, 185, 129, 0.16)',
+                          borderRadius: '999px',
+                          overflow: 'hidden',
+                          margin: '4px 0 3px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${p.uploadProgress || 15}%`,
+                            background: 'linear-gradient(90deg, #10b981, #34d399)',
+                            borderRadius: '999px',
+                            transition: 'width 0.35s ease-out',
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--g)' }}>
+                        {p.uploadProgress ? `${p.uploadProgress}%` : 'Uploading…'}
+                      </span>
+                    </div>
+                  ) : p.th ? (
                     <img src={p.th} alt={`Page ${i + 1}`} />
                   ) : (
                     <span className="ms" style={{ fontSize: '34px', color: 'var(--g)' }} aria-hidden="true">
@@ -3083,7 +3314,7 @@ export default function DashboardPage() {
           <button
             type="button"
             className="btn o s"
-            onClick={startReading}
+            onClick={() => startReading(true)}
             title="Re-analyze uploaded pages with AI OCR"
             style={{ fontSize: '12px', padding: '6px 12px', borderRadius: '20px', gap: '4px', flexShrink: 0, marginTop: '8px' }}
           >
@@ -3208,6 +3439,7 @@ export default function DashboardPage() {
                       },
                     ]);
                     showToast('Week 1 entry created in database');
+                    setActiveSheet({ type: 'editWeek', index: 0 });
                   } catch (err: any) {
                     showToast(err.message || 'Failed to create entry');
                   }
