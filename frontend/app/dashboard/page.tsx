@@ -139,7 +139,8 @@ export default function DashboardPage() {
     updateMissingInfo,
     payments,
     fetchPayments,
-    recordPayment,
+    initiateSquadPayment,
+    verifySquadPayment,
   } = useProjectStore();
 
   const {
@@ -147,8 +148,6 @@ export default function DashboardPage() {
     fetchReport,
     generateReport: storeGenerateReport,
     saveSection,
-    downloadDocx,
-    downloadPdf,
     isGeneratingReport,
   } = useReportStore();
 
@@ -1608,97 +1607,136 @@ export default function DashboardPage() {
   // REAL DOWNLOAD EXECUTION (PDF / DOCX FROM DATABASE)
   // ========================================================
   const executeRealFileDownload = async (format: 'PDF' | 'Word') => {
-    try {
-      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
-      if (projId) {
-        showToast(`Generating ${format} download...`);
-        if (format === 'Word') {
-          await downloadDocx(projId);
-        } else {
-          await downloadPdf(projId);
-        }
-        showToast(`Download started!`);
-      } else {
-        showToast('No active project found for download');
-      }
-    } catch (err: any) {
-      showToast(err.message || `Download failed. Check connection.`);
+    const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (!projId) {
+      showToast('No active project');
+      return;
     }
-  };
-
-  // ========================================================
-  // PAYMENT COMPLETION HANDLERS (PERSISTED IN POSTGRESQL)
-  // ========================================================
-  const processDigitalPayment = async () => {
-    setIsProcessingPayment(true);
-    const txRef = `L2D_PAY_${Date.now().toString().slice(-6)}`;
+    // Verify payment via secure backend endpoint
+    const url = `${getApiBaseUrl()}/projects/${projId}/squad/download/${format.toLowerCase()}/`;
+    const token = getAuthToken();
     try {
-      if (activeProject?.id) {
-        await recordPayment(activeProject.id, {
-          order_type: 'digital',
-          amount: '2000.00',
-          payment_method: paymentMethod,
-          transaction_reference: txRef,
-          status: 'successful',
-          recipient_name: details.name || userFullName,
-        });
-        await fetchPayments(activeProject.id).catch(() => {});
-      }
-      setIsProcessingPayment(false);
-      setHasPaidDigital(true);
-      setCheckoutModal(null);
-      setPaymentSuccess({
-        type: 'digital',
-        txRef,
+      const res = await fetch(url, {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
-      showToast('Payment confirmed! NGN 2,000');
+      if (!res.ok) {
+        if (res.status === 403) {
+          showToast('You must complete payment before downloading.');
+        } else {
+          showToast('Download not available yet.');
+        }
+        return;
+      }
+      const blob = await res.blob();
+      const filename = res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || `siwes_report.${format.toLowerCase()}`;
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(downloadUrl);
+      a.remove();
     } catch (err: any) {
-      setIsProcessingPayment(false);
-      showToast(err.message || 'Payment recording failed');
+      showToast(err.message || 'Download failed');
     }
   };
 
-  const processDeliveryPayment = async () => {
+  // ========================================================
+  // SQUAD PAYMENT HANDLERS
+  // ========================================================
+  const [squadCheckoutLoading, setSquadCheckoutLoading] = useState<boolean>(false);
+  const [squadTxRef, setSquadTxRef] = useState<string | null>(null);
+
+  const initiateDigitalSquadPayment = async () => {
+    if (!activeProject?.id) {
+      showToast('No active project found');
+      return;
+    }
+    setSquadCheckoutLoading(true);
+    try {
+      const result = await initiateSquadPayment(activeProject.id, {
+        order_type: 'digital',
+        recipient_name: details.name || userFullName,
+        phone_number: '',
+        campus_location: '',
+        custom_address: '',
+        delivery_date: '',
+        notes: '',
+      });
+      setSquadTxRef(result.transaction_reference);
+      // Redirect to Squad hosted checkout
+      window.location.href = result.checkout_url;
+    } catch (err: any) {
+      setSquadCheckoutLoading(false);
+      showToast(err.message || 'Failed to start payment');
+    }
+  };
+
+  const initiateDeliverySquadPayment = async () => {
     if (!deliveryData.phone.trim()) {
       showToast('Please enter your phone number');
       return;
     }
+    if (!deliveryData.recipientName.trim()) {
+      showToast('Please enter recipient name');
+      return;
+    }
+    if (!deliveryData.customAddress.trim()) {
+      showToast('Please enter delivery address');
+      return;
+    }
+    if (!activeProject?.id) {
+      showToast('No active project found');
+      return;
+    }
 
-    setIsProcessingPayment(true);
-    const txRef = `L2D_DEL_${Date.now().toString().slice(-6)}`;
+    setSquadCheckoutLoading(true);
     try {
-      if (activeProject?.id) {
-        await recordPayment(activeProject.id, {
-          order_type: 'physical_delivery',
-          amount: '4000.00',
-          payment_method: paymentMethod,
-          transaction_reference: txRef,
-          status: 'successful',
-          recipient_name: deliveryData.recipientName || details.name || userFullName,
-          phone_number: deliveryData.phone,
-          campus_location: deliveryData.campusLocation,
-          custom_address: deliveryData.customAddress,
-          delivery_date: deliveryData.deliveryDate || undefined,
-        });
-        await fetchPayments(activeProject.id).catch(() => {});
-      }
-      setIsProcessingPayment(false);
-      setCheckoutModal(null);
-      setPaymentSuccess({
-        type: 'delivery',
-        txRef,
-        deliveryDetails: {
-          location: deliveryData.campusLocation,
-          customAddress: deliveryData.customAddress,
-          date: deliveryData.deliveryDate,
-          recipient: deliveryData.recipientName || details.name || userFullName,
-          phone: deliveryData.phone,
-        },
+      const result = await initiateSquadPayment(activeProject.id, {
+        order_type: 'delivery',
+        recipient_name: deliveryData.recipientName,
+        phone_number: deliveryData.phone,
+        campus_location: deliveryData.campusLocation,
+        custom_address: deliveryData.customAddress,
+        delivery_date: deliveryData.deliveryDate,
+        notes: deliveryData.notes,
       });
-      showToast('Delivery order confirmed! NGN 4,000');
+      setSquadTxRef(result.transaction_reference);
+      // Redirect to Squad hosted checkout
+      window.location.href = result.checkout_url;
     } catch (err: any) {
-      setIsProcessingPayment(false);
-      showToast(err.message || 'Delivery order failed');
+      setSquadCheckoutLoading(false);
+      showToast(err.message || 'Failed to start payment');
+    }
+  };
+
+  const verifySquadPaymentStatus = async (transactionRef: string) => {
+    if (!activeProject?.id) return;
+    try {
+      const result = await verifySquadPayment(activeProject.id, transactionRef);
+      if (result.order_status === 'paid') {
+        if (result.type === 'digital' || (result as any).order_type === 'digital') {
+          setHasPaidDigital(true);
+        }
+        setCheckoutModal(null);
+        setPaymentSuccess({
+          type: (result as any).order_type === 'delivery' ? 'delivery' : 'digital',
+          txRef: transactionRef,
+          deliveryDetails: {
+            location: deliveryData.campusLocation,
+            customAddress: deliveryData.customAddress,
+            date: deliveryData.deliveryDate,
+            recipient: deliveryData.recipientName || details.name || userFullName,
+            phone: deliveryData.phone,
+          },
+        });
+        showToast('Payment verified! Order confirmed.');
+      } else {
+        showToast('Payment not yet confirmed. Please try again.');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Payment verification failed');
     }
   };
 
@@ -5069,16 +5107,16 @@ export default function DashboardPage() {
                 <button
                   className="btn w"
                   type="button"
-                  disabled={isProcessingPayment}
-                  onClick={processDigitalPayment}
+                  disabled={squadCheckoutLoading}
+                  onClick={initiateDigitalSquadPayment}
                   style={{ marginTop: '14px' }}
                 >
-                  {isProcessingPayment ? (
+                  {squadCheckoutLoading ? (
                     <>
                       <span className="ms" style={{ animation: 'spin 1s linear infinite' }}>
                         sync
                       </span>
-                      Processing Payment…
+                      Starting Payment…
                     </>
                   ) : (
                     <>
@@ -5202,15 +5240,15 @@ export default function DashboardPage() {
                 <button
                   className="btn w"
                   type="button"
-                  disabled={isProcessingPayment}
-                  onClick={processDeliveryPayment}
+                  disabled={squadCheckoutLoading}
+                  onClick={initiateDeliverySquadPayment}
                 >
-                  {isProcessingPayment ? (
+                  {squadCheckoutLoading ? (
                     <>
                       <span className="ms" style={{ animation: 'spin 1s linear infinite' }}>
                         sync
                       </span>
-                      Confirming Order & Payment…
+                      Starting Payment…
                     </>
                   ) : (
                     <>

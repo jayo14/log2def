@@ -40,6 +40,8 @@ export interface ProjectState {
   payments: any[];
   fetchPayments: (projectId: number | string) => Promise<any[]>;
   recordPayment: (projectId: number | string, data: any) => Promise<any>;
+  initiateSquadPayment: (projectId: number | string, data: any) => Promise<any>;
+  verifySquadPayment: (projectId: number | string, transactionRef: string) => Promise<any>;
 
   clearActiveProject: () => void;
   setError: (error: string | null) => void;
@@ -384,6 +386,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return created;
     } catch (err: any) {
       set({ error: err.message || 'Failed to record payment' });
+      throw err;
+    }
+  },
+
+  initiateSquadPayment: async (projectId: number | string, data: any) => {
+    set({ error: null });
+    try {
+      const result = await projectsApi.squadInitialize(projectId, data);
+      return result;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to initialize payment' });
+      throw err;
+    }
+  },
+
+  verifySquadPayment: async (projectId: number | string, transactionRef: string) => {
+    set({ error: null });
+    try {
+      const result = await projectsApi.squadVerify(projectId, transactionRef);
+      return result;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to verify payment' });
       throw err;
     }
   },

@@ -365,6 +365,35 @@ export const projectsApi = {
     });
   },
 
+  // Squad Payment Gateway
+  squadInitialize: async (projectId: number | string, data: any) => {
+    return apiRequest<{
+      checkout_url: string;
+      transaction_reference: string;
+      order_reference: string;
+      amount: string;
+      amount_kobo: number;
+      currency: string;
+      status: string;
+    }>(`/projects/${projectId}/squad/initialize/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  squadVerify: async (projectId: number | string, transactionRef: string) => {
+    return apiRequest<{
+      transaction_reference: string;
+      order_reference: string;
+      squad_status: string;
+      squad_amount: number | null;
+      squad_currency: string;
+      order_status: string;
+      amount_matches: boolean;
+      currency_matches: boolean;
+    }>(`/projects/${projectId}/squad/verify/?transaction_ref=${encodeURIComponent(transactionRef)}`);
+  },
+
   // Document Export Download URLs & Asynchronous Status
   getExportDocxUrl: (projectId: number | string) => {
     return `${getApiBaseUrl()}/projects/${projectId}/export/docx/`;
