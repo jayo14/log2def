@@ -7,7 +7,7 @@ import {
   useProjectStore,
   useReportStore,
 } from '@/lib/store';
-import { getApiBaseUrl } from '@/lib/api';
+import { getApiBaseUrl, getAuthToken } from '@/lib/api';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
@@ -107,14 +107,22 @@ interface LogEntry {
 }
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
+
+  // Redirect to login if user is not authenticated
+  useEffect(() => {
+    if (!isAuthLoading && !user && !getAuthToken()) {
+      router.push('/login?redirect=/dashboard');
+    }
+  }, [isAuthLoading, user, router]);
 
   const {
     projects,
     activeProject,
     fetchProjects,
     fetchActiveProject,
+    ensureActiveProject,
     createProject,
     updateActiveProject,
     uploadDocument,
@@ -405,19 +413,11 @@ export default function DashboardPage() {
     let isMounted = true;
     const initProject = async () => {
       try {
-        const list = await fetchProjects();
-        let projId = list && list.length > 0 ? list[0].id : null;
-        if (!projId) {
-          const newProj = await createProject({
-            title: 'LASUSTECH SIWES Technical Report',
-            department: 'Computer Science',
-            faculty_school: 'College of Basic Science',
-            university_name: 'Lagos State University of Science and Technology',
-          });
-          projId = newProj.id;
-        }
+        const current = await ensureActiveProject();
+        const projId = current?.id;
+
         if (projId && isMounted) {
-          await fetchActiveProject(projId);
+          const freshProj = await fetchActiveProject(projId).catch(() => current);
           const entriesData = await fetchLogbookEntries(projId).catch(() => []);
           if (entriesData && entriesData.length > 0) {
             setEntries(
@@ -433,6 +433,21 @@ export default function DashboardPage() {
               }))
             );
           }
+
+          // Hydrate uploaded pages into Step 2 and Home screen if available
+          if (freshProj?.source_documents && freshProj.source_documents.length > 0) {
+            setPages((prev) => {
+              if (prev.length > 0) return prev;
+              return freshProj.source_documents.map((d: any) => ({
+                id: d.id,
+                n: d.original_filename || `Page ${d.page_index + 1}`,
+                pdf: d.file_type === 'pdf',
+                th: d.presigned_url || (d.file ? (d.file.startsWith('http') ? d.file : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${d.file.startsWith('/') ? '' : '/'}${d.file}`) : ''),
+                status: d.status,
+              }));
+            });
+          }
+
           const repData = await fetchReport(projId).catch(() => null);
           if (repData && repData.sections && repData.sections.length > 0) {
             const hasContent = repData.sections.some((s: any) => s.content && s.content.trim().length > 20);
@@ -451,7 +466,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [fetchProjects, createProject, fetchActiveProject, fetchLogbookEntries, fetchReport, fetchPayments]);
+  }, [user, ensureActiveProject, fetchActiveProject, fetchLogbookEntries, fetchReport, fetchPayments]);
 
   // Synchronize state directly from active database project
   useEffect(() => {
@@ -914,16 +929,79 @@ export default function DashboardPage() {
     setReading(true);
     setReadProgress(0);
 
-    const projId = activeProject?.id;
+    // Resolve active project robustly
+    let proj = activeProject || useProjectStore.getState().activeProject;
+    let projId = proj?.id;
+
+    if (!projId) {
+      try {
+        proj = await ensureActiveProject();
+        projId = proj?.id || useProjectStore.getState().activeProject?.id;
+      } catch (err) {
+        console.warn('Could not ensure active project in startReading:', err);
+      }
+    }
+
+    if (!projId) {
+      const allProjects = useProjectStore.getState().projects;
+      if (allProjects && allProjects.length > 0) {
+        try {
+          proj = await fetchActiveProject(allProjects[0].id);
+          projId = proj?.id;
+        } catch {
+          projId = allProjects[0].id;
+        }
+      }
+    }
+
     if (!projId) {
       setReading(false);
-      showToast('No active report project found');
+      const token = getAuthToken();
+      if (!token) {
+        showToast('Please sign in or register to analyze your logbook with AI OCR');
+        router.push('/login?redirect=/dashboard');
+      } else {
+        showToast('No active report project found. Please try refreshing or re-uploading.');
+      }
       return;
     }
 
     try {
-      const freshProj = await fetchActiveProject(projId).catch(() => activeProject);
-      const docs = freshProj?.source_documents || activeProject?.source_documents || [];
+      // If there are uploaded pages with files that haven't been saved to DB yet, upload them now
+      const pendingUploads = pages.filter((p) => p.file && !p.id);
+      if (pendingUploads.length > 0 && projId) {
+        showToast(`Uploading ${pendingUploads.length} pending logbook page${pendingUploads.length > 1 ? 's' : ''} to server...`);
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          if (page.file && !page.id) {
+            const fd = new FormData();
+            fd.append('file', page.file);
+            fd.append('page_index', String(i));
+            try {
+              const uploadedDoc = await uploadDocument(projId, fd);
+              if (uploadedDoc?.id) {
+                setPages((prev) => {
+                  const next = [...prev];
+                  if (next[i]) {
+                    next[i] = {
+                      ...next[i],
+                      id: uploadedDoc.id,
+                      isUploading: false,
+                      uploadProgress: 100,
+                    };
+                  }
+                  return next;
+                });
+              }
+            } catch (uErr) {
+              console.warn(`Pending upload error on page ${i}:`, uErr);
+            }
+          }
+        }
+      }
+
+      const freshProj = await fetchActiveProject(projId).catch(() => proj);
+      const docs = freshProj?.source_documents || proj?.source_documents || [];
       const totalDocs = Math.max(docs.length, pages.length, 1);
 
       const iv = setInterval(() => {
@@ -1110,24 +1188,35 @@ export default function DashboardPage() {
   const handleFilesAdded = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
-    let projId = activeProject?.id;
+    let proj = activeProject || useProjectStore.getState().activeProject;
+    let projId = proj?.id;
+
     if (!projId) {
       try {
-        const list = await fetchProjects();
-        if (list && list.length > 0) {
-          projId = list[0].id;
-        } else {
-          const created = await createProject({
-            title: 'LASUSTECH SIWES Technical Report',
-            department: details.dept || 'Computer Science',
-            faculty_school: details.fac || 'College of Basic Science',
-            university_name: details.inst || 'Lagos State University of Science and Technology',
-          });
-          projId = created.id;
-        }
+        proj = await ensureActiveProject();
+        projId = proj?.id || useProjectStore.getState().activeProject?.id;
       } catch (err) {
-        console.warn('Could not resolve active project for file upload:', err);
+        console.warn('Could not ensure active project for file upload:', err);
       }
+    }
+
+    if (!projId) {
+      const list = useProjectStore.getState().projects;
+      if (list && list.length > 0) {
+        projId = list[0].id;
+      }
+    }
+
+    const token = getAuthToken();
+    if (!projId && !token) {
+      showToast('Please sign in or register to upload logbook pages');
+      router.push('/login?redirect=/dashboard');
+      return;
+    }
+
+    if (!projId) {
+      showToast('Could not initialize report project. Please refresh the page.');
+      return;
     }
 
     const count = files.length;
@@ -1146,6 +1235,7 @@ export default function DashboardPage() {
 
     setPages((prev) => [...prev, ...initialPlaceholders]);
 
+    let successCount = 0;
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const pageIdx = startingIndex + i;
@@ -1166,73 +1256,72 @@ export default function DashboardPage() {
 
       const localThPromise = generateThumbnail(f);
 
-      if (projId) {
-        const fd = new FormData();
-        fd.append('file', f);
-        fd.append('page_index', String(pageIdx));
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('page_index', String(pageIdx));
 
-        try {
-          const uploadedDoc = await uploadDocument(projId, fd);
-          clearInterval(progressTimer);
+      try {
+        const uploadedDoc = await uploadDocument(projId, fd);
+        clearInterval(progressTimer);
+        successCount++;
 
-          const localTh = await localThPromise;
-          let finalTh = localTh;
-          if (uploadedDoc) {
-            if (uploadedDoc.presigned_url) {
-              finalTh = uploadedDoc.presigned_url;
-            } else if (uploadedDoc.file) {
-              finalTh = uploadedDoc.file.startsWith('http')
-                ? uploadedDoc.file
-                : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${uploadedDoc.file.startsWith('/') ? '' : '/'}${uploadedDoc.file}`;
-            }
+        const localTh = await localThPromise;
+        let finalTh = localTh;
+        if (uploadedDoc) {
+          if (uploadedDoc.presigned_url) {
+            finalTh = uploadedDoc.presigned_url;
+          } else if (uploadedDoc.file) {
+            finalTh = uploadedDoc.file.startsWith('http')
+              ? uploadedDoc.file
+              : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${uploadedDoc.file.startsWith('/') ? '' : '/'}${uploadedDoc.file}`;
           }
-
-          // Complete loader line to 100%
-          setPages((prev) => {
-            const next = [...prev];
-            if (next[pageIdx]) {
-              next[pageIdx] = {
-                ...next[pageIdx],
-                id: uploadedDoc?.id,
-                uploadProgress: 100,
-              };
-            }
-            return next;
-          });
-
-          // Short 250ms pause so the student sees the filled progress line
-          await new Promise((r) => setTimeout(r, 250));
-
-          setPages((prev) => {
-            const next = [...prev];
-            if (next[pageIdx]) {
-              next[pageIdx] = {
-                ...next[pageIdx],
-                id: uploadedDoc?.id,
-                th: finalTh,
-                isUploading: false,
-                uploadProgress: 100,
-              };
-            }
-            return next;
-          });
-        } catch (err: any) {
-          clearInterval(progressTimer);
-          const localTh = await localThPromise;
-          setPages((prev) => {
-            const next = [...prev];
-            if (next[pageIdx]) {
-              next[pageIdx] = {
-                ...next[pageIdx],
-                th: localTh,
-                isUploading: false,
-                q: 'error',
-              };
-            }
-            return next;
-          });
-          showToast(`Upload error: ${err.message || 'failed'}`);
         }
+
+        // Complete loader line to 100%
+        setPages((prev) => {
+          const next = [...prev];
+          if (next[pageIdx]) {
+            next[pageIdx] = {
+              ...next[pageIdx],
+              id: uploadedDoc?.id,
+              uploadProgress: 100,
+            };
+          }
+          return next;
+        });
+
+        // Short 200ms pause so the student sees the filled progress line
+        await new Promise((r) => setTimeout(r, 200));
+
+        setPages((prev) => {
+          const next = [...prev];
+          if (next[pageIdx]) {
+            next[pageIdx] = {
+              ...next[pageIdx],
+              id: uploadedDoc?.id,
+              th: finalTh,
+              isUploading: false,
+              uploadProgress: 100,
+            };
+          }
+          return next;
+        });
+      } catch (err: any) {
+        clearInterval(progressTimer);
+        const localTh = await localThPromise;
+        setPages((prev) => {
+          const next = [...prev];
+          if (next[pageIdx]) {
+            next[pageIdx] = {
+              ...next[pageIdx],
+              th: localTh,
+              isUploading: false,
+              q: 'error',
+            };
+          }
+          return next;
+        });
+        showToast(`Upload error on ${f.name}: ${err.message || 'failed'}`);
       }
     }
 
@@ -1240,10 +1329,15 @@ export default function DashboardPage() {
     if (camInputRef.current) camInputRef.current.value = '';
 
     if (projId) {
-      await fetchActiveProject(projId);
+      await fetchActiveProject(projId).catch(() => {});
       await fetchLogbookEntries(projId).catch(() => {});
     }
-    showToast('Logbook uploaded successfully!');
+
+    if (successCount > 0) {
+      showToast(`${successCount} logbook page${successCount > 1 ? 's' : ''} uploaded successfully!`);
+    } else {
+      showToast('Page upload failed. Please check network connection and retry.');
+    }
   };
 
   // In-app Camera
@@ -1352,23 +1446,20 @@ export default function DashboardPage() {
     c.toBlob(async (blob) => {
       if (!blob) return;
       const file = new File([blob], `camera_page_${Date.now()}.jpg`, { type: 'image/jpeg' });
-      let projId = activeProject?.id;
+      let proj = activeProject || useProjectStore.getState().activeProject;
+      let projId = proj?.id;
       if (!projId) {
         try {
-          const list = await fetchProjects();
-          if (list && list.length > 0) {
-            projId = list[0].id;
-          } else {
-            const created = await createProject({
-              title: 'LASUSTECH SIWES Technical Report',
-              department: details.dept || 'Computer Science',
-              faculty_school: details.fac || 'College of Basic Science',
-              university_name: details.inst || 'Lagos State University of Science and Technology',
-            });
-            projId = created.id;
-          }
+          proj = await ensureActiveProject();
+          projId = proj?.id || useProjectStore.getState().activeProject?.id;
         } catch (e) {
           console.error('Could not ensure active project:', e);
+        }
+      }
+      if (!projId) {
+        const list = useProjectStore.getState().projects;
+        if (list && list.length > 0) {
+          projId = list[0].id;
         }
       }
 
@@ -1536,9 +1627,12 @@ export default function DashboardPage() {
   };
 
   // Step 1 Submission
-  const handleStep1Submit = (e: React.FormEvent) => {
+  const handleStep1Submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (method === 'photos') {
+      if (!activeProject?.id) {
+        await ensureActiveProject().catch(() => {});
+      }
       setStep(2);
       if (scrRef.current) scrRef.current.scrollTop = 0;
       return;
@@ -1561,8 +1655,15 @@ export default function DashboardPage() {
       return;
     }
 
-    if (activeProject?.id) {
-      updateActiveProject(activeProject.id, {
+    let proj = activeProject || useProjectStore.getState().activeProject;
+    let projId = proj?.id;
+    if (!projId) {
+      proj = await ensureActiveProject().catch(() => null);
+      projId = proj?.id;
+    }
+
+    if (projId) {
+      updateActiveProject(projId, {
         full_name: details.name || undefined,
         matric_number: details.matric,
         department: details.dept,
@@ -3988,20 +4089,23 @@ export default function DashboardPage() {
       );
     }
     if (step === 2) {
+      const isAnyUploading = pages.some((p) => p.isUploading);
       return (
         <button
           className="btn"
           type="button"
-          disabled={pages.length === 0}
-          onClick={() => {
-            if (pages.length === 0) return;
-            if (!readDone) startReading();
+          disabled={pages.length === 0 || isAnyUploading}
+          onClick={async () => {
+            if (pages.length === 0 || isAnyUploading) return;
             setStep(3);
             if (scrRef.current) scrRef.current.scrollTop = 0;
+            if (!readDone) {
+              await startReading();
+            }
           }}
           style={{ flex: 1 }}
         >
-          Next
+          {isAnyUploading ? 'Uploading pages...' : 'Next'}
           <span className="ms" aria-hidden="true">
             arrow_forward
           </span>
