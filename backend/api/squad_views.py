@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.shortcuts import redirect
 from django.db import transaction as db_transaction
 from django.utils import timezone
@@ -208,17 +209,22 @@ class SquadCallbackView(views.APIView):
                 frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
                 return redirect(f'{frontend_url}/dashboard/payment-failed?error=order_not_found')
 
-        # Verify amount and currency match
-        expected_amount = float(order.amount)
-        if tx_amount is not None and float(tx_amount) != expected_amount:
-            logger.warning(
-                'Amount mismatch for order %s: expected %s, got %s',
-                order.order_reference, expected_amount, tx_amount
-            )
-            order.status = 'review_required'
-            order.save(update_fields=['status', 'updated_at'])
-            frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
-            return redirect(f'{frontend_url}/dashboard/payment-failed?error=amount_mismatch')
+        # Verify amount and currency match — use Decimal for exact comparison
+        expected_amount = Decimal(str(order.amount))
+        if tx_amount is not None:
+            try:
+                tx_amount_decimal = Decimal(str(tx_amount))
+            except (ValueError, TypeError):
+                tx_amount_decimal = None
+            if tx_amount_decimal is not None and tx_amount_decimal != expected_amount:
+                logger.warning(
+                    'Amount mismatch for order %s: expected %s, got %s',
+                    order.order_reference, expected_amount, tx_amount
+                )
+                order.status = 'review_required'
+                order.save(update_fields=['status', 'updated_at'])
+                frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+                return redirect(f'{frontend_url}/dashboard/payment-failed?error=amount_mismatch')
 
         if tx_currency != order.currency:
             logger.warning(
@@ -230,34 +236,38 @@ class SquadCallbackView(views.APIView):
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
             return redirect(f'{frontend_url}/dashboard/payment-failed?error=currency_mismatch')
 
-        # Update order based on verification
+        # Update order based on verification — use atomic transaction for consistency
         if tx_status == 'success':
-            if order.status != 'paid':
-                order.status = 'paid'
-                order.squad_transaction_reference = tx_ref
-                order.paid_at = timezone.now()
-                order.webhook_received_at = timezone.now()
-                if order.order_type == 'digital':
-                    order.digital_files_unlocked = True
-                    order.fulfilment_status = 'ready'
-                else:
-                    order.fulfilment_status = 'processing'
-                order.save()
+            with db_transaction.atomic():
+                # Re-fetch order with select_for_update to prevent race conditions
+                order = PaymentOrder.objects.select_for_update().get(pk=order.pk)
 
-                # Send Telegram notification (non-fatal)
-                try:
-                    send_payment_notification(
-                        order_reference=order.order_reference,
-                        customer_name=order.recipient_name or order.user.get_full_name() or order.user.username,
-                        order_type=order.get_order_type_display(),
-                        amount=str(order.amount),
-                        phone_number=order.phone_number,
-                        delivery_address=order.custom_address or order.campus_location,
-                        preferred_date=order.delivery_date,
-                        fulfilment_status=order.fulfilment_status,
-                    )
-                except Exception:
-                    logger.exception('Telegram notification failed for order %s', order.order_reference)
+                if order.status != 'paid':
+                    order.status = 'paid'
+                    order.squad_transaction_reference = tx_ref
+                    order.paid_at = timezone.now()
+                    order.webhook_received_at = timezone.now()
+                    if order.order_type == 'digital':
+                        order.digital_files_unlocked = True
+                        order.fulfilment_status = 'ready'
+                    else:
+                        order.fulfilment_status = 'processing'
+                    order.save()
+
+                    # Send Telegram notification (non-fatal)
+                    try:
+                        send_payment_notification(
+                            order_reference=order.order_reference,
+                            customer_name=order.recipient_name or order.user.get_full_name() or order.user.username,
+                            order_type=order.get_order_type_display(),
+                            amount=str(order.amount),
+                            phone_number=order.phone_number,
+                            delivery_address=order.custom_address or order.campus_location,
+                            preferred_date=order.delivery_date,
+                            fulfilment_status=order.fulfilment_status,
+                        )
+                    except Exception:
+                        logger.exception('Telegram notification failed for order %s', order.order_reference)
 
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
             return redirect(
@@ -265,8 +275,10 @@ class SquadCallbackView(views.APIView):
                 f'&type={order.order_type}'
             )
         else:
-            order.status = 'failed'
-            order.save(update_fields=['status', 'updated_at'])
+            with db_transaction.atomic():
+                order = PaymentOrder.objects.select_for_update().get(pk=order.pk)
+                order.status = 'failed'
+                order.save(update_fields=['status', 'updated_at'])
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
             return redirect(
                 f'{frontend_url}/dashboard/payment-failed?order_ref={order.order_reference}'
@@ -340,9 +352,14 @@ class SquadWebhookView(views.APIView):
                 logger.warning('Webhook for unknown transaction: %s', tx_ref)
                 return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Verify amount and currency
-        expected_amount = float(order.amount)
-        if tx_amount is not None and float(tx_amount) != expected_amount:
+        # Verify amount and currency — use Decimal for exact comparison
+        expected_amount = Decimal(str(order.amount))
+        if tx_amount is not None:
+            try:
+                tx_amount_decimal = Decimal(str(tx_amount))
+            except (ValueError, TypeError):
+                tx_amount_decimal = None
+            if tx_amount_decimal is not None and tx_amount_decimal != expected_amount:
             webhook_event.error_message = f'Amount mismatch: expected {expected_amount}, got {tx_amount}'
             webhook_event.success = True
             webhook_event.save()
