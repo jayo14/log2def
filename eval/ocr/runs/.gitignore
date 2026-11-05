@@ -1,0 +1,3 @@
+# OCR traces may contain student handwriting and are always local-only.
+*
+!.gitignore

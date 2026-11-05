@@ -1,9 +1,11 @@
 import os
 import io
 import json
+import tempfile
 from datetime import date
 from pathlib import Path
 from django.test import TestCase
+from django.test import override_settings
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
@@ -27,6 +29,7 @@ from .defence_generator import (
 )
 from .feature_flags import DEFAULT_FEATURE_FLAGS, is_feature_enabled, get_all_feature_flags
 from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requirements, ensure_default_template_in_db
+from .ocr_trace import save_tesseract_tsv, trace_root
 
 
 class TemplateV2ContractTests(TestCase):
@@ -56,6 +59,26 @@ class TemplateV2ContractTests(TestCase):
     def test_v1_snapshot_definition_remains_unchanged(self):
         original = json.loads((Path(__file__).parent / "templates" / "lasustech_standard_v1.json").read_text())
         self.assertEqual(LASUSTECH_STANDARD_V1, original)
+
+
+class OcrTraceHarnessTests(TestCase):
+    def test_tesseract_tsv_is_saved_with_word_boxes_and_confidence(self):
+        header = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+        row = "5\t1\t1\t1\t1\t1\t12\t34\t56\t18\t87.5\tRouter\n"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = save_tesseract_tsv(header + row, Path(temp_dir))
+            self.assertEqual(result["words"][0]["text"], "Router")
+            self.assertEqual(result["words"][0]["confidence"], 87.5)
+            self.assertEqual(result["words"][0]["box"], {"left": 12, "top": 34, "width": 56, "height": 18})
+            self.assertTrue((Path(temp_dir) / "tesseract.tsv").exists())
+            self.assertTrue((Path(temp_dir) / "raw_ocr.json").exists())
+
+    def test_trace_is_disabled_outside_debug(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with override_settings(DEBUG=False, LOG2DEF_OCR_TRACE_DIR=temp_dir):
+                self.assertIsNone(trace_root())
+            with override_settings(DEBUG=True, LOG2DEF_OCR_TRACE_DIR=temp_dir):
+                self.assertEqual(trace_root(), Path(temp_dir).resolve())
 
 
 class Log2DefBackendTests(TestCase):

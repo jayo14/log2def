@@ -416,7 +416,7 @@ def run_multimodal_vision_analysis(image_path: str, filename_hint: str = "") -> 
         return "", 0.0, {}
 
 
-def run_ocr_on_image(image_path: str) -> tuple[str, float]:
+def run_ocr_on_image(image_path: str, trace_page_dir=None) -> tuple[str, float]:
     """
     Attempts to run OCR on an image file using tesseract CLI if installed.
     Returns (extracted_text, confidence_score).
@@ -441,6 +441,14 @@ def run_ocr_on_image(image_path: str) -> tuple[str, float]:
             
             temp_preprocessed = f"{image_path}_preprocessed.png"
             filtered.save(temp_preprocessed)
+            if trace_page_dir is not None:
+                from .ocr_trace import save_tesseract_tsv
+                filtered.save(trace_page_dir / "preprocessed.png")
+                trace_result = subprocess.run(
+                    [tesseract_bin, temp_preprocessed, "stdout", "--oem", "1", "-l", "eng", "tsv"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                save_tesseract_tsv(trace_result.stdout if trace_result.returncode == 0 else "", trace_page_dir)
 
         # Run tesseract CLI
         result = subprocess.run(
@@ -635,6 +643,14 @@ def process_source_document(doc_id: int):
             for page_index in range(len(pdf)):
                 page_num = page_index + 1
                 page = pdf[page_index]
+                from .ocr_trace import page_trace_dir, save_page_trace, engine_version
+                trace_dir = page_trace_dir(doc.id, page_num)
+                native_pdf_words = [
+                    {"text": word[4], "box": {"x0": word[0], "y0": word[1], "x1": word[2], "y1": word[3]}, "confidence": None}
+                    for word in page.get_text("words")
+                ]
+                if trace_dir is not None:
+                    page.get_pixmap(dpi=150).save(str(trace_dir / "original.png"))
 
                 # Step 1: Create ExtractedPage in ocr_in_progress status
                 extracted_page = ExtractedPage.objects.create(
@@ -654,18 +670,24 @@ def process_source_document(doc_id: int):
                 sig_detected = False
                 sig_conf = 0.0
                 vision_entries = []
+                vision_data = {}
+                trace_ocr_captured = False
                 page_fallback_week = filename_week or page_num
 
                 # If text is too short or doesn't have structure, rasterize and run multimodal vision
                 if len(text) < 50:
                     pix = page.get_pixmap(dpi=150)
                     temp_img_path = f"{file_path}_p{page_num}.png"
-                    pix.save(temp_img_path)
+                    if trace_dir is not None:
+                        temp_img_path = str(trace_dir / "original.png")
+                    else:
+                        pix.save(temp_img_path)
                     
                     v_text, v_conf, v_data = run_multimodal_vision_analysis(
                         temp_img_path,
                         filename_hint=f"{doc.original_filename or 'Document'} Page {page_num}"
                     )
+                    vision_data = v_data
                     if v_text:
                         text = v_text
                         confidence = v_conf
@@ -677,7 +699,8 @@ def process_source_document(doc_id: int):
                         if v_data.get('cover_details'):
                             apply_cover_details_to_project(doc.project, v_data.get('cover_details'))
                     else:
-                        ocr_text, ocr_conf = run_ocr_on_image(temp_img_path)
+                        ocr_text, ocr_conf = run_ocr_on_image(temp_img_path, trace_page_dir=trace_dir)
+                        trace_ocr_captured = trace_dir is not None
                         if ocr_text:
                             text = ocr_text
                             confidence = ocr_conf
@@ -685,11 +708,14 @@ def process_source_document(doc_id: int):
                             confidence = 0.20
                             notes = 'Page appears to be scanned or handwritten. Please review and input or verify the text.'
 
-                    if os.path.exists(temp_img_path):
+                    if trace_dir is None and os.path.exists(temp_img_path):
                         try:
                             os.remove(temp_img_path)
                         except OSError:
                             pass
+
+                if trace_dir is not None and not trace_ocr_captured and len(page.get_text("text").strip()) < 50:
+                    run_ocr_on_image(str(trace_dir / "original.png"), trace_page_dir=trace_dir)
 
                 # Step 2: Record OCR results and switch to structuring status
                 low_conf_segs = detect_low_confidence_segments(text, confidence)
@@ -767,9 +793,27 @@ def process_source_document(doc_id: int):
                     extracted_page.status = 'completed'
                 extracted_page.save(update_fields=['status'])
 
+                if trace_dir is not None:
+                    structured = list(doc.project.logbook_entries.filter(source_page=extracted_page).values(
+                        "week_number", "entry_date", "day_of_week", "raw_text", "verified_text",
+                        "activity_summary", "tools_used", "equipment_used", "technical_area",
+                        "confidence_scores", "field_provenance", "is_flagged", "is_verified",
+                    ))
+                    save_page_trace(
+                        trace_dir, page_number=page_num, final_text=text,
+                        engine=("gemini_vision" if "Gemini" in notes else "tesseract" if "local OCR" in notes else "pymupdf_native" if len(page.get_text("text").strip()) >= 50 else "none"),
+                        engine_version=engine_version("gemini_vision" if "Gemini" in notes else "tesseract" if "local OCR" in notes else "pymupdf_native" if len(page.get_text("text").strip()) >= 50 else "none"),
+                        engine_data={"vision": vision_data, "confidence": confidence, "notes": notes},
+                        structured_output=structured, native_pdf_words=native_pdf_words,
+                    )
+
             pdf.close()
 
         elif doc.file_type == 'image' and file_path and os.path.exists(file_path):
+            from .ocr_trace import page_trace_dir, copy_original_image, save_page_trace, engine_version
+            trace_dir = page_trace_dir(doc.id, 1)
+            if trace_dir is not None:
+                copy_original_image(file_path, trace_dir)
             doc.page_count = 1
             doc.save(update_fields=['page_count'])
             
@@ -804,8 +848,10 @@ def process_source_document(doc_id: int):
 
                 if vision_data.get('cover_details'):
                     apply_cover_details_to_project(doc.project, vision_data.get('cover_details'))
+                if trace_dir is not None:
+                    run_ocr_on_image(file_path, trace_page_dir=trace_dir)
             else:
-                ocr_text, ocr_conf = run_ocr_on_image(file_path)
+                ocr_text, ocr_conf = run_ocr_on_image(file_path, trace_page_dir=trace_dir)
                 if ocr_text:
                     confidence = ocr_conf
                     text = ocr_text
@@ -892,6 +938,20 @@ def process_source_document(doc_id: int):
             else:
                 extracted_page.status = 'completed'
             extracted_page.save(update_fields=['status'])
+
+            if trace_dir is not None:
+                structured = list(doc.project.logbook_entries.filter(source_page=extracted_page).values(
+                    "week_number", "entry_date", "day_of_week", "raw_text", "verified_text",
+                    "activity_summary", "tools_used", "equipment_used", "technical_area",
+                    "confidence_scores", "field_provenance", "is_flagged", "is_verified",
+                ))
+                save_page_trace(
+                    trace_dir, page_number=1, final_text=text,
+                    engine="gemini_vision" if "Gemini" in notes else "tesseract" if "local OCR" in notes else "none",
+                    engine_version=engine_version("gemini_vision" if "Gemini" in notes else "tesseract" if "local OCR" in notes else "none"),
+                    engine_data={"vision": vision_data, "confidence": confidence, "notes": notes},
+                    structured_output=structured,
+                )
 
         elif doc.file_type == 'docx' and file_path and os.path.exists(file_path):
             doc_obj = DocxDocument(file_path)
