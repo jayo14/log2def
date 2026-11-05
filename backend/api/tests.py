@@ -317,6 +317,11 @@ class ProvenanceExtractionTests(TestCase):
                 project=self.project, kind="activity", text=quote, provenance="LOGBOOK",
                 evidence_quote=quote, status="confirmed",
             )
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        blocked = client.post(f"/api/projects/{self.project.id}/report/generate/", {}, format="json")
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("guided_intake:organisation_what", blocked.data["missing_required_fields"])
         answers = {
             "organisation_what": "Repairs small appliances",
             "organisation_objectives": "Provide repair services",
@@ -328,8 +333,6 @@ class ProvenanceExtractionTests(TestCase):
             "challenge_pairs": {"none": True, "pairs": []},
             "recommendations": "Provide a written weekly task plan",
         }
-        client = APIClient()
-        client.force_authenticate(user=self.user)
         for key, answer in answers.items():
             response = client.patch(
                 f"/api/projects/{self.project.id}/intake/", {"key": key, "answer": answer}, format="json",
