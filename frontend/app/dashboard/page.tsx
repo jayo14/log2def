@@ -1504,28 +1504,33 @@ export default function DashboardPage() {
     reordered[target] = temp;
     setPages(reordered);
 
-    if (activeProject?.id) {
+    const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (projId) {
       const orderPayload = reordered
         .filter((p) => p.id !== undefined)
         .map((p, idx) => ({ id: p.id as number, page_index: idx }));
       if (orderPayload.length > 0) {
-        await reorderDocuments(activeProject.id, orderPayload).catch(() => {});
+        await reorderDocuments(projId, orderPayload).catch(() => {});
       }
     }
   };
 
   const removePage = async (index: number) => {
     const page = pages[index];
-    if (activeProject?.id && page?.id) {
+    setPages((prev) => prev.filter((_, i) => i !== index));
+
+    const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (projId && page?.id) {
       try {
-        await deleteDocument(activeProject.id, page.id);
-        await fetchActiveProject(activeProject.id);
+        await deleteDocument(projId, page.id);
+        await fetchActiveProject(projId).catch(() => {});
+        await fetchLogbookEntries(projId).catch(() => {});
         showToast('Page removed');
       } catch (err: any) {
-        showToast(err.message || 'Failed to remove page');
+        showToast(err.message || 'Failed to remove page from server');
       }
     } else {
-      setPages((prev) => prev.filter((_, i) => i !== index));
+      showToast('Page removed');
     }
   };
 
@@ -1534,12 +1539,13 @@ export default function DashboardPage() {
   // ========================================================
   const executeRealFileDownload = async (format: 'PDF' | 'Word') => {
     try {
-      if (activeProject?.id) {
+      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+      if (projId) {
         showToast(`Generating ${format} download...`);
         if (format === 'Word') {
-          await downloadDocx(activeProject.id);
+          await downloadDocx(projId);
         } else {
-          await downloadPdf(activeProject.id);
+          await downloadPdf(projId);
         }
         showToast(`Download started!`);
       } else {
