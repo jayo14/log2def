@@ -55,12 +55,39 @@ def model_from_sections(report, spec: dict[str, Any]) -> ReportDocument:
     class TextExtractor(HTMLParser):
         def __init__(self):
             super().__init__()
-            self.parts: list[str] = []
+            self.nodes: list[DocumentNode] = []
+            self.stack: list[DocumentNode] = []
+
+        def _append(self, node: DocumentNode):
+            (self.stack[-1].children if self.stack else self.nodes).append(node)
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if tag in {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6"}:
+                node_type = "heading" if tag.startswith("h") else "paragraph"
+                node = DocumentNode(type=node_type, text="", provenance={}, attrs={"level": tag[1:]} if tag.startswith("h") else {})
+                self._append(node)
+                self.stack.append(node)
+            elif tag in {"ul", "ol", "table", "tr", "td", "th", "li"}:
+                node_type = {"ul": "list", "ol": "list", "table": "table", "tr": "row", "td": "cell", "th": "cell", "li": "list_item"}[tag]
+                node = DocumentNode(type=node_type, text="", provenance={}, attrs={"ordered": tag == "ol"} if tag in {"ul", "ol"} else {})
+                self._append(node)
+                self.stack.append(node)
+            elif tag == "img":
+                self._append(DocumentNode(type="figure", text="", provenance={}, attrs={"src": attributes.get("src", ""), "caption": attributes.get("alt", "")}))
+            elif tag == "br" and self.stack:
+                self.stack[-1].text += "\n"
+
+        def handle_endtag(self, tag):
+            closers = {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "table", "tr", "td", "th", "li"}
+            if tag in closers and self.stack:
+                self.stack.pop()
 
         def handle_data(self, data):
-            text = data.strip()
-            if text:
-                self.parts.append(text)
+            if self.stack:
+                self.stack[-1].text += data
+            elif data.strip():
+                self.nodes.append(DocumentNode(type="paragraph", text=data.strip(), provenance={}))
 
     sections = []
     for item in report.sections.all().order_by("chapter_number", "order", "id"):
@@ -70,14 +97,13 @@ def model_from_sections(report, spec: dict[str, Any]) -> ReportDocument:
         source_type = definition.get("source")
         if source_type not in {"FIXED_BOILERPLATE", "LOGBOOK", "INFERRED", "STUDENT_PROVIDED"}:
             source_type = section_source(item.section_key, item.chapter_number)
-        nodes = [
-            DocumentNode(
-                type="paragraph",
-                text=text,
-                provenance={"source_type": source_type, "source_ids": item.source_links or []},
-            )
-            for text in extractor.parts
-        ]
+        nodes = extractor.nodes
+        def set_provenance(node):
+            node.provenance = {"source_type": source_type, "source_ids": item.source_links or []}
+            for child in node.children:
+                set_provenance(child)
+        for node in nodes:
+            set_provenance(node)
         sections.append(DocumentSection(
             key=item.section_key,
             title=item.title,

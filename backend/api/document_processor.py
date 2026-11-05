@@ -245,7 +245,7 @@ def apply_cover_details_to_project(project, cover_details: dict):
         updated_fields.append('matric_number')
 
     dept = str(cover_details.get('department') or '').strip()
-    if dept and (not project.department or project.department in ['[Department Name]', 'Computer Science']):
+    if dept and (not project.department or project.department == '[Department Name]'):
         project.department = dept
         updated_fields.append('department')
 
@@ -261,7 +261,7 @@ def apply_cover_details_to_project(project, cover_details: dict):
 
     # Host organization
     org = str(cover_details.get('organization_name') or '').strip()
-    if org and (not project.organization_name or project.organization_name in ['[Host Organization Name]', 'Mika Labs', 'Company Name']):
+    if org and (not project.organization_name or project.organization_name in ['[Host Organization Name]', 'Company Name']):
         project.organization_name = org
         updated_fields.append('organization_name')
 

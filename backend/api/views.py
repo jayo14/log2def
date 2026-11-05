@@ -699,8 +699,9 @@ class TemplateListView(views.APIView):
         responses={200: ReportTemplateSerializer(many=True)}
     )
     def get(self, request):
-        from .templates import ensure_default_template_in_db
+        from .templates import ensure_default_template_in_db, ensure_v2_template_in_db
         ensure_default_template_in_db()
+        ensure_v2_template_in_db()
         templates = ReportTemplate.objects.all().order_by('code', '-version')
         return Response(ReportTemplateSerializer(templates, many=True).data)
 
@@ -885,6 +886,10 @@ class SectionUpdateView(views.APIView):
             section.title = title
 
         section.save()
+        report = section.report
+        from .document_model import model_from_sections
+        report.document_model = model_from_sections(report, report.template_snapshot or {}).to_dict()
+        report.save(update_fields=['document_model', 'updated_at'])
         return Response(ReportSectionSerializer(section).data)
 
 

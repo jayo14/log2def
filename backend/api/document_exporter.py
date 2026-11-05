@@ -8,7 +8,7 @@ from pathlib import Path
 from html.parser import HTMLParser
 import docx
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
+from docx.shared import Inches, Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
@@ -187,7 +187,7 @@ class SimpleHTMLDocxParser(HTMLParser):
         run.font.size = Pt(12)
 
 
-def set_academic_margins(section):
+def set_academic_margins(section, v2: bool = False):
     """
     Applies standard Nigerian academic margins for binding:
     Left: 1.5 inches (binding side)
@@ -198,13 +198,16 @@ def set_academic_margins(section):
     """
     section.page_width = Inches(8.27)
     section.page_height = Inches(11.69)
-    section.left_margin = Inches(1.5)
-    section.right_margin = Inches(1.0)
-    section.top_margin = Inches(1.0)
-    section.bottom_margin = Inches(1.0)
+    if v2:
+        section.left_margin = section.right_margin = section.top_margin = section.bottom_margin = Cm(2.54)
+    else:
+        section.left_margin = Inches(1.5)
+        section.right_margin = Inches(1.0)
+        section.top_margin = Inches(1.0)
+        section.bottom_margin = Inches(1.0)
 
 
-def add_footer_page_number(section, fmt="decimal", start=None):
+def add_footer_page_number(section, fmt="decimal", start=None, label: str = ""):
     """
     Configures footer page numbering for a python-docx Section using OOXML fields.
     fmt: 'lowerRoman' (i, ii, iii) or 'decimal' (1, 2, 3)
@@ -229,14 +232,14 @@ def add_footer_page_number(section, fmt="decimal", start=None):
     footer_p.paragraph_format.space_before = Pt(6)
     footer_p.paragraph_format.space_after = Pt(0)
 
-    run = footer_p.add_run()
+    run = footer_p.add_run(label)
     run.font.name = 'Times New Roman'
     run.font.size = Pt(10)
     fldSimple = parse_xml(r'<w:fldSimple %s w:instr="PAGE"/>' % nsdecls('w'))
     run._r.append(fldSimple)
 
 
-def render_table_of_contents_section(doc, prelim_sections: list, body_sections: list):
+def render_table_of_contents_section(doc, prelim_sections: list, body_sections: list, v2: bool = False):
     """
     Generates a realistic Table of Contents with dot leaders and exact page numbers,
     along with Word's native TOC XML instruction.
@@ -255,6 +258,9 @@ def render_table_of_contents_section(doc, prelim_sections: list, body_sections: 
     fld_p.paragraph_format.space_after = Pt(6)
     r_fld = fld_p.add_run()
     r_fld._r.append(parse_xml(r'<w:fldSimple %s w:instr="TOC \o &quot;1-3&quot; \h \z \u"/>' % nsdecls('w')))
+
+    if v2:
+        return
 
     # Add realistic pre-rendered TOC entry items with dot leaders and page numbers
     toc_entries = [
@@ -317,6 +323,34 @@ def render_table_of_contents_section(doc, prelim_sections: list, body_sections: 
         r_page.bold = is_major
 
 
+def document_node_to_html(node: dict) -> str:
+    """Serialize a canonical typed node for the existing DOCX HTML parser."""
+    node_type = node.get("type")
+    text = escape(node.get("text", "")).replace("\n", "<br/>")
+    children = "".join(document_node_to_html(child) for child in node.get("children", []))
+    if node_type == "paragraph":
+        return f"<p>{text}{children}</p>"
+    if node_type == "heading":
+        level = min(4, max(2, int(node.get("attrs", {}).get("level", 2))))
+        return f"<h{level}>{text}{children}</h{level}>"
+    if node_type in {"list", "list_item"}:
+        if node_type == "list":
+            tag = "ol" if node.get("attrs", {}).get("ordered") else "ul"
+            items = "".join(f"<li>{escape(child.get('text', ''))}{''.join(document_node_to_html(grandchild) for grandchild in child.get('children', []))}</li>" for child in node.get("children", []))
+            return f"<{tag}>{items}</{tag}>"
+        return f"<li>{text}{children}</li>"
+    if node_type == "table":
+        return f"<table>{children}</table>"
+    if node_type == "row":
+        return f"<tr>{children}</tr>"
+    if node_type == "cell":
+        return f"<td>{text}{children}</td>"
+    if node_type == "figure":
+        caption = escape(node.get("attrs", {}).get("caption", ""))
+        return f"<p>{caption}</p>" if caption else ""
+    return text + children
+
+
 def generate_docx_report(report: Report) -> str:
     """
     Builds a professional, properly formatted A4 Word document for the SIWES report.
@@ -330,46 +364,58 @@ def generate_docx_report(report: Report) -> str:
       * Table of Contents with real page numbers.
     """
     doc = Document()
+    is_v2 = report.template_version == "lasustech_cs:2.0.0"
+    if is_v2:
+        update_fields = OxmlElement("w:updateFields")
+        update_fields.set(qn("w:val"), "true")
+        doc.settings.element.append(update_fields)
 
     # Configure base Normal style
     normal_style = doc.styles['Normal']
     normal_style.font.name = 'Times New Roman'
     normal_style.font.size = Pt(12)
     normal_style.font.color.rgb = RGBColor(0x11, 0x18, 0x27)
+    if is_v2:
+        for style_name in ("Heading 1", "Heading 2", "Heading 3"):
+            heading_style = doc.styles[style_name]
+            heading_style.font.name = "Times New Roman"
+            heading_style.font.size = Pt(14 if style_name == "Heading 1" else 12)
+            heading_style.font.bold = True
 
-    model = report.document_model
-    if not model or not model.get("sections"):
-        # Legacy v1 reports keep their stored section content and template snapshot.
-        from .document_model import model_from_sections
-        from .templates import get_template_spec
-        model = model_from_sections(report, report.template_snapshot or get_template_spec()).to_dict()
-    all_sections = []
-    for section in model.get("sections", []):
-        paragraphs = []
-        for node in section.get("nodes", []):
-            if node.get("type") == "paragraph" and node.get("text"):
-                paragraphs.append(f"<p>{escape(node['text'])}</p>")
-            elif node.get("type") == "list":
-                items = "".join(f"<li>{escape(child.get('text', ''))}</li>" for child in node.get("children", []))
-                paragraphs.append(f"<ul>{items}</ul>")
-        all_sections.append(SimpleNamespace(
-            section_key=section.get("key", ""),
-            chapter_number=section.get("chapter", 0),
-            title=section.get("title", ""),
-            content="".join(paragraphs),
-        ))
-
-    cover_sec = next((s for s in all_sections if s.section_key == 'cover'), None)
-    prelim_secs = [s for s in all_sections if s.chapter_number == 0 and s.section_key != 'cover']
+    if not is_v2:
+        # Keep the v1 section content path unchanged for pinned legacy reports.
+        all_sections = list(report.sections.all().order_by('chapter_number', 'order', 'id'))
+    else:
+        model = report.document_model
+        if not model or not model.get("sections"):
+            from .document_model import model_from_sections
+            from .templates import get_template_spec
+            model = model_from_sections(report, report.template_snapshot or get_template_spec()).to_dict()
+        all_sections = []
+        for section in model.get("sections", []):
+            rendered = [document_node_to_html(node) for node in section.get("nodes", [])]
+            all_sections.append(SimpleNamespace(
+                section_key=section.get("key", ""),
+                chapter_number=section.get("chapter", 0),
+                title=section.get("title", ""),
+                chapter_title=section.get("chapter_title", ""),
+                content="".join(rendered),
+            ))
+    cover_key = "title_page" if is_v2 else "cover"
+    cover_sec = next((s for s in all_sections if s.section_key == cover_key), None)
+    prelim_secs = [s for s in all_sections if s.chapter_number == 0 and s.section_key != cover_key]
     body_secs = [s for s in all_sections if s.chapter_number > 0]
 
     # --- SECTION 1: COVER PAGE ---
     sec1 = doc.sections[0]
-    set_academic_margins(sec1)
-    sec1.different_first_page_header_footer = True
+    set_academic_margins(sec1, v2=is_v2)
+    sec1.different_first_page_header_footer = not (is_v2 and report.template_options.get("cover_numbered", True))
     # Ensure header & footer on cover page are blank (no visible page number)
     sec1.first_page_header.is_linked_to_previous = False
     sec1.first_page_footer.is_linked_to_previous = False
+    if is_v2 and not sec1.different_first_page_header_footer:
+        sec1.footer.is_linked_to_previous = False
+        add_footer_page_number(sec1, fmt="lowerRoman", start=1)
 
     if cover_sec:
         parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER)
@@ -378,7 +424,7 @@ def generate_docx_report(report: Report) -> str:
     # --- SECTION 2: PRELIMINARY PAGES (Title Page to TOC) ---
     if prelim_secs:
         sec2 = doc.add_section()
-        set_academic_margins(sec2)
+        set_academic_margins(sec2, v2=is_v2)
         sec2.different_first_page_header_footer = False
         sec2.header.is_linked_to_previous = False
         sec2.footer.is_linked_to_previous = False
@@ -390,20 +436,24 @@ def generate_docx_report(report: Report) -> str:
                 doc.add_page_break()
 
             if p_sec.section_key == "table_of_contents":
-                render_table_of_contents_section(doc, prelim_secs, body_secs)
+                render_table_of_contents_section(doc, prelim_secs, body_secs, v2=is_v2)
             else:
+                if is_v2 and p_sec.content:
+                    heading = doc.add_paragraph(style=doc.styles["Heading 1"])
+                    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    heading.add_run(p_sec.title.upper())
                 p_parser = SimpleHTMLDocxParser(doc)
                 p_parser.feed(p_sec.content or "")
 
     # --- SECTION 3: MAIN BODY (Chapters 1 to 5, References & Appendices) ---
     if body_secs:
         sec3 = doc.add_section()
-        set_academic_margins(sec3)
+        set_academic_margins(sec3, v2=is_v2)
         sec3.different_first_page_header_footer = False
         sec3.header.is_linked_to_previous = False
         sec3.footer.is_linked_to_previous = False
         # Decimal Arabic numerals starting at 1
-        add_footer_page_number(sec3, fmt="decimal", start=1)
+        add_footer_page_number(sec3, fmt="decimal", start=1, label="Page " if is_v2 else "")
 
         current_chapter = None
         for b_idx, b_sec in enumerate(body_secs):
@@ -420,8 +470,9 @@ def generate_docx_report(report: Report) -> str:
                     5: "CHAPTER FIVE\nCONCLUSION AND RECOMMENDATIONS",
                     6: "REFERENCES AND APPENDICES"
                 }
-                header_text = ch_titles.get(b_sec.chapter_number, f"CHAPTER {b_sec.chapter_number}")
+                header_text = getattr(b_sec, "chapter_title", "") or ch_titles.get(b_sec.chapter_number, f"CHAPTER {b_sec.chapter_number}")
                 ch_p = doc.add_paragraph()
+                ch_p.style = doc.styles["Heading 1"]
                 ch_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 ch_p.paragraph_format.space_before = Pt(18)
                 ch_p.paragraph_format.space_after = Pt(18)
@@ -432,6 +483,7 @@ def generate_docx_report(report: Report) -> str:
 
             if b_sec.chapter_number > 0 and b_sec.section_key not in ["references", "appendices"]:
                 sub_p = doc.add_paragraph()
+                sub_p.style = doc.styles["Heading 2"]
                 sub_p.paragraph_format.space_before = Pt(12)
                 sub_p.paragraph_format.space_after = Pt(6)
                 sub_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -442,6 +494,28 @@ def generate_docx_report(report: Report) -> str:
 
             b_parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY)
             b_parser.feed(b_sec.content or "")
+
+    # Explicitly set every run, including style and field runs, so Word does not
+    # substitute a theme font for headings, TOC fields, or page labels.
+    paragraphs = list(doc.paragraphs)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                paragraphs.extend(cell.paragraphs)
+    for section in doc.sections:
+        paragraphs.extend(section.header.paragraphs)
+        paragraphs.extend(section.footer.paragraphs)
+    if is_v2:
+        for paragraph in paragraphs:
+            for run in paragraph.runs:
+                run.font.name = "Times New Roman"
+                r_pr = run._element.get_or_add_rPr()
+                fonts = r_pr.rFonts
+                if fonts is None:
+                    fonts = OxmlElement("w:rFonts")
+                    r_pr.insert(0, fonts)
+                for attribute in ("ascii", "hAnsi", "eastAsia", "cs"):
+                    fonts.set(qn(f"w:{attribute}"), "Times New Roman")
 
     export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(report.project.id) / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
