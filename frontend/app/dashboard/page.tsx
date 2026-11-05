@@ -195,6 +195,7 @@ export default function DashboardPage() {
   // Step 5 report generation state: 0: not started, 1: generating, 2: ready
   const [genState, setGenState] = useState<0 | 1 | 2>(0);
   const [genProgress, setGenProgress] = useState<number>(0);
+  const [genError, setGenError] = useState<string | null>(null);
 
   // Report editor / preview state (Housed in Logbook screen)
   const [editorTab, setEditorTab] = useState<'edit' | 'prev'>('edit');
@@ -1066,30 +1067,37 @@ export default function DashboardPage() {
 
   // Step 5 Report Generation: triggers real generation in PostgreSQL
   const startGenerating = async () => {
+    setGenError(null);
     setGenState(1);
     setGenProgress(0);
 
+    // Progress smoothly through the 8 stages (up to 7 while waiting for backend)
     const iv = setInterval(() => {
-      setGenProgress((prev) => (prev < GS.length ? prev + 1 : prev));
-    }, 450);
+      setGenProgress((prev) => (prev < GS.length - 1 ? prev + 1 : prev));
+    }, 2800);
 
     try {
-      if (activeProject?.id) {
-        const rep = await storeGenerateReport(activeProject.id, true);
-        if (rep && rep.sections && rep.sections.length > 0) {
-          const edits = mapBackendSectionsToChapters(rep.sections);
-          setChapterEdits(edits);
-        }
+      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+      if (!projId) {
+        throw new Error('No active project found. Please select or initialize your report project.');
       }
+
+      const rep = await storeGenerateReport(projId, true);
       clearInterval(iv);
-      setGenProgress(GS.length);
+      setGenProgress(GS.length); // All 8 completed
+      await new Promise((r) => setTimeout(r, 600));
+
+      if (rep && rep.sections && rep.sections.length > 0) {
+        const edits = mapBackendSectionsToChapters(rep.sections);
+        setChapterEdits(edits);
+      }
       setGenState(2);
       showToast('Institutional report compiled!');
     } catch (err: any) {
       clearInterval(iv);
-      setGenProgress(GS.length);
-      setGenState(2);
-      showToast(err.message || 'Report generated');
+      setGenError(err.message || 'Report generation failed. Please try again.');
+      setGenState(0);
+      showToast(err.message || 'Report generation error');
     }
   };
 
@@ -3954,23 +3962,30 @@ export default function DashboardPage() {
             Building your report
           </h1>
           <p className="wd">Almost there</p>
-          <div className="card" style={{ padding: '4px 16px' }} role="status">
+          <div className="card" style={{ padding: '6px 16px' }} role="status">
             {GS.map((x, i) => {
               const d = i < genProgress;
               const c = i === genProgress;
               return (
-                <div key={x} className="tk">
+                <div key={x} className="tk" style={{ padding: '9px 0', borderBottom: i < GS.length - 1 ? '1px solid var(--line)' : 'none' }}>
                   <span
                     className="ms"
-                    style={{ color: d ? 'var(--g)' : c ? 'var(--gl)' : '#c9c3b2' }}
+                    style={{
+                      color: d ? 'var(--g)' : c ? 'var(--gl)' : '#c9c3b2',
+                      animation: c ? 'spin 1.4s linear infinite' : 'none',
+                    }}
                     aria-hidden="true"
                   >
                     {d ? 'check_circle' : c ? 'sync' : 'radio_button_unchecked'}
                   </span>
-                  <span>
-                    {x}
-                    <small>{d ? 'Done' : c ? 'In progress' : 'Waiting'}</small>
-                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <span style={{ fontWeight: c || d ? 700 : 500, color: d || c ? 'var(--ink)' : 'var(--mut)', fontSize: '14px' }}>
+                      {x}
+                    </span>
+                    <small style={{ color: d ? 'var(--g)' : c ? 'var(--g)' : 'var(--mut)', fontWeight: 600 }}>
+                      {d ? 'Done' : c ? 'In progress…' : 'Waiting'}
+                    </small>
+                  </div>
                 </div>
               );
             })}
@@ -4029,6 +4044,21 @@ export default function DashboardPage() {
 
     return (
       <div className="view" id="step-5">
+        {genError && (
+          <div className="card" style={{ border: '1px solid #ef4444', background: '#fef2f2', marginBottom: '14px' }}>
+            <div className="row" style={{ color: '#b91c1c' }}>
+              <span className="ms">error</span>
+              <b>Generation Note</b>
+            </div>
+            <p style={{ margin: '8px 0 14px', fontSize: '13.5px', color: '#7f1d1d' }}>
+              {genError}
+            </p>
+            <button className="btn w" type="button" onClick={() => startGenerating()}>
+              <span className="ms">refresh</span>
+              Retry Generating Report
+            </button>
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
           <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)', fontWeight: 800 }}>
             <span className="ms" style={{ fontSize: '16px' }} aria-hidden="true">
