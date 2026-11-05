@@ -233,6 +233,7 @@ class Report(models.Model):
     template = models.ForeignKey(ReportTemplate, on_delete=models.SET_NULL, null=True, blank=True)
     template_version = models.CharField(max_length=64, default='lasustech-standard:1.0.0')
     template_snapshot = models.JSONField(default=dict, blank=True)
+    document_model = models.JSONField(default=dict, blank=True)
     estimated_pages = models.IntegerField(default=1)
     page_estimate_breakdown = models.JSONField(default=dict, blank=True)
     readiness_feedback = models.JSONField(default=list, blank=True)
