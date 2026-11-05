@@ -372,6 +372,36 @@ export default function DashboardPage() {
   };
 
   // Maps 28 backend institutional sections into the 11 presentation views
+  const getSectionForChapterTab = (tabIdx: number, sections: any[]) => {
+    if (!sections || !sections.length) return null;
+    switch (tabIdx) {
+      case 0:
+        return sections.find((s) => s.section_key === 'cover') || sections.find((s) => s.section_key === 'title_page') || sections[0];
+      case 1:
+        return sections.find((s) => s.section_key === 'certification');
+      case 2:
+        return sections.find((s) => s.section_key === 'dedication');
+      case 3:
+        return sections.find((s) => s.section_key === 'acknowledgements');
+      case 4:
+        return sections.find((s) => s.section_key === 'abstract');
+      case 5:
+        return sections.find((s) => s.section_key === 'ch1_background') || sections.find((s) => s.chapter_number === 1);
+      case 6:
+        return sections.find((s) => s.section_key === 'ch2_org_profile') || sections.find((s) => s.chapter_number === 2);
+      case 7:
+        return sections.find((s) => s.section_key === 'ch3_training_env') || sections.find((s) => s.chapter_number === 3);
+      case 8:
+        return sections.find((s) => s.section_key === 'ch4_skills') || sections.find((s) => s.chapter_number === 4);
+      case 9:
+        return sections.find((s) => s.section_key === 'ch5_summary') || sections.find((s) => s.chapter_number === 5);
+      case 10:
+        return sections.find((s) => s.section_key === 'references');
+      default:
+        return sections[tabIdx] || null;
+    }
+  };
+
   const mapBackendSectionsToChapters = (sections: any[]): Record<number, string> => {
     const edits: Record<number, string> = {};
     if (!sections || sections.length === 0) return edits;
@@ -2151,7 +2181,7 @@ export default function DashboardPage() {
                   saveTimerRef.current = setTimeout(async () => {
                     setSaveStatusText('saved');
                     if (activeProject?.id && dbReport?.sections) {
-                      const sec = dbReport.sections[currentSectionIdx];
+                      const sec = getSectionForChapterTab(currentSectionIdx, dbReport.sections);
                       if (sec?.id) {
                         try {
                           await saveSection(activeProject.id, sec.id, val, sec.title);
