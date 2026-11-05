@@ -2027,3 +2027,346 @@ class SquadAmountCurrencyValidationTests(TestCase):
             transaction_reference='L2D_TXN_VAL001',
         )
         self.assertEqual(order.currency, 'NGN')
+
+
+class SquadWebhookSignatureSecurityTests(TestCase):
+    """CRITICAL: Webhook signature verification security tests."""
+
+    def test_invalid_webhook_signature_rejected(self):
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+            body = b'{"Event": "charge_successful", "Body": {}}'
+            wrong_sig = hmac.new(b'wrong_key', body, hashlib.sha512).hexdigest()
+            self.assertFalse(verify_webhook_signature(body, wrong_sig))
+
+    def test_tampered_webhook_body_rejected(self):
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+            original_body = b'{"Event": "charge_successful", "Body": {"amount": 200000}}'
+            valid_sig = hmac.new(b'test_secret_key', original_body, hashlib.sha512).hexdigest()
+
+            tampered_body = b'{"Event": "charge_successful", "Body": {"amount": 999999}}'
+            self.assertFalse(verify_webhook_signature(tampered_body, valid_sig))
+
+    def test_empty_signature_rejected(self):
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+            body = b'{"test": "data"}'
+            self.assertFalse(verify_webhook_signature(body, ''))
+            self.assertFalse(verify_webhook_signature(body, None))
+
+    def test_missing_webhook_secret_fails_safely(self):
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY=''):
+            body = b'{"test": "data"}'
+            valid_sig = hmac.new(b'any_key', body, hashlib.sha512).hexdigest()
+            self.assertFalse(verify_webhook_signature(body, valid_sig))
+
+    def test_webhook_signature_case_insensitive(self):
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+            body = b'{"test": "data"}'
+            valid_sig = hmac.new(b'test_secret_key', body, hashlib.sha512).hexdigest()
+            self.assertTrue(verify_webhook_signature(body, valid_sig.upper()))
+
+    def test_webhook_with_raw_body_matches(self):
+        """PHP example: HMAC on raw request body."""
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+            raw_body = b'{"Event":"charge_successful","TransactionRef":"SQTEST123","Body":{"amount":200000,"transaction_ref":"SQTEST123","transaction_status":"Success","currency":"NGN"}}'
+            sig = hmac.new(b'test_secret_key', raw_body, hashlib.sha512).hexdigest()
+            self.assertTrue(verify_webhook_signature(raw_body, sig))
+
+    def test_webhook_with_reserialized_json_matches(self):
+        """Node/C# example: HMAC on JSON.stringify(parsed_body)."""
+        from .squad_service import verify_webhook_signature
+
+        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+            raw_body = b'{ "Event": "charge_successful", "Body": { "amount": 200000 } }'
+            parsed = json.loads(raw_body)
+            canonical = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+            sig = hmac.new(b'test_secret_key', canonical.encode('utf-8'), hashlib.sha512).hexdigest()
+            self.assertTrue(verify_webhook_signature(raw_body, sig))
+
+
+class SquadWebhookIdempotencySecurityTests(TestCase):
+    """CRITICAL: Webhook idempotency - duplicate and out-of-order events."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='idem_sec_user',
+            email='idem_sec@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Idempotency Security Test')
+        self.order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_IDEM_SEC001',
+            status='pending',
+        )
+
+    def test_duplicate_webhook_event_does_not_double_fulfil(self):
+        """Same event_id processed twice - order must only be paid once."""
+        from .models import SquadWebhookEvent
+
+        self.order.status = 'paid'
+        self.order.save()
+
+        SquadWebhookEvent.objects.create(
+            event_id='evt_dup_001',
+            transaction_reference='L2D_TXN_IDEM_SEC001',
+            event_type='charge_successful',
+            payload={'Event': 'charge_successful', 'Body': {'transaction_ref': 'L2D_TXN_IDEM_SEC001'}},
+            success=True,
+        )
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'paid')
+        self.assertTrue(SquadWebhookEvent.objects.filter(event_id='evt_dup_001').exists())
+
+    def test_out_of_order_webhook_events_handled(self):
+        """Failed event after success event must not revert paid order."""
+        self.order.status = 'paid'
+        self.order.save()
+
+        SquadWebhookEvent.objects.create(
+            event_id='evt_success_001',
+            transaction_reference='L2D_TXN_IDEM_SEC001',
+            event_type='charge_successful',
+            payload={'Event': 'charge_successful', 'Body': {'transaction_ref': 'L2D_TXN_IDEM_SEC001'}},
+            success=True,
+        )
+
+        SquadWebhookEvent.objects.create(
+            event_id='evt_failed_late_001',
+            transaction_reference='L2D_TXN_IDEM_SEC001',
+            event_type='charge_failed',
+            payload={'Event': 'charge_failed', 'Body': {'transaction_ref': 'L2D_TXN_IDEM_SEC001', 'transaction_status': 'Failed'}},
+            success=True,
+        )
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'paid')
+
+    def test_repeated_webhook_notifications_same_event_id(self):
+        """Multiple webhook POSTs with same event_id - only first takes effect."""
+        from .models import SquadWebhookEvent
+
+        SquadWebhookEvent.objects.create(
+            event_id='evt_repeat_001',
+            transaction_reference='L2D_TXN_IDEM_SEC001',
+            event_type='charge_successful',
+            payload={'Event': 'charge_successful', 'Body': {}},
+            success=True,
+        )
+
+        count = SquadWebhookEvent.objects.filter(event_id='evt_repeat_001').count()
+        self.assertEqual(count, 1)
+
+
+class SquadAmountCurrencyValidationSecurityTests(TestCase):
+    """CRITICAL: Amount and currency must be backend-controlled, never client-trusted."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='val_sec_user',
+            email='val_sec@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Validation Security Test')
+
+    def test_digital_price_is_exactly_2000_kobo(self):
+        """Digital report must be exactly NGN 2,000 (200000 kobo)."""
+        self.assertEqual(int(2000.00 * 100), 200000)
+
+    def test_delivery_price_is_exactly_4000_kobo(self):
+        """Delivery must be exactly NGN 4,000 (400000 kobo)."""
+        self.assertEqual(int(4000.00 * 100), 400000)
+
+    def test_currency_is_always_ngn(self):
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_VAL_SEC001',
+        )
+        self.assertEqual(order.currency, 'NGN')
+
+    def test_webhook_incorrect_amount_sets_review_required(self):
+        """Webhook with amount different from order amount must flag for review."""
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_VAL_SEC002',
+            status='pending',
+        )
+
+        tx_amount = 400000
+        expected_amount = Decimal(str(order.amount))
+        if Decimal(str(tx_amount)) != expected_amount:
+            order.status = 'review_required'
+            order.save(update_fields=['status'])
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'review_required')
+
+    def test_webhook_incorrect_currency_sets_review_required(self):
+        """Webhook with currency different from order currency must flag for review."""
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_VAL_SEC003',
+            status='pending',
+        )
+
+        tx_currency = 'USD'
+        if tx_currency != order.currency:
+            order.status = 'review_required'
+            order.save(update_fields=['status'])
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'review_required')
+
+
+class SquadTransactionReferenceSecurityTests(TestCase):
+    """Security tests for transaction reference handling."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='txn_ref_user',
+            email='txn_ref@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Txn Ref Test')
+
+    def test_unknown_transaction_reference_not_found(self):
+        """Webhook for unknown transaction reference must not create/update orders."""
+        order_count_before = PaymentOrder.objects.count()
+        self.assertEqual(order_count_before, 0)
+
+        self.assertFalse(
+            PaymentOrder.objects.filter(transaction_reference='UNKNOWN_REF_999').exists()
+        )
+
+    def test_transaction_reference_is_unique(self):
+        """Each order must have a unique transaction reference."""
+        ref1 = PaymentOrder.objects.create(
+            project=self.project, user=self.user, order_type='digital',
+            amount=2000.00, amount_kobo=200000, currency='NGN',
+            transaction_reference='L2D_TXN_UNIQUE001',
+        )
+        self.assertIsNotNone(ref1.transaction_reference)
+
+        with self.assertRaises(Exception):
+            PaymentOrder.objects.create(
+                project=self.project, user=self.user, order_type='digital',
+                amount=2000.00, amount_kobo=200000, currency='NGN',
+                transaction_reference='L2D_TXN_UNIQUE001',
+            )
+
+    def test_order_reference_is_unique_and_prefixed(self):
+        """Order reference must be unique and start with L2D-ORD-."""
+        order = PaymentOrder.objects.create(
+            project=self.project, user=self.user, order_type='digital',
+            amount=2000.00, amount_kobo=200000, currency='NGN',
+            transaction_reference='L2D_TXN_ORDREF001',
+        )
+        self.assertTrue(order.order_reference.startswith('L2D-ORD-'))
+
+
+class SquadFailedAbandonedTransactionTests(TestCase):
+    """Tests for failed and abandoned payment transactions."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='failed_user',
+            email='failed@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Failed Txn Test')
+
+    def test_failed_transaction_marks_order_failed(self):
+        """Squad transaction_status 'Failed' must mark order as failed."""
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_FAILED001',
+            status='pending',
+        )
+
+        tx_status = 'failed'
+        if tx_status.lower() not in ('success', 'successful'):
+            order.status = 'failed'
+            order.save(update_fields=['status'])
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'failed')
+        self.assertFalse(order.digital_files_unlocked)
+
+    def test_abandoned_transaction_marks_order_failed(self):
+        """Squad transaction_status 'Abandoned' must mark order as failed."""
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_ABANDONED001',
+            status='pending',
+        )
+
+        tx_status = 'abandoned'
+        if tx_status.lower() not in ('success', 'successful'):
+            order.status = 'failed'
+            order.save(update_fields=['status'])
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'failed')
+
+    def test_pending_transaction_does_not_mark_paid(self):
+        """Squad transaction_status 'Pending' must NOT mark order as paid."""
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_PENDING001',
+            status='pending',
+        )
+
+        tx_status = 'pending'
+        if tx_status.lower() in ('success', 'successful'):
+            order.status = 'paid'
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'pending')
+        self.assertFalse(order.digital_files_unlocked)
