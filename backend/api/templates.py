@@ -4,6 +4,8 @@ Defines the authoritative, versioned templates for SIWES technical reports.
 """
 
 from typing import Dict, Any, List
+import json
+from pathlib import Path
 
 # Official LASUSTECH Standard Report Template v1.0.0
 LASUSTECH_STANDARD_V1: Dict[str, Any] = {
@@ -347,6 +349,27 @@ LASUSTECH_STANDARD_V1: Dict[str, Any] = {
 TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
     "lasustech-standard:1.0.0": LASUSTECH_STANDARD_V1,
 }
+
+LASUSTECH_CS_V2: Dict[str, Any] = json.loads(
+    (Path(__file__).parent / "templates" / "lasustech_cs_v2.json").read_text(encoding="utf-8")
+)
+TEMPLATE_REGISTRY["lasustech_cs:2.0.0"] = LASUSTECH_CS_V2
+
+
+def get_section_requirements(code: str = "lasustech_cs", version: str = "2.0.0") -> dict[str, Any]:
+    """Return the input manifest used by completeness checks and guided intake."""
+    spec = get_template_spec(code, version)
+    return {
+        "template_id": spec["template_id"],
+        "version": spec["version"],
+        "required_fields": spec.get("fields", {}),
+        "sections": [
+            {key: value for key, value in section.items() if key in {
+                "key", "title", "chapter", "source", "required", "requires_student_confirmation", "input", "flag", "paired_with"
+            }}
+            for section in spec.get("sections", [])
+        ],
+    }
 
 
 def get_template_spec(code: str = "lasustech-standard", version: str = "1.0.0") -> Dict[str, Any]:
