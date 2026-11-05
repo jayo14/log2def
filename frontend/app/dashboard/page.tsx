@@ -3231,6 +3231,34 @@ export default function DashboardPage() {
           onChange={(e) => handleFilesAdded(e.target.files)}
         />
 
+        {/* Upload status banner if uploads are pending */}
+        {pages.some((p) => p.isUploading || (p.uploadProgress !== undefined && p.uploadProgress < 100)) && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 14px',
+              borderRadius: '12px',
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.24)',
+              color: 'var(--g)',
+              fontSize: '13px',
+              fontWeight: 600,
+              margin: '12px 0',
+            }}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="ms" style={{ animation: 'spin 1.2s linear infinite', fontSize: '18px' }}>
+              sync
+            </span>
+            <span>
+              Uploading {pages.filter((p) => p.isUploading).length || 1} file{pages.filter((p) => p.isUploading).length > 1 ? 's' : ''}... The Next button will be enabled once uploads finish.
+            </span>
+          </div>
+        )}
+
         {n ? (
           <>
             <div className="t3" role="list">
@@ -4109,12 +4137,14 @@ export default function DashboardPage() {
       );
     }
     if (step === 2) {
-      const isAnyUploading = pages.some((p) => p.isUploading);
+      const uploadingCount = pages.filter((p) => p.isUploading || (p.uploadProgress !== undefined && p.uploadProgress < 100) || (!p.id && p.q !== 'error')).length;
+      const isAnyUploading = uploadingCount > 0;
       return (
         <button
           className="btn"
           type="button"
           disabled={pages.length === 0 || isAnyUploading}
+          aria-disabled={pages.length === 0 || isAnyUploading}
           onClick={async () => {
             if (pages.length === 0 || isAnyUploading) return;
             setStep(3);
@@ -4125,10 +4155,21 @@ export default function DashboardPage() {
           }}
           style={{ flex: 1 }}
         >
-          {isAnyUploading ? 'Uploading pages...' : 'Next'}
-          <span className="ms" aria-hidden="true">
-            arrow_forward
-          </span>
+          {isAnyUploading ? (
+            <>
+              <span className="ms" style={{ animation: 'spin 1.2s linear infinite', fontSize: '18px' }}>
+                sync
+              </span>
+              <span>Uploading {uploadingCount} {uploadingCount > 1 ? 'files' : 'file'}…</span>
+            </>
+          ) : (
+            <>
+              <span>Next</span>
+              <span className="ms" aria-hidden="true">
+                arrow_forward
+              </span>
+            </>
+          )}
         </button>
       );
     }

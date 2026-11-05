@@ -290,6 +290,8 @@
 .dashboard-root .btn[disabled] {
   opacity: 0.45;
   box-shadow: none;
+  pointer-events: none;
+  cursor: not-allowed;
 }
 
 .dashboard-root .chip {
