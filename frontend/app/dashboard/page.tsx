@@ -156,7 +156,7 @@ export default function DashboardPage() {
 
   const userFullName = user
     ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username
-    : 'John Samuel';
+    : '';
 
   const [details, setDetails] = useState<Record<string, string>>({
     name: userFullName,
@@ -337,11 +337,11 @@ export default function DashboardPage() {
 
   // Report chapter templates
   const getSectionDefaultHtml = (i: number): string => {
-    const N = details.name || 'John Samuel';
-    const C = details.co || 'Company Ltd';
-    const A = details.addr || answers.addr || '[address]';
+    const N = details.name || userFullName || '[STUDENT NAME]';
+    const C = details.co || '[ORGANISATION NAME]';
+    const A = details.addr || answers.addr || '[ORGANISATION ADDRESS]';
     const c = 'style="text-align:center"';
-    const per = `${details.start || answers.start || ''} to ${details.end || answers.end || ''}`;
+    const per = `${details.start || answers.start || '[START DATE]'} to ${details.end || answers.end || '[END DATE]'}`;
 
     const chapters = [
       `<p ${c}><b>TECHNICAL REPORT ON THE STUDENT INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</b></p><p ${c}>Undertaken at<br><b>${C}</b><br>${A}</p><p ${c}>BY<br><b>${N}</b><br>${details.matric || ''}<br>${details.dept || ''}</p><p ${c}>${details.inst || ''}<br>${per}</p>`,
@@ -1460,6 +1460,7 @@ export default function DashboardPage() {
 
     if (activeProject?.id) {
       updateActiveProject(activeProject.id, {
+        full_name: details.name || undefined,
         matric_number: details.matric,
         department: details.dept,
         faculty_school: details.fac,
@@ -1540,7 +1541,7 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
             <div>
               <p style={{ margin: '0 0 4px', fontWeight: 700, color: 'var(--mut)' }}>
-                Hi, {details.name ? details.name.split(' ')[0] : 'John'}
+                Hi, {details.name ? details.name.split(' ')[0] : (user?.first_name || user?.username || 'there')}
               </p>
               <h1>
                 Logbook in.
@@ -2155,6 +2156,7 @@ export default function DashboardPage() {
   // ==========================================
   const renderReportsView = () => {
     const layout = computeLayout();
+    const hasReport = genState === 2 || Boolean(dbReport && dbReport.sections && dbReport.sections.length > 0);
 
     return (
       <div className="view" id="reports-view">
@@ -2168,7 +2170,7 @@ export default function DashboardPage() {
           <h1>My Reports</h1>
         </div>
 
-        {genState !== 2 ? (
+        {!hasReport ? (
           <div className="card big">
             <div className="ok">
               <span className="ms" aria-hidden="true">
@@ -2176,7 +2178,7 @@ export default function DashboardPage() {
               </span>
             </div>
             <h2>No reports yet</h2>
-            <p>Reports appear here.</p>
+            <p>Complete the 5-step generator to compile your institutional SIWES report.</p>
             <button
               className="btn w"
               type="button"
@@ -2187,23 +2189,99 @@ export default function DashboardPage() {
             </button>
           </div>
         ) : (
-          <button
-            className="card"
-            type="button"
-            onClick={() => {
-              setLogbookView('report');
-              switchTab('logbooks');
-            }}
-            style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, cursor: 'pointer' }}
-          >
-            <div className="row sb">
-              <b>Technical report</b>
-              <span className="chip">Draft ready</span>
+          <div className="card" style={{ padding: '20px' }}>
+            <div className="row sb" style={{ alignItems: 'flex-start' }}>
+              <div>
+                <b style={{ fontSize: '17px', color: 'var(--ink)' }}>
+                  {activeProject?.title || 'LASUSTECH SIWES Technical Report'}
+                </b>
+                <p className="mut" style={{ margin: '4px 0 0', fontSize: '13.5px' }}>
+                  {details.co ? `${details.co} · ` : ''}{details.inst || 'LASUSTECH'}
+                </p>
+              </div>
+              <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)', fontWeight: 700 }}>
+                Draft Ready
+              </span>
             </div>
-            <p className="mut" style={{ margin: '6px 0 0', fontSize: '14px' }}>
-              {details.co} · about {layout.total} pages
-            </p>
-          </button>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: '10px',
+                margin: '16px 0',
+                padding: '12px',
+                background: 'var(--bg)',
+                borderRadius: '14px',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--mut)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Estimated Length
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)', marginTop: '2px' }}>
+                  {layout.total} pages
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--mut)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Confirmed Weeks
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)', marginTop: '2px' }}>
+                  {entries.length} weeks
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--mut)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Format
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)', marginTop: '2px' }}>
+                  LASUSTECH v1
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button
+                className="btn w s"
+                type="button"
+                onClick={() => {
+                  setLogbookView('report');
+                  switchTab('logbooks');
+                }}
+              >
+                <span className="ms" aria-hidden="true">
+                  edit_note
+                </span>
+                Open &amp; Edit Technical Report
+              </button>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn o w s"
+                  type="button"
+                  style={{ flex: 1 }}
+                  onClick={() => executeRealFileDownload('PDF')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    picture_as_pdf
+                  </span>
+                  PDF
+                </button>
+                <button
+                  className="btn o w s"
+                  type="button"
+                  style={{ flex: 1 }}
+                  onClick={() => executeRealFileDownload('Word')}
+                >
+                  <span className="ms" aria-hidden="true">
+                    description
+                  </span>
+                  Word (DOCX)
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -2213,14 +2291,14 @@ export default function DashboardPage() {
   // VIEW: SETTINGS — ENHANCED UI
   // ==========================================
   const renderSettingsView = () => {
-    const studentName = details.name || 'John Samuel';
+    const studentName = details.name || userFullName || 'Student';
     const initials = studentName
       .split(' ')
       .filter(Boolean)
       .map((part) => part[0])
       .slice(0, 2)
       .join('')
-      .toUpperCase() || 'JS';
+      .toUpperCase() || 'ST';
 
     return (
       <div className="view" id="settings-view">
@@ -2245,10 +2323,10 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
               <span className="chip" style={{ fontSize: '11.5px', padding: '2px 8px' }}>
-                {details.matric || '240303010036'}
+                {details.matric || 'Matric not set'}
               </span>
               <span className="mut" style={{ fontSize: '12.5px', wordBreak: 'break-all' }}>
-                {user?.email || 'johnayobami77@proton.me'}
+                {user?.email || 'No email registered'}
               </span>
             </div>
           </div>
@@ -2302,7 +2380,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Department</div>
-                <div className="s-val">{details.dept || 'Computer Science'}</div>
+                <div className="s-val">{details.dept || <span className="mut">Not set</span>}</div>
               </div>
             </div>
 
@@ -2332,7 +2410,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Company / Organisation</div>
-                <div className="s-val">{details.co || 'Mika Labs'}</div>
+                <div className="s-val">{details.co || <span className="mut">Not set</span>}</div>
               </div>
             </div>
 
@@ -2344,7 +2422,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Workplace Address</div>
-                <div className="s-val">{details.addr || 'Victoria Island, Lagos'}</div>
+                <div className="s-val">{details.addr || <span className="mut">Not set</span>}</div>
               </div>
             </div>
 
@@ -2356,7 +2434,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Attached Department / Unit</div>
-                <div className="s-val">{details.unit || 'Software Development'}</div>
+                <div className="s-val">{details.unit || <span className="mut">Not set</span>}</div>
               </div>
             </div>
 
@@ -2369,7 +2447,7 @@ export default function DashboardPage() {
               <div>
                 <div className="s-label">Training Period</div>
                 <div className="s-val">
-                  {details.start || '2026-01-12'} to {details.end || '2026-11-04'}
+                  {details.start && details.end ? `${details.start} to ${details.end}` : <span className="mut">Not set</span>}
                 </div>
               </div>
             </div>
@@ -2382,7 +2460,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Industry-based Supervisor</div>
-                <div className="s-val">{details.sup || 'Engr. D. Adeleke'}</div>
+                <div className="s-val">{details.sup || <span className="mut">Not set</span>}</div>
               </div>
             </div>
 
@@ -2394,7 +2472,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Institution-based Supervisor</div>
-                <div className="s-val">{details.isup || 'Dr. K. Balogun'}</div>
+                <div className="s-val">{details.isup || <span className="mut">Not set</span>}</div>
               </div>
             </div>
           </div>
@@ -3589,7 +3667,7 @@ export default function DashboardPage() {
             <div className="gi-content">
               <div className="gi-title">Your details complete</div>
               <div className="gi-desc">
-                {details.name || 'John Samuel'} · {details.matric || '240303010036'}, {details.dept || 'Computer Science'}
+                {details.name || userFullName || 'Student'} · {details.matric || 'Matric not set'}{details.dept ? `, ${details.dept}` : ''}
               </div>
             </div>
             <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
@@ -3895,9 +3973,26 @@ export default function DashboardPage() {
           <button
             className="btn w"
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              if (activeProject?.id) {
+                await updateActiveProject(activeProject.id, {
+                  full_name: details.name || undefined,
+                  matric_number: details.matric || undefined,
+                  department: details.dept || undefined,
+                  faculty_school: details.fac || undefined,
+                  university_name: details.inst || undefined,
+                  organization_name: details.co || undefined,
+                  organization_address: details.addr || undefined,
+                  industry_department: details.unit || undefined,
+                  training_start_date: details.start || undefined,
+                  training_end_date: details.end || undefined,
+                  industry_supervisor_name: details.sup || undefined,
+                  institution_supervisor_name: details.isup || undefined,
+                }).catch(() => {});
+                await updateMissingInfo(activeProject.id, details).catch(() => {});
+              }
               closeSheet();
-              showToast('Details updated');
+              showToast('Details updated and saved');
             }}
           >
             Save
@@ -3975,9 +4070,26 @@ export default function DashboardPage() {
           <button
             className="btn w"
             type="button"
-            onClick={() => {
+            onClick={async () => {
+              if (activeProject?.id) {
+                await updateActiveProject(activeProject.id, {
+                  full_name: details.name || undefined,
+                  matric_number: details.matric || undefined,
+                  department: details.dept || undefined,
+                  faculty_school: details.fac || undefined,
+                  university_name: details.inst || undefined,
+                  organization_name: details.co || undefined,
+                  organization_address: details.addr || undefined,
+                  industry_department: details.unit || undefined,
+                  training_start_date: details.start || undefined,
+                  training_end_date: details.end || undefined,
+                  industry_supervisor_name: details.sup || undefined,
+                  institution_supervisor_name: details.isup || undefined,
+                }).catch(() => {});
+                await updateMissingInfo(activeProject.id, details).catch(() => {});
+              }
               closeSheet();
-              showToast('Details updated');
+              showToast('Details updated and saved');
             }}
           >
             Save
@@ -4237,7 +4349,7 @@ export default function DashboardPage() {
                 </div>
 
                 <div style={{ fontSize: '13px', color: 'var(--mut)', marginBottom: '16px' }}>
-                  Student: <b>{details.name || 'John Samuel'}</b> ({details.matric || 'STE/2021/0456'})
+                  Student: <b>{details.name || userFullName || 'Student'}</b> ({details.matric || 'Matric not set'})
                 </div>
 
                 <p style={{ fontWeight: 800, fontSize: '13px', marginBottom: '8px' }}>

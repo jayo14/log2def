@@ -3,64 +3,124 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-  <meta name="theme-color" content="#10b981" />
-  <title>Offline · Log2Def</title>
+  <meta name="theme-color" content="#071712" />
+  <title>Offline Mode · Log2Def</title>
   <link rel="icon" href="/favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
   <style>
-    * {
+    *, *::before, *::after {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
     }
-    body {
+    html, body {
       min-height: 100vh;
+      width: 100%;
+    }
+    body {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 24px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: radial-gradient(circle at 50% 30%, #0d2c20 0%, #071712 100%);
+      padding: 24px 16px;
+      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: radial-gradient(circle at 50% 20%, #0d2c20 0%, #071712 60%, #030a07 100%);
       color: #f1f5f9;
       text-align: center;
+      overflow-x: hidden;
+      position: relative;
+    }
+    /* Subtle background ambient mesh glow */
+    body::before {
+      content: "";
+      position: absolute;
+      width: 380px;
+      height: 380px;
+      top: 15%;
+      left: 50%;
+      transform: translate(-50%, -20%);
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 50%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+      filter: blur(40px);
     }
     .card {
-      background: rgba(15, 30, 24, 0.85);
-      border: 1px solid rgba(85, 214, 162, 0.25);
-      border-radius: 24px;
-      padding: 40px 28px;
-      max-width: 440px;
+      position: relative;
+      z-index: 1;
+      background: rgba(14, 30, 24, 0.88);
+      border: 1px solid rgba(85, 214, 162, 0.22);
+      border-radius: 28px;
+      padding: 44px 32px 36px;
+      max-width: 460px;
       width: 100%;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(16, 185, 129, 0.1);
-      backdrop-filter: blur(12px);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.65), 0 0 40px rgba(16, 185, 129, 0.1);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      animation: cardAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-    .logo-badge {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 20px;
+    @keyframes cardAppear {
+      from { opacity: 0; transform: translateY(16px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .badge-wrapper {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      margin: 0 auto 22px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 20px;
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(85, 214, 162, 0.4);
+    }
+    .logo-badge {
+      width: 84px;
+      height: 84px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.16) 0%, rgba(5, 150, 105, 0.28) 100%);
+      border: 1.5px solid rgba(85, 214, 162, 0.45);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 0 24px rgba(16, 185, 129, 0.2);
     }
     .logo-badge img {
-      width: 54px;
-      height: 54px;
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+      border-radius: 12px;
+    }
+    .offline-tag-icon {
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #192b23;
+      border: 2px solid #071712;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    }
+    .offline-tag-icon svg {
+      width: 16px;
+      height: 16px;
+      color: #fbbf24;
     }
     .status-chip {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      background: rgba(235, 178, 59, 0.15);
-      border: 1px solid rgba(235, 178, 59, 0.4);
+      gap: 8px;
+      padding: 5px 14px;
+      background: rgba(245, 158, 11, 0.14);
+      border: 1px solid rgba(245, 158, 11, 0.35);
       color: #fbbf24;
-      font-size: 12.5px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
       border-radius: 999px;
       margin-bottom: 16px;
@@ -70,6 +130,7 @@
       height: 8px;
       background: #fbbf24;
       border-radius: 50%;
+      box-shadow: 0 0 10px #fbbf24;
       animation: pulse 1.8s infinite;
     }
     @keyframes pulse {
@@ -79,77 +140,237 @@
     }
     h1 {
       font-size: 24px;
-      font-weight: 700;
+      font-weight: 800;
       color: #ffffff;
       margin-bottom: 12px;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
     }
     p {
       font-size: 14.5px;
       line-height: 1.6;
       color: #94a3b8;
       margin-bottom: 24px;
+      padding: 0 4px;
+    }
+    .safeguards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: rgba(7, 23, 18, 0.65);
+      border: 1px solid rgba(85, 214, 162, 0.16);
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      text-align: left;
+    }
+    .safeguard-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+    }
+    .safeguard-item svg {
+      width: 17px;
+      height: 17px;
+      color: #34d399;
+      flex-shrink: 0;
     }
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       width: 100%;
-      padding: 14px 20px;
-      background: #10b981;
-      color: #071712;
+      padding: 14px 22px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #022013;
       border: none;
-      border-radius: 12px;
+      border-radius: 14px;
       font-size: 15px;
-      font-weight: 700;
+      font-weight: 800;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
       text-decoration: none;
+      box-shadow: 0 10px 24px rgba(16, 185, 129, 0.32);
     }
     .btn:hover {
-      background: #34d399;
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
+      background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 28px rgba(16, 185, 129, 0.42);
     }
     .btn:active {
       transform: translateY(0);
+      box-shadow: 0 6px 14px rgba(16, 185, 129, 0.25);
+    }
+    .btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn svg {
+      width: 18px;
+      height: 18px;
+      transition: transform 0.5s ease;
+    }
+    .btn.is-loading svg {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
     .hint {
       margin-top: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
       font-size: 12.5px;
+      font-weight: 600;
       color: #64748b;
+      transition: color 0.3s ease;
+    }
+    .hint.restored {
+      color: #34d399;
+    }
+    .hint-ping {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #64748b;
+      position: relative;
+    }
+    .hint.restored .hint-ping {
+      background: #34d399;
+      box-shadow: 0 0 10px #34d399;
+    }
+    .hint-ping::after {
+      content: "";
+      position: absolute;
+      top: -3px;
+      left: -3px;
+      right: -3px;
+      bottom: -3px;
+      border-radius: 50%;
+      border: 1.5px solid currentColor;
+      opacity: 0.5;
+      animation: pingWave 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    @keyframes pingWave {
+      0% { transform: scale(0.9); opacity: 0.8; }
+      100% { transform: scale(2.2); opacity: 0; }
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo-badge">
-      <img src="/icons/icon-192.png" alt="Log2Def Logo" />
+    <div class="badge-wrapper">
+      <div class="logo-badge">
+        <img src="/icons/icon-192.png" alt="Log2Def Logo" />
+      </div>
+      <div class="offline-tag-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+          <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+          <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+          <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+          <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+          <line x1="12" y1="20" x2="12.01" y2="20"></line>
+        </svg>
+      </div>
     </div>
+
     <div class="status-chip">
       <span class="pulse-dot"></span>
       Offline Mode
     </div>
+
     <h1>No Internet Connection</h1>
     <p>
       You are currently disconnected. Your local logbook entries and cached report drafts remain safe on this device. Reconnect to sync with cloud AI.
     </p>
-    <button class="btn" id="retry-btn" onclick="window.location.reload()">
-      Retry Connection
+
+    <div class="safeguards" aria-label="Offline data protection">
+      <div class="safeguard-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Daily logbook entries safely cached</span>
+      </div>
+      <div class="safeguard-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Report edits preserved in local memory</span>
+      </div>
+      <div class="safeguard-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Automatic cloud AI sync upon reconnecting</span>
+      </div>
+    </div>
+
+    <button class="btn" id="retry-btn" onclick="retryConnection()">
+      <svg id="retry-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+      </svg>
+      <span id="btn-text">Retry Connection</span>
     </button>
+
     <div class="hint" id="auto-recon">
-      Listening for network reconnection...
+      <span class="hint-ping"></span>
+      <span id="hint-text">Listening for network reconnection...</span>
     </div>
   </div>
 
   <script>
-    window.addEventListener('online', () => {
+    function triggerRestore() {
       const banner = document.getElementById('auto-recon');
-      if (banner) banner.innerText = 'Connection restored! Reloading...';
+      const hintText = document.getElementById('hint-text');
+      const btn = document.getElementById('retry-btn');
+      const btnText = document.getElementById('btn-text');
+      
+      if (banner) banner.classList.add('restored');
+      if (hintText) hintText.innerText = 'Connection restored! Reloading...';
+      if (btnText) btnText.innerText = 'Connected!';
+      if (btn) btn.style.background = 'linear-gradient(135deg, #34d399, #10b981)';
+
       setTimeout(() => {
         window.location.reload();
-      }, 600);
-    });
+      }, 700);
+    }
+
+    async function retryConnection() {
+      const btn = document.getElementById('retry-btn');
+      const btnText = document.getElementById('btn-text');
+      if (btn) btn.classList.add('is-loading');
+      if (btnText) btnText.innerText = 'Checking...';
+
+      if (navigator.onLine) {
+        try {
+          // Verify actual end-to-end connectivity
+          const res = await fetch('/api/health/', { cache: 'no-store' });
+          if (res.ok) {
+            triggerRestore();
+            return;
+          }
+        } catch (e) {
+          // Still unreachable
+        }
+      }
+
+      setTimeout(() => {
+        if (btn) btn.classList.remove('is-loading');
+        if (btnText) btnText.innerText = 'Retry Connection';
+      }, 900);
+    }
+
+    window.addEventListener('online', triggerRestore);
   </script>
 </body>
 </html>
