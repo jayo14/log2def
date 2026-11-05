@@ -1243,12 +1243,12 @@ export default function DashboardPage() {
       // Animate progress smoothly while uploading
       const progressTimer = setInterval(() => {
         setPages((prev) => {
+          const idx = prev.findIndex((p) => p.file === f);
+          if (idx === -1 || !prev[idx].isUploading) return prev;
           const next = [...prev];
-          if (next[pageIdx] && next[pageIdx].isUploading) {
-            const current = next[pageIdx].uploadProgress || 15;
-            if (current < 85) {
-              next[pageIdx] = { ...next[pageIdx], uploadProgress: current + 12 };
-            }
+          const current = next[idx].uploadProgress || 15;
+          if (current < 85) {
+            next[idx] = { ...next[idx], uploadProgress: current + 12 };
           }
           return next;
         });
@@ -1259,6 +1259,7 @@ export default function DashboardPage() {
       const fd = new FormData();
       fd.append('file', f);
       fd.append('page_index', String(pageIdx));
+      fd.append('async', 'true');
 
       try {
         const uploadedDoc = await uploadDocument(projId, fd);
@@ -1279,14 +1280,14 @@ export default function DashboardPage() {
 
         // Complete loader line to 100%
         setPages((prev) => {
+          const idx = prev.findIndex((p) => p.file === f);
+          if (idx === -1) return prev;
           const next = [...prev];
-          if (next[pageIdx]) {
-            next[pageIdx] = {
-              ...next[pageIdx],
-              id: uploadedDoc?.id,
-              uploadProgress: 100,
-            };
-          }
+          next[idx] = {
+            ...next[idx],
+            id: uploadedDoc?.id,
+            uploadProgress: 100,
+          };
           return next;
         });
 
@@ -1294,31 +1295,31 @@ export default function DashboardPage() {
         await new Promise((r) => setTimeout(r, 200));
 
         setPages((prev) => {
+          const idx = prev.findIndex((p) => p.file === f);
+          if (idx === -1) return prev;
           const next = [...prev];
-          if (next[pageIdx]) {
-            next[pageIdx] = {
-              ...next[pageIdx],
-              id: uploadedDoc?.id,
-              th: finalTh,
-              isUploading: false,
-              uploadProgress: 100,
-            };
-          }
+          next[idx] = {
+            ...next[idx],
+            id: uploadedDoc?.id,
+            th: finalTh,
+            isUploading: false,
+            uploadProgress: 100,
+          };
           return next;
         });
       } catch (err: any) {
         clearInterval(progressTimer);
         const localTh = await localThPromise;
         setPages((prev) => {
+          const idx = prev.findIndex((p) => p.file === f);
+          if (idx === -1) return prev;
           const next = [...prev];
-          if (next[pageIdx]) {
-            next[pageIdx] = {
-              ...next[pageIdx],
-              th: localTh,
-              isUploading: false,
-              q: 'error',
-            };
-          }
+          next[idx] = {
+            ...next[idx],
+            th: localTh,
+            isUploading: false,
+            q: 'error',
+          };
           return next;
         });
         showToast(`Upload error on ${f.name}: ${err.message || 'failed'}`);
@@ -1468,6 +1469,7 @@ export default function DashboardPage() {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('page_index', String(retakeIndex >= 0 ? retakeIndex : pages.length));
+        fd.append('async', 'true');
         try {
           await uploadDocument(projId, fd);
           await fetchActiveProject(projId);
