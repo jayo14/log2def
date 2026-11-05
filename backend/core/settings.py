@@ -293,4 +293,14 @@ AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', '').strip()
 AWS_REGION = os.getenv('AWS_REGION', 'eu-central-1').strip()
 S3_BUCKET = os.getenv('S3_BUCKET', 'assets').strip()
 
+# --- Squad Payment Gateway Configuration ---
+SQUAD_SECRET_KEY = os.getenv('SQUAD_SECRET_KEY', '').strip()
+SQUAD_PUBLIC_KEY = os.getenv('SQUAD_PUBLIC_KEY', '').strip()
+SQUAD_ENV = os.getenv('SQUAD_ENV', 'sandbox').strip()  # 'sandbox' or 'production'
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000').strip()
+
+# --- Telegram Notification Configuration ---
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '').strip()
+
 

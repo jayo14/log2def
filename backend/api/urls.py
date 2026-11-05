@@ -11,7 +11,9 @@ from .views import (
     ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
-    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView
+    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView,
+    SquadInitializeView, SquadCallbackView, SquadWebhookView, SquadVerifyView,
+    SecureDigitalDownloadView
 )
 
 urlpatterns = [
@@ -104,6 +106,20 @@ urlpatterns = [
     # Payment & Delivery Orders
     path('projects/<int:project_id>/payments/', PaymentOrderListCreateView.as_view(), name='project-payments'),
     path('projects/<int:project_id>/payments', PaymentOrderListCreateView.as_view()),
+
+    # Squad Payment Integration
+    path('projects/<int:project_id>/squad/initialize/', SquadInitializeView.as_view(), name='squad-initialize'),
+    path('projects/<int:project_id>/squad/initialize', SquadInitializeView.as_view()),
+    path('projects/<int:project_id>/squad/verify/', SquadVerifyView.as_view(), name='squad-verify'),
+    path('projects/<int:project_id>/squad/verify', SquadVerifyView.as_view()),
+    path('projects/<int:project_id>/squad/download/<str:format_type>/', SecureDigitalDownloadView.as_view(), name='squad-secure-download'),
+    path('projects/<int:project_id>/squad/download/<str:format_type>', SecureDigitalDownloadView.as_view()),
+
+    # Squad Callback & Webhook (public, no auth required)
+    path('squad/callback/', SquadCallbackView.as_view(), name='squad-callback'),
+    path('squad/callback', SquadCallbackView.as_view()),
+    path('squad/webhook/', SquadWebhookView.as_view(), name='squad-webhook'),
+    path('squad/webhook', SquadWebhookView.as_view()),
 
     # Defence Preparation
     path('projects/<int:project_id>/defence/generate/', DefenceGenerateView.as_view(), name='defence-generate'),
