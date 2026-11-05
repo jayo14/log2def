@@ -600,6 +600,69 @@ def calculate_report_estimated_pages(report: Report) -> Dict[str, Any]:
     }
 
 
+def generate_creative_dedication_or_ack(project: ReportProject, section_key: str, base_content: str) -> str:
+    """
+    Generates a deeply personal, creative, and inspiring dedication or acknowledgement using AI.
+    """
+    if not is_ai_available():
+        return base_content
+
+    student_name = project.full_name or "the student"
+    dept = project.department or "Computer Science"
+    univ = project.university_name or "Lagos State University of Science and Technology (LASUSTECH)"
+    faculty = project.faculty_school or "College of Basic Science"
+    company = project.organization_name or "the host establishment"
+    unit = project.placement_department or "Technical Operations / IT Unit"
+    ind_sup = project.industry_supervisor_name or "my industry supervisor"
+    acad_sup = project.academic_supervisor_name or "my institution supervisor"
+
+    if section_key == "dedication":
+        prompt = (
+            f"Write an inspiring, eloquent, and creative Dedication page for an undergraduate SIWES technical report.\n"
+            f"Student: {student_name}\n"
+            f"Department: {dept}, {univ}\n"
+            f"Host Organization: {company}\n"
+            f"GUIDELINES:\n"
+            f"- Dedicated with devotion to the Almighty God for divine wisdom, strength, protection, and grace throughout the training.\n"
+            f"- Dedicated affectionately to beloved parents and family whose unwavering sacrifices, moral foundation, prayers, and investments made this pursuit possible.\n"
+            f"- Dedicated to academic mentors and lecturers whose insights inspired excellence.\n"
+            f"- Write 2 to 3 touching, creative, and dignified academic paragraphs.\n"
+            f"- Output strictly clean HTML paragraphs (<p>). No markdown fences."
+        )
+    elif section_key == "acknowledgements":
+        prompt = (
+            f"Write a comprehensive, articulate, and creative Acknowledgements section for a SIWES technical report.\n"
+            f"Student: {student_name}\n"
+            f"Department: {dept}, {faculty}, {univ}\n"
+            f"Host Organization: {company}\n"
+            f"Placement Unit: {unit}\n"
+            f"Industry Supervisor: {ind_sup} ({project.industry_supervisor_title or 'Supervisor'})\n"
+            f"Institution Supervisor: {acad_sup}\n"
+            f"GUIDELINES:\n"
+            f"- Express profound gratitude to Almighty God for health, protection, and guidance.\n"
+            f"- Commend the executive management and team at {company} for granting the rare industrial attachment opportunity.\n"
+            f"- Acknowledge {ind_sup} and colleagues in {unit} for selfless mentorship, hands-on coaching, and patience.\n"
+            f"- Express gratitude to the Vice-Chancellor, Dean of {faculty}, Head of Department, and {acad_sup} at {univ}.\n"
+            f"- Recognize parents, family members, and friends for moral encouragement and prayers.\n"
+            f"- Write warm, polished, and creative academic paragraphs.\n"
+            f"- Output strictly clean HTML paragraphs (<p>). No markdown fences."
+        )
+    else:
+        return base_content
+
+    try:
+        refined = generate_completion(
+            system_prompt="You are a gifted academic editor crafting heartfelt, creative, and formal university front-matter.",
+            user_prompt=prompt,
+            temperature=0.7
+        )
+        if refined and len(refined) > 40:
+            return sanitize_html(refined)
+    except Exception as e:
+        logger.warning(f"Failed to generate creative {section_key}: {e}")
+    return base_content
+
+
 def generate_full_report(project: ReportProject, force_all: bool = False) -> Report:
     """
     Creates or updates the Report and all ReportSection instances for a project.
@@ -659,6 +722,9 @@ def generate_full_report(project: ReportProject, force_all: bool = False) -> Rep
         base_content, warnings, source_ids = build_rule_based_section_content(
             project, sec_def["key"], verified_entries
         )
+
+        if sec_def["key"] in ["dedication", "acknowledgements"] and use_ai:
+            base_content = generate_creative_dedication_or_ack(project, sec_def["key"], base_content)
 
         qualifies_for_ai = (
             use_ai and
@@ -778,7 +844,9 @@ def regenerate_single_section(section: ReportSection) -> ReportSection:
     )
 
     final_content = base_content
-    if is_ai_available() and section.chapter_number in [1, 2, 3, 4, 5] and section.section_key != "ch3_weekly_log":
+    if section.section_key in ["dedication", "acknowledgements"] and is_ai_available():
+        final_content = generate_creative_dedication_or_ack(project, section.section_key, base_content)
+    elif is_ai_available() and section.chapter_number in [1, 2, 3, 4, 5] and section.section_key != "ch3_weekly_log":
         if "[INPUT NEEDED" not in base_content:
             guideline_context = "\nINSTITUTIONAL GUIDELINES: Lagos State University of Science and Technology (LASUSTECH) Standard."
             system_prompt = (
