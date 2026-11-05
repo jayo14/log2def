@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 from .models import (
     ReportProject, SourceDocument, ExtractedPage, 
-    LogbookEntry, Report, ReportSection, DefenceQuestion
+    LogbookEntry, LogbookPage, Fact, Report, ReportSection, DefenceQuestion
 )
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
@@ -30,6 +30,7 @@ from .defence_generator import (
 from .feature_flags import DEFAULT_FEATURE_FLAGS, is_feature_enabled, get_all_feature_flags
 from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requirements, ensure_default_template_in_db
 from .ocr_trace import save_tesseract_tsv, trace_root
+from .extraction import validate_fact_candidate, persist_fact_candidate, material_sufficiency, classify_page
 
 
 class TemplateV2ContractTests(TestCase):
@@ -79,6 +80,63 @@ class OcrTraceHarnessTests(TestCase):
                 self.assertIsNone(trace_root())
             with override_settings(DEBUG=True, LOG2DEF_OCR_TRACE_DIR=temp_dir):
                 self.assertEqual(trace_root(), Path(temp_dir).resolve())
+
+
+class ProvenanceExtractionTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="extract-test", password="StrongPassword123!")
+        self.project = ReportProject.objects.create(user=self.user, title="Synthetic extraction case")
+
+    def test_fact_quote_requires_exact_transcript_substring(self):
+        valid, reason = validate_fact_candidate({
+            "kind": "activity", "text": "configured router", "provenance": "LOGBOOK",
+            "evidence_quote": "configured router", "inference_reason": "",
+        }, "Monday: configured router")
+        self.assertTrue(valid)
+        self.assertEqual(reason, "")
+        invalid, reason = validate_fact_candidate({
+            "kind": "tool", "text": "Cisco router", "provenance": "LOGBOOK",
+            "evidence_quote": "Cisco router", "inference_reason": "",
+        }, "Monday: configured router")
+        self.assertFalse(invalid)
+        self.assertEqual(reason, "evidence_quote_not_verbatim_substring")
+        unsupported_detail = {
+            "kind": "tool", "text": "Cisco", "provenance": "LOGBOOK",
+            "evidence_quote": "used a router", "inference_reason": "",
+        }
+        self.assertEqual(
+            validate_fact_candidate(unsupported_detail, "used a router"),
+            (False, "fact_text_not_verbatim_substring"),
+        )
+
+    def test_inference_requires_reason_and_remains_unconfirmed_by_default(self):
+        candidate = {"kind": "skill", "text": "learnt tags", "provenance": "INFERRED", "evidence_quote": "learnt tags", "inference_reason": ""}
+        self.assertEqual(validate_fact_candidate(candidate, "learnt tags"), (False, "inference_reason_required"))
+        candidate["text"] = "HTML"
+        candidate["inference_reason"] = "The transcript says the student learnt tags; confirm the specific language."
+        fact, error = persist_fact_candidate(self.project, candidate, "learnt tags")
+        self.assertEqual(error, "")
+        self.assertEqual(fact.status, "proposed")
+
+    def test_one_activity_is_insufficient_even_across_many_pages(self):
+        for index in range(14):
+            document = SourceDocument.objects.create(
+                project=self.project, original_filename=f"synthetic-{index}.jpg", file_type="image", page_index=index,
+            )
+            extracted = ExtractedPage.objects.create(document=document, page_index=index, extracted_text="" if index < 12 else "synthetic text")
+            LogbookPage.objects.create(extracted_page=extracted, page_index=index, page_type="blank" if index < 12 else "weekly_record")
+        Fact.objects.create(
+            project=self.project, kind="activity", text="Configured router", provenance="LOGBOOK",
+            evidence_quote="Configured router", status="confirmed",
+        )
+        result = material_sufficiency(self.project)
+        self.assertEqual(result["status"], "insufficient_material")
+        self.assertEqual(result["blank_pages_first"], list(range(12)))
+        self.assertEqual(result["activity_entries_across_pages"], "1 confirmed activity entry across 14 pages")
+
+    def test_page_classifier_does_not_invent_domain_or_tool(self):
+        self.assertEqual(classify_page(""), "blank")
+        self.assertEqual(classify_page("Waste Redution Marketplace setup"), "other")
 
 
 class Log2DefBackendTests(TestCase):

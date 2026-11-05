@@ -196,12 +196,29 @@ def check_project_completeness(project) -> Dict[str, Any]:
         "confidence": 1.0 if entries_count > 0 else 0.0,
     }
 
+    material = None
+    if not is_v1:
+        from .extraction import material_sufficiency
+        material = material_sufficiency(project)
+        if material["status"] != "material_available":
+            missing_required.append("material_sufficiency")
+        field_reports["material_sufficiency"] = {
+            "key": "material_sufficiency",
+            "label": "Student-derived report material",
+            "required": True,
+            "status": "Found" if material["status"] == "material_available" else "Uncertain",
+            "value": material["activity_entries_across_pages"],
+            "confidence": 1.0 if material["status"] == "material_available" else 0.0,
+        }
+
     # 3. Check Date Constraints
     start_date = getattr(project, 'training_start_date', None)
     end_date = getattr(project, 'training_end_date', None)
     date_val_result = validate_training_dates(start_date, end_date, list(entries))
 
-    can_generate = len(missing_required) == 0 and date_val_result["is_valid"]
+    can_generate = len(missing_required) == 0 and date_val_result["is_valid"] and (
+        material is None or material["status"] == "material_available"
+    )
 
     return {
         "can_generate": can_generate,
@@ -210,4 +227,5 @@ def check_project_completeness(project) -> Dict[str, Any]:
         "uncertain_fields": uncertain_fields,
         "date_validation": date_val_result,
         "fields": field_reports,
+        "material_sufficiency": material,
     }

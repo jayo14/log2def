@@ -593,6 +593,18 @@ class PageUpdateView(views.APIView):
         serializer = ExtractedPageSerializer(page, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        if page.is_reviewed:
+            from .extraction import parse_reviewed_page
+            from .models import LogbookPage
+            record_page, _ = LogbookPage.objects.get_or_create(
+                extracted_page=page,
+                defaults={"page_index": page.page_index, "quality_score": page.confidence_score},
+            )
+            record_page.page_index = page.page_index
+            record_page.quality_score = page.confidence_score
+            record_page.save(update_fields=["page_index", "quality_score"])
+            record_page.day_entries.all().delete()
+            parse_reviewed_page(record_page)
         return Response(serializer.data)
 
 
