@@ -783,6 +783,19 @@ class Log2DefBackendTests(TestCase):
         self.assertEqual(report.template_snapshot['name'], 'LASUSTECH Standard SIWES Technical Report Template')
         self.assertEqual(report.template_snapshot['version'], '1.0.0')
 
+    def test_v1_section_content_is_identical_on_regeneration(self):
+        with patch('api.report_generator.is_ai_available', return_value=False):
+            first = generate_full_report(self.project1)
+            before = list(first.sections.order_by('chapter_number', 'order', 'id').values_list(
+                'section_key', 'chapter_number', 'title', 'content', 'order'
+            ))
+            second = generate_full_report(self.project1)
+            after = list(second.sections.order_by('chapter_number', 'order', 'id').values_list(
+                'section_key', 'chapter_number', 'title', 'content', 'order'
+            ))
+        self.assertEqual(second.template_version, 'lasustech-standard:1.0.0')
+        self.assertEqual(before, after)
+
     def test_no_source_material_flagged_not_invented(self):
         # Create a project with empty optional and narrative fields
         sparse_proj = ReportProject.objects.create(
@@ -846,8 +859,14 @@ class Log2DefBackendTests(TestCase):
             project=project, week_number=3, activity_summary='Created a small Python script.',
             verified_text='Created a small Python script.', tools_used='Python', is_verified=True,
         )
+        from .completeness import check_project_completeness
+        profile_check = check_project_completeness(project)
+        self.assertIn('college', profile_check['missing_required_fields'])
+        self.assertNotIn('degree', profile_check['missing_required_fields'])
         report = generate_full_report(project)
         self.assertEqual(report.template_version, 'lasustech_cs:2.0.0')
+        section_check = check_project_completeness(project)
+        self.assertIn('section:ch2_history', section_check['missing_required_fields'])
         doc = docx.Document(generate_docx_report(report))
         text = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
         self.assertIn('CHAPTER ONE\nINTRODUCTION', text)
@@ -859,6 +878,11 @@ class Log2DefBackendTests(TestCase):
         self.assertIn('DATE:', text)
         self.assertNotIn('[INPUT NEEDED', text)
         self.assertIn('TOC', doc._element.xml)
+        section_xml = '\n'.join(section._sectPr.xml for section in doc.sections)
+        self.assertIn('w:fmt="lowerRoman"', section_xml)
+        self.assertIn('w:fmt="decimal"', section_xml)
+        self.assertIn('w:start="1"', section_xml)
+        self.assertTrue(any('Page ' in paragraph.text for section in doc.sections for paragraph in section.footer.paragraphs))
         for paragraph in doc.paragraphs:
             for run in paragraph.runs:
                 if run.text.strip():

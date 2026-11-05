@@ -10,6 +10,7 @@ Enforces Section 2.A and Section 2.D of docs/MVP_SCOPE.md:
 
 from datetime import date
 from typing import Dict, Any, List
+import re
 
 
 REQUIRED_STUDENT_FIELDS = [
@@ -150,6 +151,29 @@ def check_project_completeness(project) -> Dict[str, Any]:
             "value": str(val) if val is not None else None,
             "confidence": confidence,
         }
+
+    # Section-level required inputs are part of the same v2 manifest. Once a
+    # draft exists, empty required narrative sections are reported explicitly.
+    if not is_v1 and report:
+        from .templates import get_section_requirements
+        manifest = get_section_requirements()
+        for section in manifest["sections"]:
+            if not section.get("required"):
+                continue
+            section_obj = report.sections.filter(section_key=section["key"]).first()
+            content = getattr(section_obj, "content", "") or ""
+            has_content = bool(re.sub(r"<[^>]*>", " ", content).strip())
+            key = f"section:{section['key']}"
+            field_reports[key] = {
+                "key": key,
+                "label": section["title"],
+                "required": True,
+                "status": "Found" if has_content else "Missing",
+                "value": None,
+                "confidence": 1.0 if has_content else 0.0,
+            }
+            if not has_content:
+                missing_required.append(key)
 
     # 2. Check Logbook Entries
     entries = project.logbook_entries.all()

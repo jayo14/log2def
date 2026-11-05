@@ -472,7 +472,8 @@ def generate_docx_report(report: Report) -> str:
                 }
                 header_text = getattr(b_sec, "chapter_title", "") or ch_titles.get(b_sec.chapter_number, f"CHAPTER {b_sec.chapter_number}")
                 ch_p = doc.add_paragraph()
-                ch_p.style = doc.styles["Heading 1"]
+                if is_v2:
+                    ch_p.style = doc.styles["Heading 1"]
                 ch_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 ch_p.paragraph_format.space_before = Pt(18)
                 ch_p.paragraph_format.space_after = Pt(18)
@@ -483,7 +484,8 @@ def generate_docx_report(report: Report) -> str:
 
             if b_sec.chapter_number > 0 and b_sec.section_key not in ["references", "appendices"]:
                 sub_p = doc.add_paragraph()
-                sub_p.style = doc.styles["Heading 2"]
+                if is_v2:
+                    sub_p.style = doc.styles["Heading 2"]
                 sub_p.paragraph_format.space_before = Pt(12)
                 sub_p.paragraph_format.space_after = Pt(6)
                 sub_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
