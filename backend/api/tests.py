@@ -298,6 +298,25 @@ class ProvenanceExtractionTests(TestCase):
         self.assertEqual(none_fact.text, "I had none")
 
     def test_no_challenges_generates_without_challenge_sections_or_placeholders(self):
+        self.project.full_name = "Synthetic Student"
+        self.project.matric_number = "SYN/001"
+        self.project.department = "Synthetic Studies"
+        self.project.college = "Synthetic College"
+        self.project.degree = "B.Sc. Synthetic Studies"
+        self.project.organization_name = "Sample Repair Centre"
+        self.project.organization_address = "1 Example Road"
+        self.project.training_start_date = date(2025, 1, 6)
+        self.project.training_end_date = date(2025, 5, 30)
+        self.project.save()
+        LogbookEntry.objects.create(
+            project=self.project, week_number=1, verified_text="Synthetic activity log",
+            activity_summary="Synthetic activity log", is_verified=True,
+        )
+        for quote in ("checked a returned item", "recorded a repair request"):
+            Fact.objects.create(
+                project=self.project, kind="activity", text=quote, provenance="LOGBOOK",
+                evidence_quote=quote, status="confirmed",
+            )
         answers = {
             "organisation_what": "Repairs small appliances",
             "organisation_objectives": "Provide repair services",
@@ -317,7 +336,11 @@ class ProvenanceExtractionTests(TestCase):
             )
             self.assertEqual(response.status_code, 200, response.data)
         self.project.refresh_from_db()
-        report = generate_full_report(self.project)
+        completeness = check_project_completeness(self.project)
+        self.assertTrue(completeness["can_generate"], completeness)
+        generated = client.post(f"/api/projects/{self.project.id}/report/generate/", {}, format="json")
+        self.assertEqual(generated.status_code, 200, generated.data)
+        report = Report.objects.get(project=self.project)
         section_keys = set(report.sections.values_list("section_key", flat=True))
         self.assertNotIn("ch3_challenges", section_keys)
         self.assertNotIn("ch3_solutions", section_keys)
@@ -326,6 +349,9 @@ class ProvenanceExtractionTests(TestCase):
         all_content = "\n".join(report.sections.values_list("content", flat=True))
         for placeholder in ("[INPUT NEEDED]", "[Student", "for your defense", "I had none"):
             self.assertNotIn(placeholder, all_content)
+        from .templates import get_section_requirements
+        for step in get_section_requirements()["guided_intake"]["steps"]:
+            self.assertNotIn(step["hint"], all_content)
         self.assertIn("Repairs small appliances", report.sections.get(section_key="ch2_history").content)
         self.assertIn("Provide a written weekly task plan", report.sections.get(section_key="ch4_recommendations").content)
         history_paragraph = report.provenance_paragraphs.get(section_key="ch2_history", origin="GUIDED_INTAKE")

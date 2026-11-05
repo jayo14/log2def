@@ -843,7 +843,10 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.is_required = definition.get("required", False)
         section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
         section.warnings = ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
-        section.source_links = []
+        section.source_links = sorted({
+            fact_id for paragraph in student_paragraphs
+            for fact_id in paragraph.facts.values_list("id", flat=True)
+        })
         section.save()
         generated_paragraphs = report.provenance_paragraphs.filter(section_key=key, origin="GUIDED_INTAKE")
         linked_facts = confirmed_section_facts(key)
