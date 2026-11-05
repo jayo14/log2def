@@ -71,6 +71,7 @@ class ReportProject(models.Model):
     tasks_performed = models.TextField(blank=True)
     problems_encountered = models.TextField(blank=True)
     skills_acquired = models.TextField(blank=True)
+    guided_intake = models.JSONField(default=dict, blank=True)
 
     # Defence Presentation Assets
     presentation_slides = models.JSONField(default=list, blank=True)
@@ -276,7 +277,7 @@ class DayEntry(models.Model):
 class Fact(models.Model):
     KIND_CHOICES = [(v, v.replace('_', ' ').title()) for v in (
         'activity', 'tool', 'equipment', 'quantity', 'skill', 'duty', 'project', 'challenge',
-        'solution', 'person', 'organisation_detail')]
+        'solution', 'person', 'organisation_detail', 'recommendation', 'personal_statement')]
     PROVENANCE_CHOICES = [(v, v) for v in ('LOGBOOK', 'INFERRED', 'STUDENT_PROVIDED')]
     STATUS_CHOICES = [(v, v.title()) for v in ('proposed', 'confirmed', 'rejected')]
     project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='facts')
@@ -286,6 +287,7 @@ class Fact(models.Model):
     source_entry_ids = models.ManyToManyField(DayEntry, related_name='facts', blank=True)
     evidence_quote = models.TextField(blank=True)
     inference_reason = models.TextField(blank=True)
+    source_field = models.CharField(max_length=64, blank=True, db_index=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='proposed')
     validation_error = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -335,11 +337,13 @@ class ReportSection(models.Model):
 
 
 class ReportParagraph(models.Model):
+    ORIGIN_CHOICES = [("GUIDED_INTAKE", "Guided intake"), ("STUDENT_EDITED", "Student edited")]
     report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='provenance_paragraphs')
     section_key = models.CharField(max_length=64)
     order = models.PositiveIntegerField(default=0)
     text = models.TextField()
     student_confirmed = models.BooleanField(default=False)
+    origin = models.CharField(max_length=24, choices=ORIGIN_CHOICES, default="STUDENT_EDITED")
     facts = models.ManyToManyField(Fact, related_name='report_paragraphs', blank=True)
 
 

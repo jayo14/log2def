@@ -175,6 +175,25 @@ def check_project_completeness(project) -> Dict[str, Any]:
             if not has_content:
                 missing_required.append(key)
 
+    if not is_v1:
+        from .templates import get_section_requirements
+        from .guided_intake import intake_answer_complete
+        answers = project.guided_intake or {}
+        intake_steps = get_section_requirements()["guided_intake"]["steps"]
+        for step in intake_steps:
+            if not step.get("required"):
+                continue
+            key = f"guided_intake:{step['key']}"
+            found = intake_answer_complete(step, answers)
+            field_reports[key] = {
+                "key": key, "label": step["title"], "required": True,
+                "status": "Found" if found else "Missing",
+                "value": "Saved" if found else None,
+                "confidence": 1.0 if found else 0.0,
+            }
+            if not found:
+                missing_required.append(key)
+
     # 2. Check Logbook Entries
     entries = project.logbook_entries.all()
     entries_count = entries.count()

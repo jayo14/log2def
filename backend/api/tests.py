@@ -258,6 +258,80 @@ class ProvenanceExtractionTests(TestCase):
         self.assertEqual(saved.data["fact_ids"], [fact.id])
         self.assertTrue(saved.data["student_confirmed"])
         self.assertEqual(report.provenance_paragraphs.count(), 1)
+        section = report.sections.get(section_key="ch3_activities")
+        self.assertIn("I checked a network link", section.content)
+        self.assertEqual(section.source_links, [fact.id])
+
+    def test_guided_intake_is_manifest_driven_and_saves_confirmed_facts(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        endpoint = f"/api/projects/{self.project.id}/intake/"
+        initial = client.get(endpoint)
+        self.assertEqual(initial.status_code, 200)
+        keys = [step["key"] for step in initial.data["required_steps"]]
+        self.assertIn("organisation_what", keys)
+        self.assertIn("recommendations", keys)
+        self.assertTrue(any(step["key"] == "dedication" for step in initial.data["optional_steps"]))
+        self.assertIn("guided_intake:organisation_objectives", initial.data["completeness"]["missing_required_fields"])
+
+        empty = client.patch(endpoint, {"key": "organisation_what", "answer": "  "}, format="json")
+        self.assertEqual(empty.status_code, 400)
+        bad_tree = client.patch(endpoint, {"key": "organogram_tree", "answer": "Director\n      Manager"}, format="json")
+        self.assertEqual(bad_tree.status_code, 400)
+        saved = client.patch(endpoint, {"key": "organisation_what", "answer": "Repairs small appliances"}, format="json")
+        self.assertEqual(saved.status_code, 200)
+        fact = Fact.objects.get(project=self.project, source_field="organisation_what")
+        self.assertEqual(fact.provenance, "STUDENT_PROVIDED")
+        self.assertEqual(fact.status, "confirmed")
+        self.assertEqual(fact.evidence_quote, "Repairs small appliances")
+
+    def test_no_challenges_is_explicit_optional_and_pairwise(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        endpoint = f"/api/projects/{self.project.id}/intake/"
+        invalid = client.patch(endpoint, {"key": "challenge_pairs", "answer": {"none": False, "pairs": [{"challenge": "Delay", "solution": ""}]}}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        saved = client.patch(endpoint, {"key": "challenge_pairs", "answer": {"none": True, "pairs": []}}, format="json")
+        self.assertEqual(saved.status_code, 200)
+        self.assertTrue(self.project.__class__.objects.get(id=self.project.id).guided_intake["challenge_pairs"]["none"])
+        none_fact = Fact.objects.get(project=self.project, source_field="challenge_pairs:no_challenges")
+        self.assertEqual(none_fact.text, "I had none")
+
+    def test_no_challenges_generates_without_challenge_sections_or_placeholders(self):
+        answers = {
+            "organisation_what": "Repairs small appliances",
+            "organisation_objectives": "Provide repair services",
+            "organisation_structure": "A manager oversees the service team",
+            "organogram_tree": "Manager\n  Service team",
+            "student_unit": "Service team",
+            "supervisor_title": "Workshop manager",
+            "duties": "Recorded repair requests\nChecked returned items",
+            "challenge_pairs": {"none": True, "pairs": []},
+            "recommendations": "Provide a written weekly task plan",
+        }
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        for key, answer in answers.items():
+            response = client.patch(
+                f"/api/projects/{self.project.id}/intake/", {"key": key, "answer": answer}, format="json",
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+        self.project.refresh_from_db()
+        report = generate_full_report(self.project)
+        section_keys = set(report.sections.values_list("section_key", flat=True))
+        self.assertNotIn("ch3_challenges", section_keys)
+        self.assertNotIn("ch3_solutions", section_keys)
+        self.assertNotIn("dedication", section_keys)
+        self.assertNotIn("acknowledgement", section_keys)
+        all_content = "\n".join(report.sections.values_list("content", flat=True))
+        for placeholder in ("[INPUT NEEDED]", "[Student", "for your defense", "I had none"):
+            self.assertNotIn(placeholder, all_content)
+        self.assertIn("Repairs small appliances", report.sections.get(section_key="ch2_history").content)
+        self.assertIn("Provide a written weekly task plan", report.sections.get(section_key="ch4_recommendations").content)
+        history_paragraph = report.provenance_paragraphs.get(section_key="ch2_history", origin="GUIDED_INTAKE")
+        recommendation_paragraph = report.provenance_paragraphs.get(section_key="ch4_recommendations", origin="GUIDED_INTAKE")
+        self.assertEqual(list(history_paragraph.facts.values_list("source_field", flat=True)), ["organisation_what"])
+        self.assertEqual(list(recommendation_paragraph.facts.values_list("source_field", flat=True)), ["recommendations"])
 
 
 class Log2DefBackendTests(TestCase):

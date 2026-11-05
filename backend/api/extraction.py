@@ -181,6 +181,8 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
         "ch3_tools": ["tool", "equipment"], "ch3_challenges": ["challenge"],
         "ch3_solutions": ["solution"], "ch4_summary": ["activity", "duty", "skill"],
         "ch4_conclusion": ["activity", "duty", "skill"],
+        "ch4_recommendations": ["recommendation"], "dedication": ["personal_statement"],
+        "acknowledgement": ["person", "personal_statement"],
     }
     enrichment_questions = {
         "ch2_history": "What are the organisation's confirmed history and key milestones?",
@@ -197,7 +199,10 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
     for section in manifest["sections"]:
         key = section["key"]
         kinds = section_fact_kinds.get(key, [])
-        count = Fact.objects.filter(project=project, kind__in=kinds, status="confirmed").count() if kinds else 0
+        fact_query = Fact.objects.filter(project=project, kind__in=kinds, status="confirmed") if kinds else Fact.objects.none()
+        if key == "ch3_challenges":
+            fact_query = fact_query.exclude(source_field="challenge_pairs:no_challenges")
+        count = fact_query.count()
         status_value = "fixed_text" if section["source"] == "FIXED_BOILERPLATE" else (
             "confirmed_material" if count else ("insufficient_material" if section["source"] in {"LOGBOOK", "INFERRED", "CONFIRMED_CONTENT"} else "needs_student_input")
         )

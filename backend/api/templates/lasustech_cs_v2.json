@@ -55,8 +55,8 @@
     {"key":"ch3_activities","title":"3.2 Activities Performed","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"LOGBOOK","required":true,"format":"weekly_range_prose"},
     {"key":"ch3_skills","title":"3.3 Skills Acquired","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"INFERRED","requires_student_confirmation":true},
     {"key":"ch3_tools","title":"3.4 Equipment/Tools Used","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"LOGBOOK","required":true},
-    {"key":"ch3_challenges","title":"3.5 Challenges Encountered","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"STUDENT_PROVIDED","required":true,"paired_with":"ch3_solutions"},
-    {"key":"ch3_solutions","title":"3.6 Solutions to the Challenges","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"STUDENT_PROVIDED","required":true,"paired_with":"ch3_challenges"},
+    {"key":"ch3_challenges","title":"3.5 Challenges Encountered","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"STUDENT_PROVIDED","required":false,"paired_with":"ch3_solutions"},
+    {"key":"ch3_solutions","title":"3.6 Solutions to the Challenges","chapter":3,"chapter_title":"CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES","source":"STUDENT_PROVIDED","required":false,"paired_with":"ch3_challenges"},
     {"key":"ch4_summary","title":"4.1 Summary","chapter":4,"chapter_title":"CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS","source":"CONFIRMED_CONTENT","required":true},
     {"key":"ch4_conclusion","title":"4.2 Conclusion","chapter":4,"chapter_title":"CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS","source":"CONFIRMED_CONTENT","required":true},
     {"key":"ch4_recommendations","title":"4.3 Recommendations","chapter":4,"chapter_title":"CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS","source":"STUDENT_PROVIDED","required":true},
@@ -73,5 +73,22 @@
   "references": [
     {"id":"itf-siwes-handbook","citation":"Industrial Training Fund (ITF), SIWES handbook or policy (edition and publication details to be confirmed before inclusion).","status":"NEEDS_CONFIRMATION"},
     {"id":"lasustech-guideline","citation":"LASUSTECH SIWES guidelines (include only after the student confirms the document exists and supplies or verifies it).","status":"NEEDS_CONFIRMATION"}
-  ]
+  ],
+  "guided_intake": {
+    "steps": [
+      {"key":"organisation_what","section":"ch2_history","required":true,"type":"long_text","title":"What does the organisation do?","hint":"Describe its main services or work in your own words."},
+      {"key":"organisation_history","section":"ch2_history","required":false,"type":"long_text","title":"What do you know about its location and history?","hint":"Location and when or how it started, if you know. Leave blank if you cannot confirm this."},
+      {"key":"organisation_objectives","section":"ch2_objectives","required":true,"type":"long_text","title":"What are the organisation’s main objectives?","hint":"Use objectives stated by the organisation, if available."},
+      {"key":"organisation_structure","section":"ch2_structure","required":true,"type":"long_text","title":"How is the organisation structured, and who heads it?","hint":"Name roles or units and who reports to whom."},
+      {"key":"organogram_tree","section":"ch2_organogram","required":true,"type":"tree","title":"Enter the organogram as an indented tree","hint":"Use one role per line and indent each reporting level with two spaces."},
+      {"key":"student_unit","section":"ch3_duties","required":true,"type":"short_text","title":"Which unit were you attached to?","hint":"Enter the unit name used at your placement."},
+      {"key":"supervisor_title","section":"ch3_duties","required":false,"type":"short_text","title":"Supervisor job title (optional)","hint":"Enter the title only. The supervisor’s name is optional."},
+      {"key":"duties","section":"ch3_duties","required":true,"type":"long_text","title":"What duties and responsibilities did you perform?","hint":"You can confirm relevant logbook entries or add duties you remember."},
+      {"key":"challenge_pairs","section":"ch3_challenges","required":true,"type":"challenge_pairs","title":"What challenges did you encounter and how were they addressed?","hint":"Add two or three real challenge and solution pairs, or select “I had none”."},
+      {"key":"recommendations","section":"ch4_recommendations","required":true,"type":"long_text","title":"What would have improved your training?","hint":"Tie each recommendation to something you observed."},
+      {"key":"dedication","section":"dedication","required":false,"type":"long_text","title":"Dedication (optional)","hint":"Write a short dedication, or leave this blank to omit the page."},
+      {"key":"acknowledgement_people","section":"acknowledgement","required":false,"type":"people_list","title":"Acknowledgement (optional)","hint":"Add only names and titles you want to acknowledge. Thank God and family lines are optional and off by default."},
+      {"key":"industry_supervisor_name","section":"certification","required":false,"type":"short_text","title":"Industrial supervisor name (optional)","hint":"The certification signature line stays blank regardless."}
+    ]
+  }
 }

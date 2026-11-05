@@ -372,6 +372,7 @@ def get_section_requirements(code: str = "lasustech_cs", version: str = "2.0.0")
             }}
             for section in spec.get("sections", [])
         ],
+        "guided_intake": spec.get("guided_intake", {"steps": []}),
     }
 
 

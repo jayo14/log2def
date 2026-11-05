@@ -192,7 +192,7 @@ class ReportProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReportProject
         fields = '__all__'
-        read_only_fields = ('user', 'created_at', 'updated_at')
+        read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake')
 
     @extend_schema_field(serializers.BooleanField)
     def get_has_report(self, obj):
@@ -208,7 +208,7 @@ class ReportProjectDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReportProject
         fields = '__all__'
-        read_only_fields = ('user', 'created_at', 'updated_at')
+        read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake')
 
 
 # --- Documentation & Request Helper Serializers ---

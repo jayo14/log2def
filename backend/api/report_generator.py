@@ -5,7 +5,7 @@ from html import escape
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from django.utils import timezone
-from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion, ReportTemplate
+from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion, ReportTemplate, Fact, ReportParagraph
 from .ai_provider import is_ai_available, generate_completion, AIProviderUnavailableError
 from .security import wrap_untrusted_prompt_input, sanitize_html
 from .templates import (
@@ -711,6 +711,49 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
     if project.training_start_date and project.training_end_date:
         days = (project.training_end_date - project.training_start_date).days + 1
         duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
+    intake = project.guided_intake or {}
+    acknowledgement = intake.get("acknowledgement_people") or {}
+    acknowledgement_lines = []
+    for person in acknowledgement.get("people", []) if acknowledgement.get("include") else []:
+        name = str(person.get("name", "")).strip()
+        title = str(person.get("title", "")).strip()
+        if name:
+            acknowledgement_lines.append(f"{title} {name}".strip())
+    if acknowledgement.get("thank_god"):
+        acknowledgement_lines.append("God")
+    if acknowledgement.get("thank_family"):
+        acknowledgement_lines.append("my family")
+    acknowledgement_text = ""
+    if acknowledgement_lines:
+        acknowledgement_text = "I acknowledge " + ", ".join(acknowledgement_lines) + " for their support during my training."
+    challenge_answer = intake.get("challenge_pairs") or {}
+    challenge_pairs = challenge_answer.get("pairs", []) if not challenge_answer.get("none") else []
+    organogram = []
+    for line in str(intake.get("organogram_tree", "")).splitlines():
+        if line.strip():
+            depth = (len(line) - len(line.lstrip(" "))) // 2
+            organogram.append("\u2003" * depth + line.strip())
+    section_fact_fields = {
+        "ch2_history": ["organisation_what", "organisation_history"],
+        "ch2_objectives": ["organisation_objectives"], "ch2_structure": ["organisation_structure"],
+        "ch2_organogram": ["organogram_tree"],
+        "ch3_duties": ["student_unit", "supervisor_title", "duties", "industry_supervisor_name"],
+        "ch3_challenges": ["challenge_pairs:challenge_",],
+        "ch3_solutions": ["challenge_pairs:solution_",],
+        "ch4_recommendations": ["recommendations"], "dedication": ["dedication"],
+        "acknowledgement": ["acknowledgement_people:"],
+    }
+
+    def confirmed_section_facts(section_key):
+        from django.db.models import Q
+        fields = section_fact_fields.get(section_key, [])
+        query = Q()
+        for field in fields:
+            if field.endswith(":") or field.endswith("_"):
+                query |= Q(source_field__startswith=field)
+            else:
+                query |= Q(source_field=field)
+        return Fact.objects.filter(project=project, status="confirmed").filter(query).distinct()
 
     # Reviewed source lines are evidence, not report prose. They remain in the
     # transcript/Fact layer until a separately confirmed normalized paragraph
@@ -719,8 +762,8 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "title_page": "\n".join(filter(None, [project.full_name, project.matric_number, project.department, project.college, project.degree,
             project.organization_name, project.organization_address, f"{start} – {end}" if start and end else ""])),
         "certification": "",
-        "dedication": "",
-        "acknowledgement": "",
+        "dedication": str(intake.get("dedication", "")).strip(),
+        "acknowledgement": acknowledgement_text,
         "abstract": "",
         "table_of_contents": "",
         "ch1_background": LASUSTECH_CS_V2["fixed_text"]["siwes_background"],
@@ -731,19 +774,23 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             f"I was attached to {project.placement_department}." if project.placement_department else "",
         ])),
         "ch1_duration": f"The training ran from {start} to {end} ({duration})." if start and end else "",
-        "ch2_history": "",
-        "ch2_objectives": "",
-        "ch2_structure": "",
-        "ch2_organogram": "",
-        "ch3_duties": "",
+        "ch2_history": "\n".join(filter(None, [str(intake.get("organisation_what", "")).strip(), str(intake.get("organisation_history", "")).strip()])),
+        "ch2_objectives": str(intake.get("organisation_objectives", "")).strip(),
+        "ch2_structure": str(intake.get("organisation_structure", "")).strip(),
+        "ch2_organogram": "\n".join(organogram),
+        "ch3_duties": "\n".join(filter(None, [
+            f"I was attached to {intake.get('student_unit', '').strip()}." if str(intake.get("student_unit", "")).strip() else "",
+            f"My supervisor held the title {intake.get('supervisor_title', '').strip()}." if str(intake.get("supervisor_title", "")).strip() else "",
+            str(intake.get("duties", "")).strip(),
+        ])),
         "ch3_activities": "",
         "ch3_skills": project.skills_acquired.strip(),
         "ch3_tools": project.tools_used.strip(),
-        "ch3_challenges": project.problems_encountered.strip(),
-        "ch3_solutions": "",
+        "ch3_challenges": "\n".join(pair["challenge"].strip() for pair in challenge_pairs),
+        "ch3_solutions": "\n".join(pair["solution"].strip() for pair in challenge_pairs),
         "ch4_summary": "",
         "ch4_conclusion": "",
-        "ch4_recommendations": "",
+        "ch4_recommendations": str(intake.get("recommendations", "")).strip(),
         "references": LASUSTECH_CS_V2["fixed_text"]["itf_reference"],
         "appendices": "",
     }
@@ -764,6 +811,11 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
     for position, definition in enumerate(LASUSTECH_CS_V2["sections"]):
         key = definition["key"]
         content_text = source_text.get(key, "")
+        student_paragraphs = list(report.provenance_paragraphs.filter(
+            section_key=key, origin="STUDENT_EDITED", student_confirmed=True
+        ).prefetch_related("facts").order_by("order"))
+        if student_paragraphs:
+            content_text = "\n".join(paragraph.text for paragraph in student_paragraphs)
         if definition.get("flag") == "abstract_enabled" and not report.template_options.get("abstract_enabled", False):
             continue
         if definition.get("flag") == "toc_enabled" and not report.template_options.get("toc_enabled", True):
@@ -771,6 +823,12 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         if definition.get("chapter") in (5, 6) and not content_text:
             continue
         if definition.get("chapter") == 0 and key in {"dedication", "acknowledgement", "abstract"} and not content_text:
+            report.sections.filter(section_key=key).delete()
+            report.provenance_paragraphs.filter(section_key=key).delete()
+            continue
+        if key in {"ch3_challenges", "ch3_solutions"} and not content_text:
+            report.sections.filter(section_key=key).delete()
+            report.provenance_paragraphs.filter(section_key=key).delete()
             continue
         section, _ = ReportSection.objects.get_or_create(
             report=report, section_key=key,
@@ -787,6 +845,24 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.warnings = ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
         section.source_links = []
         section.save()
+        generated_paragraphs = report.provenance_paragraphs.filter(section_key=key, origin="GUIDED_INTAKE")
+        linked_facts = confirmed_section_facts(key)
+        if student_paragraphs:
+            generated_paragraphs.delete()
+        elif content_text and linked_facts.exists():
+            paragraph, _ = ReportParagraph.objects.get_or_create(
+                report=report, section_key=key, origin="GUIDED_INTAKE",
+                order=0,
+                defaults={"text": content_text, "student_confirmed": True},
+            )
+            paragraph.text = content_text
+            paragraph.student_confirmed = True
+            paragraph.save(update_fields=["text", "student_confirmed"])
+            paragraph.facts.set(linked_facts)
+            section.source_links = list(linked_facts.values_list("id", flat=True))
+            section.save(update_fields=["source_links", "updated_at"])
+        else:
+            generated_paragraphs.delete()
     allowed_keys = {item["key"] for item in LASUSTECH_CS_V2["sections"]}
     report.sections.exclude(section_key__in=allowed_keys).delete()
     from .document_model import model_from_sections

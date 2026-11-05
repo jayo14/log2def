@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import threading
+from html import escape
 from pathlib import Path
 from django.db import transaction
 from django.conf import settings
@@ -27,6 +28,7 @@ from .models import (
     DefenceQuestion, DefenceSession, PaymentOrder, Fact, ReportParagraph
 )
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+from .guided_intake import intake_answer_complete
 from .serializers import (
     UserRegistrationSerializer, UserSerializer,
     ReportProjectSerializer, ReportProjectDetailSerializer,
@@ -738,12 +740,23 @@ class ReportParagraphView(views.APIView):
         facts = list(Fact.objects.filter(project=project, id__in=fact_ids, status="confirmed"))
         if len(facts) != len(set(fact_ids)):
             return Response({"error": "Every supporting Fact must belong to this project and be confirmed."}, status=status.HTTP_400_BAD_REQUEST)
+        section = get_object_or_404(ReportSection, report=report, section_key=section_key)
         paragraph = ReportParagraph.objects.create(
             report=report, section_key=section_key,
             order=report.provenance_paragraphs.filter(section_key=section_key).count(),
             text=text_value.strip(), student_confirmed=True,
         )
         paragraph.facts.set(facts)
+        confirmed_paragraphs = report.provenance_paragraphs.filter(
+            section_key=section_key, student_confirmed=True
+        ).prefetch_related("facts").order_by("order", "id")
+        section.content = "".join(f"<p>{escape(item.text)}</p>" for item in confirmed_paragraphs)
+        section.source_links = sorted({fact_id for item in confirmed_paragraphs for fact_id in item.facts.values_list("id", flat=True)})
+        section.last_edited_by_student = True
+        section.save(update_fields=["content", "source_links", "last_edited_by_student", "updated_at"])
+        from .document_model import model_from_sections
+        report.document_model = model_from_sections(report, report.template_snapshot or {}).to_dict()
+        report.save(update_fields=["document_model", "updated_at"])
         return Response(ReportParagraphSerializer(paragraph).data, status=status.HTTP_201_CREATED)
 
 
@@ -861,6 +874,149 @@ class ProjectCompletenessView(views.APIView):
         project = get_user_project(request.user, project_id)
         from .completeness import check_project_completeness
         return Response(check_project_completeness(project), status=status.HTTP_200_OK)
+
+
+class GuidedIntakeView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(responses=OpenApiTypes.OBJECT)
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        from .templates import get_section_requirements
+        from .completeness import check_project_completeness
+        steps = get_section_requirements()["guided_intake"]["steps"]
+        answers = project.guided_intake or {}
+        required_steps = [step for step in steps if step.get("required") and not intake_answer_complete(step, answers)]
+        optional_steps = [step for step in steps if not step.get("required")]
+        prefill = "\n".join(
+            (entry.verified_text or entry.activity_summary or "").strip()
+            for entry in project.logbook_entries.filter(is_verified=True).order_by("week_number", "order", "id")
+            if (entry.verified_text or entry.activity_summary or "").strip()
+        )
+        completeness = check_project_completeness(project)
+        return Response({
+            "answers": answers,
+            "required_steps": required_steps,
+            "optional_steps": optional_steps,
+            "logbook_prefill": {"duties": prefill, "label": "From your logbook — confirm before using"} if prefill else None,
+            "intake_complete": not required_steps,
+            "can_generate": completeness["can_generate"],
+            "completeness": completeness,
+        })
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
+    def patch(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        if set(request.data) != {"key", "answer"}:
+            return Response({"error": "Provide only the interview key and its answer."}, status=status.HTTP_400_BAD_REQUEST)
+        key, answer = request.data.get("key"), request.data.get("answer")
+        from .templates import get_section_requirements
+        steps = {step["key"]: step for step in get_section_requirements()["guided_intake"]["steps"]}
+        if key not in steps:
+            return Response({"error": "This interview question is not in the active template."}, status=status.HTTP_400_BAD_REQUEST)
+        step = steps[key]
+        error = validate_intake_answer(key, answer, required=step.get("required", False))
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+        answers = dict(project.guided_intake or {})
+        answers[key] = answer
+        project.guided_intake = answers
+        if key == "industry_supervisor_name":
+            project.industry_supervisor_name = str(answer).strip()
+            project.save(update_fields=["guided_intake", "industry_supervisor_name", "updated_at"])
+        else:
+            project.save(update_fields=["guided_intake", "updated_at"])
+        save_intake_facts(project, key, answer)
+        from .completeness import check_project_completeness
+        return Response({"answers": answers, "completeness": check_project_completeness(project)})
+
+
+def validate_intake_answer(key, answer, required=False):
+    if key == "challenge_pairs":
+        if not isinstance(answer, dict):
+            return "Choose ‘I had none’ or provide two or three challenge and solution pairs."
+        if answer.get("none") is True:
+            return ""
+        pairs = answer.get("pairs")
+        if not isinstance(pairs, list) or len(pairs) not in (2, 3):
+            return "Provide two or three real challenge and solution pairs, or select ‘I had none’."
+        if any(not str(pair.get("challenge", "")).strip() or not str(pair.get("solution", "")).strip() for pair in pairs):
+            return "Each challenge needs its own solution. Complete both fields in every pair."
+        return ""
+    if key == "acknowledgement_people":
+        if not isinstance(answer, dict):
+            return "Provide acknowledgement choices in the requested format."
+        people = answer.get("people", [])
+        if answer.get("include") and (not isinstance(people, list) or any(not str(p.get("name", "")).strip() for p in people)):
+            return "Enter a name for each person you choose to acknowledge."
+        return ""
+    if key == "organogram_tree" and answer:
+        lines = [line for line in str(answer).splitlines() if line.strip()]
+        previous_depth = 0
+        for index, line in enumerate(lines):
+            indent = len(line) - len(line.lstrip(" "))
+            depth = indent // 2
+            if "\t" in line or indent % 2 or (index == 0 and depth != 0) or depth > previous_depth + 1:
+                return "Use a root line, then indent each child by two spaces under its parent."
+            previous_depth = depth
+    if key in {"include_dedication", "thank_god", "thank_family"}:
+        return "" if isinstance(answer, bool) else "Choose yes or no."
+    if key not in {"challenge_pairs", "acknowledgement_people"} and not isinstance(answer, str):
+        return "Enter a text answer for this question."
+    if answer is None or not str(answer).strip():
+        return "Please enter an answer." if required else ""
+    return ""
+
+
+def save_intake_facts(project, key, answer):
+    """Replace the editable answer's Fact rows with student-confirmed evidence."""
+    from .models import Fact
+    Fact.objects.filter(project=project, source_field__startswith=f"{key}:", provenance="STUDENT_PROVIDED").delete()
+    Fact.objects.filter(project=project, source_field=key, provenance="STUDENT_PROVIDED").delete()
+    rows = []
+    if key == "challenge_pairs":
+        if answer.get("none") is True:
+            rows.append(("challenge", "I had none", "no_challenges"))
+        else:
+            for index, pair in enumerate(answer["pairs"], start=1):
+                rows.extend([
+                    ("challenge", pair["challenge"].strip(), f"challenge_{index}"),
+                    ("solution", pair["solution"].strip(), f"solution_{index}"),
+                ])
+    elif key == "acknowledgement_people":
+        if answer.get("include"):
+            for index, person in enumerate(answer.get("people", []), start=1):
+                title = person.get("title", "").strip()
+                name = person["name"].strip()
+                rows.append(("person", f"{title} | {name}" if title else name, f"person_{index}"))
+            if answer.get("thank_god"):
+                rows.append(("personal_statement", "Thank God", "thank_god"))
+            if answer.get("thank_family"):
+                rows.append(("personal_statement", "My family", "thank_family"))
+    elif key == "dedication":
+        if str(answer).strip():
+            rows.append(("personal_statement", str(answer).strip(), "dedication"))
+    else:
+        kinds = {
+            "organisation_what": "organisation_detail", "organisation_history": "organisation_detail",
+            "organisation_objectives": "organisation_detail", "organisation_structure": "organisation_detail",
+            "organogram_tree": "organisation_detail", "student_unit": "organisation_detail",
+            "supervisor_title": "person", "duties": "duty", "recommendations": "recommendation",
+            "industry_supervisor_name": "person",
+        }
+        if key in kinds and str(answer).strip():
+            if key == "duties":
+                for index, line in enumerate(str(answer).splitlines(), start=1):
+                    if line.strip():
+                        rows.append(("duty", line.strip(), f"duty_{index}"))
+            else:
+                rows.append((kinds[key], str(answer).strip(), key))
+    for kind, text_value, suffix in rows:
+        source_field = key if suffix == key else f"{key}:{suffix}"
+        Fact.objects.create(
+            project=project, kind=kind, text=text_value, provenance="STUDENT_PROVIDED",
+            evidence_quote=text_value, status="confirmed", source_field=source_field,
+        )
 
 
 class MissingInfoUpdateView(views.APIView):
