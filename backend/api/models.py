@@ -231,6 +231,63 @@ class LogbookEntry(models.Model):
         return f"Week {self.week_number} ({self.day_of_week or 'Entry'}): {self.activity_summary[:40]}"
 
 
+class LogbookPage(models.Model):
+    """Reviewed transcript page; transcript text remains on ExtractedPage."""
+    PAGE_TYPES = [(v, v.replace('_', ' ').title()) for v in (
+        'cover', 'student_details', 'weekly_record', 'supervisor_remarks', 'other', 'blank')]
+    extracted_page = models.OneToOneField(ExtractedPage, on_delete=models.CASCADE, related_name='record_page')
+    page_index = models.PositiveIntegerField(db_index=True)
+    page_type = models.CharField(max_length=32, choices=PAGE_TYPES, default='other')
+    quality_score = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['page_index', 'id']
+
+    @property
+    def reviewed_text(self):
+        return self.extracted_page.extracted_text
+
+
+class WeekRecord(models.Model):
+    project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='week_records')
+    week_number = models.PositiveIntegerField()
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    source_pages = models.ManyToManyField(LogbookPage, related_name='week_records', blank=True)
+
+    class Meta:
+        ordering = ['week_number', 'id']
+        constraints = [models.UniqueConstraint(fields=['project', 'week_number'], name='unique_project_week_record')]
+
+
+class DayEntry(models.Model):
+    week_record = models.ForeignKey(WeekRecord, on_delete=models.CASCADE, related_name='day_entries')
+    date = models.DateField(null=True, blank=True)
+    weekday = models.CharField(max_length=16, blank=True)
+    text = models.TextField()
+    source_page = models.ForeignKey(LogbookPage, on_delete=models.PROTECT, related_name='day_entries')
+    source_span = models.JSONField(default=dict, blank=True)
+    confidence = models.FloatField(null=True, blank=True)
+
+
+class Fact(models.Model):
+    KIND_CHOICES = [(v, v.replace('_', ' ').title()) for v in (
+        'activity', 'tool', 'equipment', 'quantity', 'skill', 'duty', 'project', 'challenge',
+        'solution', 'person', 'organisation_detail')]
+    PROVENANCE_CHOICES = [(v, v) for v in ('LOGBOOK', 'INFERRED', 'STUDENT_PROVIDED')]
+    STATUS_CHOICES = [(v, v.title()) for v in ('proposed', 'confirmed', 'rejected')]
+    project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='facts')
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES)
+    text = models.TextField()
+    provenance = models.CharField(max_length=24, choices=PROVENANCE_CHOICES)
+    source_entry_ids = models.ManyToManyField(DayEntry, related_name='facts', blank=True)
+    evidence_quote = models.TextField(blank=True)
+    inference_reason = models.TextField(blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='proposed')
+    validation_error = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class Report(models.Model):
     project = models.OneToOneField(ReportProject, on_delete=models.CASCADE, related_name='report')
     template = models.ForeignKey(ReportTemplate, on_delete=models.SET_NULL, null=True, blank=True)
@@ -272,6 +329,14 @@ class ReportSection(models.Model):
 
     def __str__(self):
         return f"[{self.chapter_number}] {self.title}"
+
+
+class ReportParagraph(models.Model):
+    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='provenance_paragraphs')
+    section_key = models.CharField(max_length=64)
+    order = models.PositiveIntegerField(default=0)
+    text = models.TextField()
+    facts = models.ManyToManyField(Fact, related_name='report_paragraphs', blank=True)
 
 
 class ReportVersion(models.Model):
