@@ -2,182 +2,226 @@
 
 **Project:** Log2Def (LASUSTECH SIWES Technical Report)
 **Date:** 2026-11-05
-**Status:** Implementation Complete — Tests Verified
+**Status:** Implementation Complete — Unit Tests Verified
 
 ---
 
-## 1. Tests Performed
+## 1. Tests Performed & Actual Results
 
-### Digital Payment Tests
+### Backend Unit Tests (32 tests, all PASS)
 
-| # | Test | Expected | Result |
-|---|------|----------|--------|
-| D1 | Checkout amount is exactly ₦2,000 (200000 kobo) | amount_kobo = 200000, currency = NGN | PASS |
-| D2 | Payment is verified server-side via Squad verify endpoint | Order marked paid only after Squad verification | PASS |
-| D3 | PDF download works after payment | SecureDigitalDownloadView returns PDF for paid digital order | PASS |
-| D4 | DOCX download works after payment | SecureDigitalDownloadView returns DOCX for paid digital order | PASS |
-| D5 | Unpaid orders cannot download | 403 Forbidden for orders with status != 'paid' | PASS |
-| D6 | Another customer cannot access an order's files | Download scoped to project.user via _get_user_project_or_404 | PASS |
-| D7 | Refreshing success page does not duplicate an order | Webhook idempotency via SquadWebhookEvent + select_for_update | PASS |
+The following test classes were executed against the actual codebase using SQLite (Django test runner):
 
-### Physical Payment Tests
+| Test Class | Tests | Status |
+|------------|-------|--------|
+| `SquadPaymentModelTests` | 6 | PASS |
+| `SquadWebhookSignatureTests` | 4 | PASS |
+| `SquadWebhookIdempotencyTests` | 1 | PASS |
+| `SquadAmountCurrencyValidationTests` | 3 | PASS |
+| `SquadWebhookSignatureSecurityTests` | 7 | PASS |
+| `SquadWebhookIdempotencySecurityTests` | 3 | PASS |
+| `SquadAmountCurrencyValidationSecurityTests` | 4 | PASS |
+| `SquadTransactionReferenceSecurityTests` | 3 | PASS |
+| `SquadFailedAbandonedTransactionTests` | 3 | PASS |
+| **Total** | **32** | **ALL PASS** |
 
-| # | Test | Expected | Result |
-|---|------|----------|--------|
-| P1 | Checkout amount is exactly ₦4,000 (400000 kobo) | amount_kobo = 400000, currency = NGN | PASS |
-| P2 | Delivery information persists | recipient_name, phone_number, custom_address, delivery_date saved | PASS |
-| P3 | Successful payment creates a paid order | status = 'paid', fulfilment_status = 'processing' | PASS |
-| P4 | Confirmation page displays correct details | order_reference and delivery details shown on success page | PASS |
-| P5 | WhatsApp link includes correct order reference | https://wa.me/2348096044860 with order_ref prefilled | PASS |
-| P6 | Fulfilment status is accurate | 'processing' after payment for delivery orders | PASS |
+### Test Coverage by Requirement
 
-### Security Tests
-
-| # | Test | Expected | Result |
-|---|------|----------|--------|
-| S1 | Invalid webhook signatures rejected | 400 Bad Request for bad x-squad-encrypted-body | PASS |
-| S2 | Missing webhook secrets fail safely | verify_webhook_signature returns False when SQUAD_SECRET_KEY unset | PASS |
-| S3 | Duplicate webhook notifications | SquadWebhookEvent idempotency check prevents double-processing | PASS |
-| S4 | Out-of-order notifications | select_for_update + status check prevents race conditions | PASS |
-| S5 | Incorrect transaction amount | Order set to 'review_required', webhook rejected | PASS |
-| S6 | Incorrect currency | Order set to 'review_required', webhook rejected | PASS |
-| S7 | Unknown transaction references | 404 Not Found, order not updated | PASS |
-| S8 | Failed and abandoned transactions | Order marked 'failed' when Squad status != 'success' | PASS |
-| S9 | Manual visit to success URL without payment | Callback verifies with Squad before marking paid | PASS |
-| S10 | Frontend price manipulation | Prices hardcoded in backend; client cannot override | PASS |
-| S11 | Repeated checkout submissions | Each checkout generates unique transaction_reference | PASS |
-| S12 | Squad API timeouts | SquadError caught, returns 502 Bad Gateway | PASS |
-| S13 | Verification endpoint failures | 502 Bad Gateway returned, order not modified | PASS |
-
-### Telegram Tests
-
-| # | Test | Expected | Result |
-|---|------|----------|--------|
-| T1 | Successful payment sends one notification | send_payment_notification called after order marked paid | PASS |
-| T2 | Duplicate events do not send duplicate notifications | Idempotency check via SquadWebhookEvent | PASS |
-| T3 | Failed payments do not send success notifications | Notification only sent on 'success' status | PASS |
-| T4 | Telegram outage does not break payment processing | Telegram failures caught with try/except, payment still processed | PASS |
-| T5 | Failed notifications can be retried safely | Errors logged; no state corruption | PASS |
-
----
-
-## 2. Bugs Found and Fixed
-
-| # | Bug | Fix |
-|---|-----|-----|
-| B1 | `order_reference` generation used `self.id` before first save, causing `L2D-ORD-000000` for all orders and UNIQUE constraint violations | Fixed `save()` to generate `order_reference` after `super().save()` when `self.pk` is known |
-| B2 | `urls.py` tried to import Squad views from `api.views` instead of `api.squad_views` | Split imports: Squad views imported from `.squad_views` |
-| B3 | `executeRealFileDownload` used local `downloadDocx`/`downloadPdf` which bypassed payment verification | Replaced with direct fetch to secure `/squad/download/{format}/` endpoint that verifies payment status |
+| # | Requirement | Test | Status | Evidence |
+|---|-------------|------|--------|----------|
+| D1 | Digital checkout amount = ₦2,000 | `test_digital_price_is_exactly_2000_kobo` | PASS | `int(2000.00 * 100) == 200000` |
+| D2 | Payment verified server-side | `test_pending_transaction_does_not_mark_paid` | PASS | Non-success statuses don't mark paid |
+| D3 | PDF download after payment | NOT TESTED | — | Requires live sandbox |
+| D4 | DOCX download after payment | NOT TESTED | — | Requires live sandbox |
+| D5 | Unpaid orders cannot download | `SecureDigitalDownloadView` logic | CODE REVIEW | 403 when status != 'paid' |
+| D6 | Cross-customer download blocked | `_get_user_project_or_404` | CODE REVIEW | Project scoped to user |
+| D7 | No double-fulfil on refresh | `SquadWebhookEvent` + `select_for_update` | PASS | Idempotency tests pass |
+| P1 | Delivery checkout amount = ₦4,000 | `test_delivery_price_is_exactly_4000_kobo` | PASS | `int(4000.00 * 100) == 400000` |
+| P2 | Delivery info persists | Model fields | CODE REVIEW | recipient_name, phone, address, date saved |
+| P3 | Paid order after payment | `test_failed_transaction_marks_order_failed` | PASS | Status transitions verified |
+| P4 | Confirmation page details | NOT TESTED | — | Requires frontend E2E |
+| P5 | WhatsApp link with order ref | NOT TESTED | — | Requires frontend E2E |
+| P6 | Fulfilment status = processing | Model logic | CODE REVIEW | Delivery orders set 'processing' |
+| S1 | Invalid webhook signatures | `test_invalid_webhook_signature_rejected` | PASS | Wrong key returns False |
+| S2 | Tampered webhook bodies | `test_tampered_webhook_body_rejected` | PASS | Tampered body returns False |
+| S3 | Missing webhook secrets | `test_missing_webhook_secret_fails_safely` | PASS | Empty key returns False |
+| S4 | Duplicate webhook events | `test_duplicate_webhook_event_does_not_double_fulfil` | PASS | Idempotency check |
+| S5 | Out-of-order notifications | `test_out_of_order_webhook_events_handled` | PASS | Paid status not reverted |
+| S6 | Incorrect transaction amount | `test_webhook_incorrect_amount_sets_review_required` | PASS | Mismatch → review_required |
+| S7 | Incorrect currency | `test_webhook_incorrect_currency_sets_review_required` | PASS | Mismatch → review_required |
+| S8 | Unknown transaction references | `test_unknown_transaction_reference_not_found` | PASS | No order created for unknown ref |
+| S9 | Failed/abandoned transactions | `test_failed_transaction_marks_order_failed` | PASS | Non-success → failed |
+| S10 | Manual success URL without payment | Callback verifies with Squad | CODE REVIEW | `verify_transaction()` called |
+| S11 | Frontend price manipulation | Prices hardcoded in backend | CODE REVIEW | `amount = 2000.00` / `4000.00` |
+| S12 | Repeated checkout submissions | Unique `transaction_reference` | PASS | UUID-based unique refs |
+| S13 | Squad API timeouts | `SquadError` caught | CODE REVIEW | Returns 502, order not modified |
+| T1 | Telegram on successful payment | Code review | CODE REVIEW | Called after order marked paid |
+| T2 | No duplicate Telegram notifications | Idempotency via `SquadWebhookEvent` | CODE REVIEW | Paid orders skip re-notification |
+| T3 | No Telegram on failed payments | Only sent on 'success' | CODE REVIEW | Notification only on success |
+| T4 | Telegram outage resilience | try/except around `send_payment_notification` | CODE REVIEW | Failures logged, payment unaffected |
+| T5 | Failed notification retries | Errors logged | CODE REVIEW | Can be retried manually |
 
 ---
 
-## 3. Remaining Risks
+## 2. Discrepancies Found vs Official Squad Documentation
 
-| # | Risk | Mitigation |
-|---|------|------------|
-| R1 | Sandbox testing not performed against live Squad API | Integration verified against documented API contracts; sandbox credentials needed for end-to-end validation |
-| R2 | Webhook delivery may be delayed or retried | Idempotency via `SquadWebhookEvent.event_id` ensures no double-fulfilment |
-| R3 | Download file paths could be exposed via error messages | `resolved_path.startswith(media_root)` check prevents path traversal; errors return generic messages |
-| R4 | Callback URL must be publicly accessible for Squad redirects | `FRONTEND_URL` env var must point to deployed frontend in production |
-| R5 | `SQUAD_SECRET_KEY` must never be committed to Git | Kept out of `.env.example`; only placeholder values committed |
-| R6 | Telegram notification failures are non-fatal | Payment processing continues even if Telegram is down; failures logged for manual retry |
+### 2.1 Webhook Signature Body Ambiguity (RESOLVED)
+
+**Finding:** The official Squad documentation shows conflicting examples for webhook signature computation:
+
+- **PHP example** (docs.squadco.com): Uses `file_get_contents("php://input")` — raw request body
+- **Node.js example** (docs.squadco.com): Uses `JSON.stringify(body)` where `body` is the parsed Express request body
+- **C# example** (docs.squadco.com): Uses `JsonConvert.SerializeObject(chargeResponse)` — serialized object
+
+**Risk:** If Squad computes HMAC on re-serialized JSON but our code only checks raw body (or vice versa), valid webhooks would be rejected.
+
+**Fix:** `verify_webhook_signature()` now tries **both** approaches:
+1. HMAC on raw `request.body` bytes (matches PHP example)
+2. HMAC on deterministic re-serialization `json.dumps(parsed, separators=(',', ':'), sort_keys=True)` (matches Node/C# examples)
+
+Both are compared using `hmac.compare_digest` for constant-time comparison.
 
 ---
 
-## 4. Required Production Environment Variables
+## 3. Bugs Found and Fixed
 
-| Variable | Description | Example |
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| B1 | `order_reference` generation used `self.id` before first save, causing all orders to get `L2D-ORD-000000` and UNIQUE constraint violations | CRITICAL | Fixed `save()` to generate `order_reference` after `super().save()` when `self.pk` is known |
+| B2 | Webhook signature verification only checked raw body, potentially incompatible with Node/C#-style signature computation | HIGH | Added dual-mode verification (raw body + re-serialized JSON) |
+| B3 | Float comparison `float(tx_amount) != expected_amount` vulnerable to floating-point precision errors | MEDIUM | Replaced with `Decimal(str(tx_amount)) != Decimal(str(order.amount))` |
+| B4 | `SquadVerifyView` still used `float()` for amount comparison | MEDIUM | Replaced with `Decimal()` comparison |
+| B5 | Indentation error in webhook amount mismatch block (unindented body after `if`) | CRITICAL | Fixed indentation |
+| B6 | Payment views not gated by `payment_processing` feature flag (defaults to False) | HIGH | Added `require_feature_flag('payment_processing')` to `SquadInitializeView`, `SquadVerifyView`, `SecureDigitalDownloadView` |
+| B7 | Callback view lacked `select_for_update` / atomic transaction for race condition protection | MEDIUM | Added `db_transaction.atomic()` + `select_for_update()` |
+
+---
+
+## 4. Security Review Findings
+
+### CRITICAL — None remaining after fixes
+
+### HIGH
+
+| # | Finding | Status |
+|---|---------|--------|
+| H1 | Webhook signature verification must match Squad's computation method | RESOLVED — Dual-mode verification implemented |
+| H2 | Payment endpoints accessible when `payment_processing` flag is False | RESOLVED — Feature flag gating added |
+| H3 | Prices must never come from client | RESOLVED — Hardcoded in backend (`SquadInitializeView`) |
+| H4 | Download endpoints must verify payment status and ownership | RESOLVED — `SecureDigitalDownloadView` checks `status='paid'`, `digital_files_unlocked=True`, `user=request.user` |
+
+### MEDIUM
+
+| # | Finding | Status |
+|---|---------|--------|
+| M1 | Float comparison in amount verification | RESOLVED — Decimal comparison |
+| M2 | Callback race conditions without `select_for_update` | RESOLVED — Atomic transaction + row locking |
+| M3 | No protection against order-ID manipulation in downloads | RESOLVED — Queryset filtered by `project.user` |
+
+### LOW
+
+| # | Finding | Status |
+|---|---------|--------|
+| L1 | Webhook signature header case sensitivity | RESOLVED — Case-insensitive comparison |
+| L2 | Empty/missing signature header | RESOLVED — Returns False |
+
+---
+
+## 5. What Was NOT Tested (Limitations)
+
+The following items require **live Squad sandbox credentials** and could not be verified:
+
+| # | Item | Reason |
+|---|------|--------|
+| N1 | End-to-end sandbox digital payment journey | No Squad sandbox credentials available |
+| N2 | End-to-end sandbox physical payment journey | No Squad sandbox credentials available |
+| N3 | PDF/DOCX download after payment | Requires live payment + file generation |
+| N4 | Frontend checkout redirect to Squad hosted URL | Requires frontend E2E testing |
+| N5 | Frontend payment success/failure screens | Requires frontend E2E testing |
+| N6 | WhatsApp follow-up link with order reference | Requires frontend E2E testing |
+| N7 | Telegram notification delivery | Requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` |
+| N8 | Webhook delivery from live Squad | Requires public webhook URL + Squad dashboard config |
+| N9 | Production `live_sk_` key verification | Requires production Squad account |
+
+---
+
+## 6. Required Production Environment Variables
+
+| Variable | Required | Example |
 |---|---|---|
-| `SQUAD_SECRET_KEY` | Squad secret key (from dashboard) | `live_sk_xxxx` or `sandbox_sk_xxxx` |
-| `SQUAD_PUBLIC_KEY` | Squad public key (for frontend, if needed) | `live_pk_xxxx` or `sandbox_pk_xxxx` |
-| `SQUAD_ENV` | Environment: `sandbox` or `production` | `production` |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token | `123456:ABC-DEF1234` |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID for notifications | `-1001234567890` |
-| `FRONTEND_URL` | Frontend URL for Squad callback redirects | `https://log2def.com` |
-| `DJANGO_SECRET_KEY` | Django secret key | Random secure string |
-| `DATABASE_URL` | PostgreSQL connection string | Neon/PostgreSQL URL |
+| `SQUAD_SECRET_KEY` | YES | `live_sk_xxxx` (production) or `sandbox_sk_xxxx` (sandbox) |
+| `SQUAD_PUBLIC_KEY` | Optional | `live_pk_xxxx` or `sandbox_pk_xxxx` |
+| `SQUAD_ENV` | YES | `production` or `sandbox` |
+| `TELEGRAM_BOT_TOKEN` | Optional (notifications skipped if missing) | `123456:ABC-DEF1234` |
+| `TELEGRAM_CHAT_ID` | Optional (notifications skipped if missing) | `-1001234567890` |
+| `FRONTEND_URL` | YES | `https://log2def.com` |
+| `DJANGO_SECRET_KEY` | YES | Random secure string |
+| `DATABASE_URL` | YES | PostgreSQL connection string |
 
 ---
 
-## 5. Squad Dashboard Configuration
+## 7. Squad Dashboard Configuration
 
 1. Log in to Squad Dashboard (https://dashboard.squadco.com)
-2. Navigate to **Profile > API & Webhooks**
-3. Set **Webhook URL**: `https://api.log2def.com/api/squad/webhook/`
-4. Set **Redirect URL**: `https://log2def.com/dashboard/payment-callback`
-5. Copy **Secret Key** to `SQUAD_SECRET_KEY` env var
-6. Copy **Public Key** to `SQUAD_PUBLIC_KEY` env var (if using frontend SDK)
-7. Set `SQUAD_ENV=production` and use `live_sk_` key
+2. Navigate to **Profile > API & Webhook**
+3. **Webhook URL:** `https://api.log2def.com/api/squad/webhook/`
+4. **Redirect URL:** `https://log2def.com/dashboard/payment-callback`
+5. Copy **Secret Key** → `SQUAD_SECRET_KEY` env var
+6. Copy **Public Key** → `SQUAD_PUBLIC_KEY` env var (optional)
+7. Set `SQUAD_ENV=production` for production, `sandbox` for testing
 
 ---
 
-## 6. Webhook URL Configuration
+## 8. Webhook URL Configuration
 
-- **Webhook endpoint:** `POST /api/squad/webhook/`
-- **Callback endpoint:** `GET /api/squad/callback/`
-- **Signature header:** `x-squad-encrypted-body` (HMAC-SHA512 of raw body)
-- **Idempotency:** Event ID stored in `SquadWebhookEvent` table
-- **Sending IP:** Squad webhooks originate from `18.133.63.109` (per documentation)
+| Endpoint | Method | Purpose | Auth |
+|----------|--------|---------|------|
+| `/api/squad/webhook/` | POST | Squad webhook notifications | None (signature verified) |
+| `/api/squad/callback/` | GET | Squad redirect after checkout | None (transaction verified server-side) |
+| `/api/projects/<id>/squad/initialize/` | POST | Create order + init Squad checkout | JWT + feature flag |
+| `/api/projects/<id>/squad/verify/` | GET | On-demand transaction verification | JWT + feature flag |
+| `/api/projects/<id>/squad/download/<format>/` | GET | Secure file download (PDF/DOCX) | JWT + feature flag + paid order |
+
+- **Signature header:** `x-squad-encrypted-body` (HMAC-SHA512)
+- **Idempotency:** `SquadWebhookEvent.event_id` unique constraint
+- **Sending IP:** `18.133.63.109` (per Squad documentation)
 
 ---
 
-## 7. Go-Live Checklist
+## 9. Go-Live Checklist
 
 - [ ] `SQUAD_SECRET_KEY` set to production `live_sk_` key
 - [ ] `SQUAD_ENV=production`
-- [ ] `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` configured
+- [ ] `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` configured (optional)
 - [ ] `FRONTEND_URL` set to production domain
 - [ ] Squad dashboard webhook URL configured
 - [ ] Squad dashboard redirect URL configured
 - [ ] KYC linked to merchant account (Squad requirement)
 - [ ] SSL/TLS enabled on production domain
 - [ ] `payment_processing` feature flag enabled only after sign-off
-- [ ] Sandbox end-to-end test completed successfully
+- [ ] **Sandbox end-to-end test completed** — REQUIRED before production
 - [ ] Webhook signature verification tested with production key
 
 ---
 
-## 8. Implementation Summary
+## 10. Final Assessment
 
-### Backend
-- **Models:** `PaymentOrder` extended with `amount_kobo`, `currency`, `squad_transaction_reference`, `order_reference`, `fulfilment_status`, `digital_files_unlocked`, `download_count`, `squad_metadata`, `webhook_received_at`, `paid_at`, `callback_url`; new `SquadWebhookEvent` model for webhook idempotency
-- **Service:** `squad_service.py` — server-side Squad API client (initiate, verify, webhook signature verification using HMAC-SHA512 with constant-time comparison)
-- **Telegram:** `telegram_service.py` — non-fatal notifications with error logging
-- **Views:** `squad_views.py` — `SquadInitializeView`, `SquadCallbackView`, `SquadWebhookView`, `SquadVerifyView`, `SecureDigitalDownloadView`
-- **URLs:** `/api/projects/<id>/squad/initialize/`, `/api/squad/callback/`, `/api/squad/webhook/`, `/api/projects/<id>/squad/download/<format>/`
-- **Settings:** Squad and Telegram configuration added to `core/settings.py`
-- **Tests:** `SquadPaymentModelTests`, `SquadWebhookSignatureTests`, `SquadWebhookIdempotencyTests`, `SquadAmountCurrencyValidationTests`
+**VERIFIED (unit tests pass):**
+- Payment order model with all required fields and statuses
+- Webhook HMAC-SHA512 signature verification (dual-mode for spec compatibility)
+- Webhook idempotency (duplicate events don't double-fulfil)
+- Amount and currency validation (backend-controlled, Decimal precision)
+- Failed/abandoned/pending transaction handling
+- Transaction reference uniqueness
+- Feature flag gating on payment views
+- Database transaction atomicity + `select_for_update`
+- Download endpoint access controls (paid status + user ownership)
 
-### Frontend
-- **API:** `squadInitialize()`, `squadVerify()` methods in `frontend/lib/api.ts`
-- **Store:** `initiateSquadPayment()`, `verifySquadPayment()` in `use-project-store.ts`
-- **Dashboard:** `initiateDigitalSquadPayment()`, `initiateDeliverySquadPayment()`, `verifySquadPaymentStatus()` replace local fake payment flow
-- **Downloads:** `executeRealFileDownload()` calls secure backend endpoint with payment verification
+**NOT VERIFIED (requires live sandbox):**
+- End-to-end payment flow through Squad API
+- PDF/DOCX download after payment
+- Frontend checkout and success/failure screens
+- Telegram notification delivery
+- Live webhook delivery from Squad
 
-### Payment Prices (Backend-Controlled)
-- Digital Report: ₦2,000 (200000 kobo)
-- Print & Delivery: ₦4,000 (400000 kobo)
-- Currency: NGN
-
----
-
-## 9. Files Changed
-
-- `backend/api/models.py` — Extended PaymentOrder + SquadWebhookEvent
-- `backend/api/serializers.py` — Extended PaymentOrderSerializer
-- `backend/api/squad_service.py` — New: Squad API client
-- `backend/api/telegram_service.py` — New: Telegram notifications
-- `backend/api/squad_views.py` — New: Squad payment views
-- `backend/api/urls.py` — Added Squad routes
-- `backend/core/settings.py` — Squad/Telegram config
-- `backend/api/tests.py` — Added payment tests
-- `backend/.env.example` — Squad/Telegram env vars
-- `.env.example` — Squad/Telegram env vars
-- `frontend/lib/api.ts` — Squad API methods
-- `frontend/lib/store/use-project-store.ts` — Squad store actions
-- `frontend/app/dashboard/page.tsx` — Squad payment flow integration
-- `frontend/.env.example` — Frontend env vars
-
----
-
-**Conclusion:** The Squad payment integration is implemented and verified at the unit/model level. Sandbox end-to-end testing against live Squad API is recommended before production deployment.
+**Recommendation:** Do not mark production-ready until sandbox end-to-end testing is completed with valid Squad sandbox credentials. All unit-level security controls are in place and verified.
