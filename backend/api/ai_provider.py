@@ -40,8 +40,9 @@ def generate_gemini_content(
     image_bytes: bytes | None = None,
     mime_type: str = "image/jpeg",
     temperature: float = 0.2,
-    response_json: bool = False
-) -> str:
+    response_json: bool = False,
+    return_metadata: bool = False,
+) -> str | dict:
     """
     Calls Google Gemini REST API (gemini-2.0-flash / gemini-1.5-flash)
     Supports multimodal inputs (image + text) and structured JSON outputs.
@@ -107,14 +108,17 @@ def generate_gemini_content(
             if not res_parts:
                 continue
 
-            return res_parts[0].get("text", "").strip()
+            text = res_parts[0].get("text", "").strip()
+            if return_metadata:
+                return {"text": text, "finish_reason": candidates[0].get("finishReason", "")}
+            return text
         except requests.RequestException as e:
             last_error = e
             continue
 
     raise AIProviderUnavailableError(f"Gemini API request failed across models: {str(last_error)}")
 
-def generate_completion(system_prompt: str, user_prompt: str, temperature: float = 0.3) -> str:
+def generate_completion(system_prompt: str, user_prompt: str, temperature: float = 0.3, return_metadata: bool = False) -> str | dict:
     """
     Sends prompt to the configured AI provider (defaults to Gemini Flash, falls back to OpenAI endpoint).
     """
@@ -126,7 +130,9 @@ def generate_completion(system_prompt: str, user_prompt: str, temperature: float
             return generate_gemini_content(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
-                temperature=temperature
+                temperature=temperature,
+                response_json=True,
+                return_metadata=return_metadata,
             )
         except AIProviderUnavailableError:
             # Fall back to OpenAI if configured
@@ -161,7 +167,11 @@ def generate_completion(system_prompt: str, user_prompt: str, temperature: float
         response = requests.post(base_url, headers=headers, json=payload, timeout=45)
         response.raise_for_status()
         data = response.json()
-        return data['choices'][0]['message']['content'].strip()
+        choice = data['choices'][0]
+        text = choice['message']['content'].strip()
+        if return_metadata:
+            return {"text": text, "finish_reason": choice.get("finish_reason", "")}
+        return text
     except Exception as e:
         raise AIProviderUnavailableError(f"AI provider request failed: {str(e)}")
 

@@ -727,6 +727,9 @@ class ReportParagraphView(views.APIView):
         fact_ids = request.data.get("fact_ids")
         if not isinstance(text_value, str) or not text_value.strip():
             return Response({"error": "A non-empty normalized paragraph is required."}, status=status.HTTP_400_BAD_REQUEST)
+        from .grounded_writer import validate_student_edited_text
+        if not validate_student_edited_text(text_value):
+            return Response({"error": "End the paragraph with punctuation and remove placeholders or second-person instructions."}, status=status.HTTP_400_BAD_REQUEST)
         if request.data.get("student_confirmed") is not True:
             return Response({"error": "Student confirmation of this wording is required."}, status=status.HTTP_400_BAD_REQUEST)
         if not isinstance(fact_ids, list) or not fact_ids:

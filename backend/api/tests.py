@@ -32,6 +32,9 @@ from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requi
 from .ocr_trace import save_tesseract_tsv, trace_root
 from .extraction import validate_fact_candidate, persist_fact_candidate, material_sufficiency, classify_page, review_ambiguities, parse_reviewed_page
 from .completeness import check_project_completeness
+from .grounded_writer import (
+    GroundedWriterError, build_section_brief, validate_writer_output,
+)
 
 
 class TemplateV2ContractTests(TestCase):
@@ -87,6 +90,43 @@ class ProvenanceExtractionTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="extract-test", password="StrongPassword123!")
         self.project = ReportProject.objects.create(user=self.user, title="Synthetic extraction case")
+
+    def test_grounded_writer_brief_contains_confirmed_facts_only(self):
+        confirmed = Fact.objects.create(project=self.project, kind="activity", text="I configured a router", provenance="LOGBOOK", status="confirmed")
+        Fact.objects.create(project=self.project, kind="tool", text="Cisco", provenance="LOGBOOK", status="proposed")
+        brief = build_section_brief("ch3_activities", "Activities Performed", [confirmed, *Fact.objects.filter(status="proposed")])
+        self.assertEqual([item["id"] for item in brief.facts], [confirmed.id])
+        self.assertGreater(brief.target_words, 0)
+
+    def test_grounded_writer_rejects_uncited_or_unsupported_detail(self):
+        fact = Fact.objects.create(project=self.project, kind="activity", text="I configured a router", provenance="LOGBOOK", status="confirmed")
+        brief = build_section_brief("ch3_activities", "Activities Performed", [fact])
+        with self.assertRaisesRegex(GroundedWriterError, "sentence_citation_missing"):
+            validate_writer_output({"paragraphs": [{"sentences": [{"text": "I configured a router."}]}]}, brief)
+        with self.assertRaisesRegex(GroundedWriterError, "unsupported_named_or_numeric_token"):
+            validate_writer_output({"paragraphs": [{"sentences": [{"text": "I configured Cisco router 4.", "fact_ids": [fact.id]}]}]}, brief)
+
+    def test_grounded_writer_rejects_truncation_placeholders_and_bad_finish(self):
+        fact = Fact.objects.create(project=self.project, kind="activity", text="I configured a router", provenance="LOGBOOK", status="confirmed")
+        brief = build_section_brief("ch3_activities", "Activities Performed", [fact])
+        for text in ("I configured a router", "I configured a router [INPUT NEEDED].", "You configured a router."):
+            with self.subTest(text=text), self.assertRaises(GroundedWriterError):
+                validate_writer_output({"paragraphs": [{"sentences": [{"text": text, "fact_ids": [fact.id]}]}]}, brief)
+        with self.assertRaisesRegex(GroundedWriterError, "writer_output_truncated"):
+            validate_writer_output({"paragraphs": []}, brief, finish_reason="MAX_TOKENS")
+
+    @patch("api.grounded_writer.generate_completion")
+    def test_grounded_writer_retries_invalid_json_once(self, mock_completion):
+        from .grounded_writer import write_section
+        fact = Fact.objects.create(project=self.project, kind="activity", text="I configured a router", provenance="LOGBOOK", status="confirmed")
+        brief = build_section_brief("ch3_activities", "Activities Performed", [fact])
+        good = json.dumps({"paragraphs": [{"sentences": [{"text": "I configured a router.", "fact_ids": [fact.id]}]}]})
+        mock_completion.side_effect = [
+            {"text": "not json", "finish_reason": "STOP"},
+            {"text": good, "finish_reason": "STOP"},
+        ]
+        self.assertEqual(write_section(brief)[0]["text"], "I configured a router.")
+        self.assertEqual(mock_completion.call_count, 2)
 
     def test_fact_quote_requires_exact_transcript_substring(self):
         valid, reason = validate_fact_candidate({

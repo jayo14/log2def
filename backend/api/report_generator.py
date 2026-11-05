@@ -753,7 +753,16 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
                 query |= Q(source_field__startswith=field)
             else:
                 query |= Q(source_field=field)
-        return Fact.objects.filter(project=project, status="confirmed").filter(query).distinct()
+        facts = Fact.objects.filter(project=project, status="confirmed")
+        if section_key == "ch3_activities":
+            query |= Q(kind__in=["activity", "project"])
+        elif section_key == "ch3_skills":
+            query |= Q(kind="skill")
+        elif section_key == "ch3_tools":
+            query |= Q(kind__in=["tool", "equipment"])
+        elif section_key in {"ch4_summary", "ch4_conclusion"}:
+            query |= Q(kind__in=["activity", "project", "skill", "duty", "challenge", "solution", "recommendation"])
+        return facts.filter(query).distinct() if query.children else facts.none()
 
     # Reviewed source lines are evidence, not report prose. They remain in the
     # transcript/Fact layer until a separately confirmed normalized paragraph
@@ -811,11 +820,24 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
     for position, definition in enumerate(LASUSTECH_CS_V2["sections"]):
         key = definition["key"]
         content_text = source_text.get(key, "")
+        ai_sentences = None
+        writer_error = ""
+        linked_facts = confirmed_section_facts(key)
         student_paragraphs = list(report.provenance_paragraphs.filter(
             section_key=key, origin="STUDENT_EDITED", student_confirmed=True
         ).prefetch_related("facts").order_by("order"))
         if student_paragraphs:
             content_text = "\n".join(paragraph.text for paragraph in student_paragraphs)
+        elif linked_facts.exists() and is_ai_available():
+            from .grounded_writer import GroundedWriterError, build_section_brief, write_section
+            brief = build_section_brief(key, definition["title"], linked_facts)
+            try:
+                ai_sentences = write_section(brief)
+                content_text = "\n".join(item["text"] for item in ai_sentences)
+            except (GroundedWriterError, Exception) as exc:
+                # A failed/unsafe writer response must not enter the document.
+                content_text = ""
+                writer_error = str(exc)[:180]
         if definition.get("flag") == "abstract_enabled" and not report.template_options.get("abstract_enabled", False):
             continue
         if definition.get("flag") == "toc_enabled" and not report.template_options.get("toc_enabled", True):
@@ -842,16 +864,31 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.order = (position + 1) * 10
         section.is_required = definition.get("required", False)
         section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
-        section.warnings = ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
+        section.warnings = (
+            [f"Fact-grounded writing was rejected ({writer_error}); review the confirmed facts and retry."]
+            if writer_error else
+            ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
+        )
         section.source_links = sorted({
             fact_id for paragraph in student_paragraphs
             for fact_id in paragraph.facts.values_list("id", flat=True)
         })
         section.save()
-        generated_paragraphs = report.provenance_paragraphs.filter(section_key=key, origin="GUIDED_INTAKE")
-        linked_facts = confirmed_section_facts(key)
+        generated_paragraphs = report.provenance_paragraphs.filter(
+            section_key=key, origin__in=["GUIDED_INTAKE", "AI_GENERATED"]
+        )
         if student_paragraphs:
             generated_paragraphs.delete()
+        elif ai_sentences is not None:
+            generated_paragraphs.delete()
+            for sentence_order, sentence in enumerate(ai_sentences):
+                paragraph = report.provenance_paragraphs.create(
+                    section_key=key, order=sentence_order, text=sentence["text"],
+                    student_confirmed=True, origin="AI_GENERATED",
+                )
+                paragraph.facts.set(linked_facts.filter(id__in=sentence["fact_ids"]))
+            section.source_links = sorted({fact_id for sentence in ai_sentences for fact_id in sentence["fact_ids"]})
+            section.save(update_fields=["source_links", "updated_at"])
         elif content_text and linked_facts.exists():
             paragraph, _ = ReportParagraph.objects.get_or_create(
                 report=report, section_key=key, origin="GUIDED_INTAKE",
@@ -1112,6 +1149,43 @@ def regenerate_single_section(section: ReportSection) -> ReportSection:
     """
     Regenerates a single section. Overwrites section content and clears student lock.
     """
+    if section.report.template_version == "lasustech_cs:2.0.0":
+        from .grounded_writer import GroundedWriterError, build_section_brief, write_section
+        facts = Fact.objects.filter(
+            project=section.report.project, status="confirmed",
+            id__in=section.source_links,
+        )
+        if not facts.exists() or not is_ai_available():
+            section.warnings = ["No confirmed linked Facts or AI writer is available; this section was not changed."]
+            section.save(update_fields=["warnings", "updated_at"])
+            return section
+        try:
+            brief = build_section_brief(section.section_key, section.title, facts)
+            sentences = write_section(brief)
+        except Exception as exc:
+            section.warnings = [f"Fact-grounded writing was rejected ({str(exc)[:180]}); this section was not changed."]
+            section.save(update_fields=["warnings", "updated_at"])
+            return section
+        section.content = "".join(f"<p>{escape(item['text'])}</p>" for item in sentences)
+        section.warnings = []
+        section.last_edited_by_student = False
+        section.save(update_fields=["content", "warnings", "last_edited_by_student", "updated_at"])
+        section.report.provenance_paragraphs.filter(
+            section_key=section.section_key, origin="AI_GENERATED"
+        ).delete()
+        for order, sentence in enumerate(sentences):
+            paragraph = section.report.provenance_paragraphs.create(
+                section_key=section.section_key, order=order, text=sentence["text"],
+                student_confirmed=True, origin="AI_GENERATED",
+            )
+            paragraph.facts.set(facts.filter(id__in=sentence["fact_ids"]))
+        report = section.report
+        from .document_model import model_from_sections
+        report.document_model = model_from_sections(report, report.template_snapshot or LASUSTECH_CS_V2).to_dict()
+        report.version += 1
+        report.save(update_fields=["document_model", "version", "updated_at"])
+        return section
+
     project = section.report.project
     verified_entries = list(project.logbook_entries.filter(is_verified=True).order_by('week_number', 'order', 'id'))
     if not verified_entries:

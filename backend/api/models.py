@@ -337,7 +337,11 @@ class ReportSection(models.Model):
 
 
 class ReportParagraph(models.Model):
-    ORIGIN_CHOICES = [("GUIDED_INTAKE", "Guided intake"), ("STUDENT_EDITED", "Student edited")]
+    ORIGIN_CHOICES = [
+        ("GUIDED_INTAKE", "Guided intake"),
+        ("AI_GENERATED", "AI generated from confirmed facts"),
+        ("STUDENT_EDITED", "Student edited"),
+    ]
     report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='provenance_paragraphs')
     section_key = models.CharField(max_length=64)
     order = models.PositiveIntegerField(default=0)

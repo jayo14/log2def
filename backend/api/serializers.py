@@ -134,10 +134,18 @@ class FactSerializer(serializers.ModelSerializer):
 
 class ReportParagraphSerializer(serializers.ModelSerializer):
     fact_ids = serializers.PrimaryKeyRelatedField(source="facts", many=True, read_only=True)
+    source_pages = serializers.SerializerMethodField()
+
+    def get_source_pages(self, paragraph):
+        return sorted({
+            entry.source_page.page_index + 1
+            for fact in paragraph.facts.all()
+            for entry in fact.source_entry_ids.select_related("source_page").all()
+        })
 
     class Meta:
         model = ReportParagraph
-        fields = ("id", "section_key", "order", "text", "student_confirmed", "fact_ids")
+        fields = ("id", "section_key", "order", "text", "student_confirmed", "fact_ids", "source_pages")
 
 
 class ReportSectionSerializer(serializers.ModelSerializer):
