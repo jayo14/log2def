@@ -392,11 +392,17 @@ class PaymentOrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentOrder
         fields = [
-            'id', 'project', 'user', 'order_type', 'amount',
-            'payment_method', 'transaction_reference', 'status',
+            'id', 'project', 'user', 'order_type', 'amount', 'amount_kobo', 'currency',
+            'payment_method', 'transaction_reference', 'squad_transaction_reference',
+            'order_reference', 'status', 'fulfilment_status',
+            'digital_files_unlocked', 'download_count',
+            'squad_metadata', 'webhook_received_at', 'paid_at', 'callback_url',
             'recipient_name', 'phone_number', 'campus_location',
             'custom_address', 'delivery_date', 'notes',
             'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at',
+                           'squad_transaction_reference', 'order_reference',
+                           'status', 'fulfilment_status', 'digital_files_unlocked',
+                           'download_count', 'webhook_received_at', 'paid_at']
 

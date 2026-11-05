@@ -426,15 +426,42 @@ class PaymentOrder(models.Model):
         ('pending', 'Pending'),
         ('paid', 'Paid'),
         ('failed', 'Failed'),
+        ('refunded', 'Refunded'),
+        ('review_required', 'Review Required'),
+    ]
+    FULFILMENT_STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('ready', 'Ready'),
+        ('dispatched', 'Dispatched'),
+        ('delivered', 'Delivered'),
+        ('cancelled', 'Cancelled'),
     ]
 
     project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='payment_orders')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payment_orders')
     order_type = models.CharField(max_length=20, choices=ORDER_TYPES)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=2000.00)
+    amount_kobo = models.PositiveIntegerField(default=0)
+    currency = models.CharField(max_length=3, default='NGN')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='card')
     transaction_reference = models.CharField(max_length=64, unique=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='paid')
+    squad_transaction_reference = models.CharField(max_length=128, blank=True, default='')
+    order_reference = models.CharField(max_length=64, unique=True, blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    fulfilment_status = models.CharField(max_length=20, choices=FULFILMENT_STATUS_CHOICES, default='pending')
+    digital_files_unlocked = models.BooleanField(default=False)
+    download_count = models.PositiveIntegerField(default=0)
+
+    # Squad metadata (stores the full metadata dict passed to Squad)
+    squad_metadata = models.JSONField(default=dict, blank=True)
+
+    # Webhook tracking
+    webhook_received_at = models.DateTimeField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    # Callback URL for Squad redirect
+    callback_url = models.URLField(blank=True, default='')
 
     # Delivery details (for order_type == 'delivery')
     recipient_name = models.CharField(max_length=255, blank=True, default='')
@@ -452,4 +479,37 @@ class PaymentOrder(models.Model):
 
     def __str__(self):
         return f"{self.project_id} - {self.order_type} - {self.transaction_reference} ({self.status})"
+
+    def save(self, *args, **kwargs):
+        if not self.order_reference:
+            self.order_reference = f"L2D-ORD-{self.id or 0:06d}"
+        if not self.transaction_reference:
+            import uuid
+            self.transaction_reference = f"L2D_TXN_{uuid.uuid4().hex[:12]}"
+        if self.amount and not self.amount_kobo:
+            self.amount_kobo = int(self.amount * 100)
+        super().save(*args, **kwargs)
+        # Ensure order_reference is stable after first save (id is now known)
+        if not self.order_reference or self.order_reference == f"L2D-ORD-{self.id:06d}":
+            pass  # already set
+        elif self.pk and not self.order_reference.startswith('L2D-ORD-'):
+            self.order_reference = f"L2D-ORD-{self.pk:06d}"
+            super().save(update_fields=['order_reference'])
+
+
+class SquadWebhookEvent(models.Model):
+    """Tracks processed Squad webhook events for idempotency."""
+    event_id = models.CharField(max_length=128, unique=True)
+    transaction_reference = models.CharField(max_length=128, blank=True, default='')
+    event_type = models.CharField(max_length=64, blank=True, default='')
+    payload = models.JSONField(default=dict, blank=True)
+    processed_at = models.DateTimeField(auto_now_add=True)
+    success = models.BooleanField(default=False)
+    error_message = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-processed_at']
+
+    def __str__(self):
+        return f"{self.event_id} - {self.event_type} - {'ok' if self.success else 'failed'}"
 
