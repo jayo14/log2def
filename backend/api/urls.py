@@ -5,7 +5,7 @@ from .views import (
     PasswordResetRequestView, PasswordResetConfirmView,
     ProjectListCreateView, ProjectDetailView, ProjectCompletenessView, MissingInfoUpdateView, GuidelineUploadView,
     DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
-    LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView,
+    LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView, FactListView, FactReviewView,
     TemplateListView,
     ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
     ReportVersionListView, ReportVersionRevertView,
@@ -66,6 +66,10 @@ urlpatterns = [
     path('projects/<int:project_id>/logbook-entries/<int:entry_id>', LogbookEntryDetailView.as_view()),
     path('projects/<int:project_id>/logbook-entries/bulk-verify/', LogbookBulkVerifyView.as_view(), name='logbook-bulk-verify'),
     path('projects/<int:project_id>/logbook-entries/bulk-verify', LogbookBulkVerifyView.as_view()),
+
+    # Provenance-backed fact review
+    path('projects/<int:project_id>/facts/', FactListView.as_view(), name='fact-list'),
+    path('projects/<int:project_id>/facts/<int:fact_id>/', FactReviewView.as_view(), name='fact-review'),
 
     # Templates
     path('templates/', TemplateListView.as_view(), name='template-list'),

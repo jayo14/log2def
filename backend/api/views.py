@@ -24,14 +24,14 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiPara
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, PaymentOrder
+    DefenceQuestion, DefenceSession, PaymentOrder, Fact
 )
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from .serializers import (
     UserRegistrationSerializer, UserSerializer,
     ReportProjectSerializer, ReportProjectDetailSerializer,
     SourceDocumentSerializer, ExtractedPageSerializer,
-    LogbookEntrySerializer, ReportSerializer, ReportSectionSerializer,
+    LogbookEntrySerializer, FactSerializer, ReportSerializer, ReportSectionSerializer,
     ReportVersionSerializer, ReportVersionCreateRequestSerializer,
     ReportTemplateSerializer,
     PresentationSlidesResponseSerializer, PresentationScriptResponseSerializer,
@@ -680,6 +680,28 @@ class LogbookEntryDetailView(views.APIView):
         entry = get_object_or_404(LogbookEntry, id=entry_id, project=project)
         entry.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class FactListView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        facts = project.facts.prefetch_related("source_entry_ids").order_by("status", "id")
+        return Response(FactSerializer(facts, many=True).data)
+
+
+class FactReviewView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def patch(self, request, project_id, fact_id):
+        project = get_user_project(request.user, project_id)
+        fact = get_object_or_404(Fact, id=fact_id, project=project)
+        if set(request.data) != {"status"} or request.data.get("status") not in {"confirmed", "rejected"}:
+            return Response({"error": "Provide status as confirmed or rejected."}, status=status.HTTP_400_BAD_REQUEST)
+        fact.status = request.data["status"]
+        fact.save(update_fields=["status"])
+        return Response(FactSerializer(fact).data)
 
 
 class LogbookBulkVerifyView(views.APIView):

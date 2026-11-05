@@ -43,6 +43,10 @@ The provenance model is:
    `INFERRED` candidates also require a non-empty reason and remain `proposed`
    until the student confirms them. Nothing in the extraction service silently
    changes spelling.
+   Students can inspect proposed Facts at `GET /api/projects/{id}/facts/` and
+   explicitly confirm or reject them at `PATCH /api/projects/{id}/facts/{fact}`.
+   The review endpoint accepts only a status change; proposed wording and its
+   evidence remain immutable through this endpoint.
 4. **Report use:** only confirmed facts may support student-specific report
    statements. The report paragraph stores references to the Fact IDs used.
    Normalisation may improve grammar but must preserve all student-specific
@@ -100,8 +104,8 @@ only under ignored evaluation directories. Synthetic fixtures may be committed.
 
 No real logbook fixture or ground truth was available during this implementation,
 so no extraction accuracy, field accuracy, or missed-error rate is claimed.
-The Fact confirmation endpoint and client review cards are also not yet
-implemented; proposed facts can currently be created by the service layer only.
+Client review cards and a fact-candidate creation UI are not yet implemented;
+proposed facts can currently be created by the service layer only.
 
 ## Failure modes
 

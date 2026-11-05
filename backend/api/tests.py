@@ -31,6 +31,7 @@ from .feature_flags import DEFAULT_FEATURE_FLAGS, is_feature_enabled, get_all_fe
 from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requirements, ensure_default_template_in_db
 from .ocr_trace import save_tesseract_tsv, trace_root
 from .extraction import validate_fact_candidate, persist_fact_candidate, material_sufficiency, classify_page, review_ambiguities, parse_reviewed_page
+from .completeness import check_project_completeness
 
 
 class TemplateV2ContractTests(TestCase):
@@ -118,6 +119,23 @@ class ProvenanceExtractionTests(TestCase):
         self.assertEqual(error, "")
         self.assertEqual(fact.status, "proposed")
 
+    def test_fact_review_requires_explicit_confirmation(self):
+        fact, _ = persist_fact_candidate(self.project, {
+            "kind": "activity", "text": "used the test bench", "provenance": "INFERRED",
+            "evidence_quote": "used the test bench", "inference_reason": "The phrase suggests an activity; confirm it.",
+        }, "used the test bench")
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        response = client.get(f"/api/projects/{self.project.id}/facts/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["status"], "proposed")
+        invalid = client.patch(f"/api/projects/{self.project.id}/facts/{fact.id}/", {"status": "confirmed", "text": "extra"}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        confirmed = client.patch(f"/api/projects/{self.project.id}/facts/{fact.id}/", {"status": "confirmed"}, format="json")
+        self.assertEqual(confirmed.status_code, 200)
+        fact.refresh_from_db()
+        self.assertEqual(fact.status, "confirmed")
+
     def test_one_activity_is_insufficient_even_across_many_pages(self):
         for index in range(14):
             document = SourceDocument.objects.create(
@@ -133,6 +151,11 @@ class ProvenanceExtractionTests(TestCase):
         self.assertEqual(result["status"], "insufficient_material")
         self.assertEqual(result["blank_pages_first"], list(range(12)))
         self.assertEqual(result["activity_entries_across_pages"], "1 confirmed activity entry across 14 pages")
+        completeness = check_project_completeness(self.project)
+        self.assertFalse(completeness["can_generate"])
+        self.assertIn("material_sufficiency", completeness["missing_required_fields"])
+        self.assertEqual(completeness["fields"]["material_sufficiency"]["status"], "Uncertain")
+        self.assertEqual(completeness["material_sufficiency"]["status"], "insufficient_material")
 
     def test_page_classifier_does_not_invent_domain_or_tool(self):
         self.assertEqual(classify_page(""), "blank")
@@ -158,14 +181,17 @@ class ProvenanceExtractionTests(TestCase):
 
     def test_v2_report_does_not_copy_raw_logbook_lines(self):
         LogbookEntry.objects.create(
-            project=self.project, week_number=1, verified_text="RAW transcript typo Redution",
-            activity_summary="RAW transcript typo Redution", is_verified=True,
+            project=self.project, week_number=1, verified_text="Configured Cisco router for 12 users",
+            activity_summary="Configured Cisco router for 12 users", is_verified=True,
         )
         report = generate_full_report(self.project)
         for key in ("ch3_duties", "ch3_activities", "ch4_summary"):
             section = report.sections.get(section_key=key)
-            self.assertNotIn("RAW transcript typo Redution", section.content)
+            self.assertNotIn("Configured Cisco router for 12 users", section.content)
+            self.assertNotIn("Cisco", section.content)
+            self.assertNotIn("12", section.content)
             self.assertEqual(section.source_links, [])
+        self.assertEqual(report.sections.get(section_key="ch3_tools").content, "")
 
 
 class Log2DefBackendTests(TestCase):

@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder
+    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder, Fact
 )
 
 
@@ -120,6 +120,16 @@ class LogbookEntrySerializer(serializers.ModelSerializer):
         model = LogbookEntry
         fields = '__all__'
         read_only_fields = ('created_at', 'updated_at')
+
+
+class FactSerializer(serializers.ModelSerializer):
+    source_entry_ids = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+
+    class Meta:
+        model = Fact
+        fields = ('id', 'kind', 'text', 'provenance', 'source_entry_ids', 'evidence_quote',
+                  'inference_reason', 'status', 'validation_error')
+        read_only_fields = fields
 
 
 class ReportSectionSerializer(serializers.ModelSerializer):
