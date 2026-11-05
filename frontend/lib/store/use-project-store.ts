@@ -13,6 +13,7 @@ export interface ProjectState {
 
   fetchProjects: () => Promise<any[]>;
   fetchActiveProject: (projectId: number | string) => Promise<any>;
+  ensureActiveProject: () => Promise<any>;
   fetchCompleteness: (projectId: number | string) => Promise<CompletenessResult>;
   updateMissingInfo: (projectId: number | string, data: Record<string, any>) => Promise<any>;
   fetchAiStatus: () => Promise<any>;
@@ -62,11 +63,66 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ isLoadingProjects: true, error: null });
     try {
       const data = await projectsApi.list();
-      set({ projects: data, isLoadingProjects: false });
+      const currentActive = get().activeProject;
+      const resolvedActive = currentActive || (data && data.length > 0 ? data[0] : null);
+      set({
+        projects: data,
+        activeProject: resolvedActive,
+        isLoadingProjects: false,
+      });
       return data;
     } catch (err: any) {
       set({ error: err.message || 'Failed to load projects', isLoadingProjects: false });
       throw err;
+    }
+  },
+
+  ensureActiveProject: async () => {
+    let current = get().activeProject;
+    if (current && current.id) return current;
+
+    if (typeof window !== 'undefined') {
+      const savedId = localStorage.getItem('log2def_active_project_id');
+      if (savedId) {
+        try {
+          const full = await get().fetchActiveProject(savedId);
+          if (full && full.id) return full;
+        } catch {
+          localStorage.removeItem('log2def_active_project_id');
+        }
+      }
+    }
+
+    let list = get().projects;
+    if (!list || list.length === 0) {
+      try {
+        list = await get().fetchProjects();
+      } catch {
+        list = [];
+      }
+    }
+
+    if (list && list.length > 0) {
+      try {
+        const full = await get().fetchActiveProject(list[0].id);
+        return full;
+      } catch {
+        set({ activeProject: list[0] });
+        return list[0];
+      }
+    }
+
+    try {
+      const newProj = await get().createProject({
+        title: 'LASUSTECH SIWES Technical Report',
+        department: 'Computer Science',
+        faculty_school: 'College of Basic Science',
+        university_name: 'Lagos State University of Science and Technology',
+      });
+      return newProj;
+    } catch (err) {
+      console.error('Failed to ensure active project:', err);
+      return null;
     }
   },
 
@@ -75,6 +131,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     try {
       const data = await projectsApi.get(projectId);
       set({ activeProject: data, isLoadingActiveProject: false });
+      if (typeof window !== 'undefined' && data?.id) {
+        localStorage.setItem('log2def_active_project_id', String(data.id));
+      }
       return data;
     } catch (err: any) {
       set({ error: err.message || 'Failed to load project details', isLoadingActiveProject: false });
@@ -122,7 +181,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ error: null });
     try {
       const newProj = await projectsApi.create(data);
-      set((state) => ({ projects: [newProj, ...state.projects] }));
+      set((state) => ({
+        projects: [newProj, ...state.projects],
+        activeProject: newProj,
+      }));
+      if (typeof window !== 'undefined' && newProj?.id) {
+        localStorage.setItem('log2def_active_project_id', String(newProj.id));
+      }
       return newProj;
     } catch (err: any) {
       set({ error: err.message || 'Failed to create project' });
