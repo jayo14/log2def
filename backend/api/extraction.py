@@ -112,7 +112,33 @@ def parse_reviewed_page(logbook_page: LogbookPage) -> list[DayEntry]:
         ))
     logbook_page.page_type = classify_page(transcript, logbook_page.extracted_page.supervisor_signature_detected)
     logbook_page.save(update_fields=["page_type"])
+    validate_week_record(week)
     return created
+
+
+def validate_week_record(week: WeekRecord) -> list[str]:
+    """Derive date bounds and report sequence conflicts without repairing text."""
+    entries = list(week.day_entries.order_by("source_page__page_index", "id"))
+    dated = [entry.date for entry in entries if entry.date]
+    week.start_date = min(dated) if dated else None
+    week.end_date = max(dated) if dated else None
+    warnings = []
+    previous_weekday = None
+    for entry in entries:
+        expected = WEEKDAYS[entry.date.weekday()] if entry.date else ""
+        if entry.weekday and expected and entry.weekday != expected:
+            warnings.append({
+                "entry_id": entry.id, "type": "weekday_date_mismatch",
+                "weekday_text": entry.weekday, "date_weekday": expected,
+            })
+        if entry.weekday:
+            current_index = WEEKDAYS.index(entry.weekday)
+            if previous_weekday is not None and current_index < previous_weekday:
+                warnings.append({"entry_id": entry.id, "type": "weekday_sequence_decreased"})
+            previous_weekday = current_index
+    week.sequence_warnings = warnings
+    week.save(update_fields=["start_date", "end_date", "sequence_warnings"])
+    return warnings
 
 
 def persist_fact_candidate(project, candidate: dict[str, Any], transcript: str, entries=()):

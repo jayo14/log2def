@@ -30,7 +30,8 @@ The provenance model is:
    pages; identify week labels, dates, weekday labels, table-like separators,
    and existing supervisor signature detection. Dates are parsed only when
    calendar-valid. Weekday/date conflicts are retained as source text and
-   surfaced for review; the parser does not repair them. Table structure is
+surfaced on the WeekRecord as sequence warnings; the parser does not repair
+them. Week start/end dates are the min/max valid dates found. Table structure is
    not yet extracted. Page classification
    is a heuristic and remains editable.
 2. **Candidate extraction:** the current implementation does not call an LLM.

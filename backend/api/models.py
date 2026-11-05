@@ -253,6 +253,7 @@ class WeekRecord(models.Model):
     week_number = models.PositiveIntegerField()
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
+    sequence_warnings = models.JSONField(default=list, blank=True)
     source_pages = models.ManyToManyField(LogbookPage, related_name='week_records', blank=True)
 
     class Meta:

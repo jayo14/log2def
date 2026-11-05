@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 from .models import (
     ReportProject, SourceDocument, ExtractedPage, 
-    LogbookEntry, LogbookPage, Fact, Report, ReportSection, DefenceQuestion
+    LogbookEntry, LogbookPage, WeekRecord, Fact, Report, ReportSection, DefenceQuestion
 )
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
@@ -178,6 +178,24 @@ class ProvenanceExtractionTests(TestCase):
         self.assertEqual([entry.source_span for entry in entries], [
             {"start": 0, "end": 5}, {"start": 6, "end": 17}, {"start": 18, "end": 19},
         ])
+
+    def test_date_bounds_and_weekday_conflicts_are_reported_without_correction(self):
+        document = SourceDocument.objects.create(
+            project=self.project, original_filename="synthetic-dates.jpg", file_type="image", page_index=1,
+        )
+        extracted = ExtractedPage.objects.create(
+            document=document, page_index=1,
+            extracted_text="Monday 04/11/2026: inspected a board\nTuesday 05/11/2026: checked a cable",
+        )
+        page = LogbookPage.objects.create(extracted_page=extracted, page_index=1)
+        parse_reviewed_page(page)
+        week = WeekRecord.objects.get(project=self.project, week_number=0)
+        self.assertEqual(str(week.start_date), "2026-11-04")
+        self.assertEqual(str(week.end_date), "2026-11-05")
+        self.assertEqual([warning["type"] for warning in week.sequence_warnings], [
+            "weekday_date_mismatch", "weekday_date_mismatch",
+        ])
+        self.assertEqual(week.day_entries.first().weekday, "Monday")
 
     def test_v2_report_does_not_copy_raw_logbook_lines(self):
         LogbookEntry.objects.create(
