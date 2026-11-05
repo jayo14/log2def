@@ -37,9 +37,13 @@ urlpatterns = [
     path('projects/', ProjectListCreateView.as_view(), name='project-list-create'),
     path('projects', ProjectListCreateView.as_view()),
     path('projects/<int:pk>/', ProjectDetailView.as_view(), name='project-detail'),
+    path('projects/<int:pk>', ProjectDetailView.as_view()),
     path('projects/<int:project_id>/completeness/', ProjectCompletenessView.as_view(), name='project-completeness'),
+    path('projects/<int:project_id>/completeness', ProjectCompletenessView.as_view()),
     path('projects/<int:project_id>/missing-info/', MissingInfoUpdateView.as_view(), name='project-missing-info'),
+    path('projects/<int:project_id>/missing-info', MissingInfoUpdateView.as_view()),
     path('projects/<int:project_id>/upload-guideline/', GuidelineUploadView.as_view(), name='project-upload-guideline'),
+    path('projects/<int:project_id>/upload-guideline', GuidelineUploadView.as_view()),
 
     # Documents & Pages
     path('projects/<int:project_id>/documents/', DocumentListUploadView.as_view(), name='document-list-upload'),
@@ -47,14 +51,21 @@ urlpatterns = [
     path('projects/<int:project_id>/documents/reorder/', DocumentReorderView.as_view(), name='document-reorder'),
     path('projects/<int:project_id>/documents/reorder', DocumentReorderView.as_view()),
     path('projects/<int:project_id>/documents/<int:doc_id>/', DocumentDetailView.as_view(), name='document-detail'),
+    path('projects/<int:project_id>/documents/<int:doc_id>', DocumentDetailView.as_view()),
     path('projects/<int:project_id>/documents/<int:doc_id>/download/', DocumentDownloadView.as_view(), name='document-download'),
+    path('projects/<int:project_id>/documents/<int:doc_id>/download', DocumentDownloadView.as_view()),
     path('projects/<int:project_id>/documents/<int:doc_id>/reprocess/', DocumentReprocessView.as_view(), name='document-reprocess'),
+    path('projects/<int:project_id>/documents/<int:doc_id>/reprocess', DocumentReprocessView.as_view()),
     path('projects/<int:project_id>/pages/<int:page_id>/', PageUpdateView.as_view(), name='page-update'),
+    path('projects/<int:project_id>/pages/<int:page_id>', PageUpdateView.as_view()),
 
     # Logbook Entries
     path('projects/<int:project_id>/logbook-entries/', LogbookEntryListCreateView.as_view(), name='logbook-entries'),
+    path('projects/<int:project_id>/logbook-entries', LogbookEntryListCreateView.as_view()),
     path('projects/<int:project_id>/logbook-entries/<int:entry_id>/', LogbookEntryDetailView.as_view(), name='logbook-entry-detail'),
+    path('projects/<int:project_id>/logbook-entries/<int:entry_id>', LogbookEntryDetailView.as_view()),
     path('projects/<int:project_id>/logbook-entries/bulk-verify/', LogbookBulkVerifyView.as_view(), name='logbook-bulk-verify'),
+    path('projects/<int:project_id>/logbook-entries/bulk-verify', LogbookBulkVerifyView.as_view()),
 
     # Templates
     path('templates/', TemplateListView.as_view(), name='template-list'),
@@ -62,11 +73,17 @@ urlpatterns = [
 
     # Report & Sections
     path('projects/<int:project_id>/report/', ReportDetailView.as_view(), name='report-detail'),
+    path('projects/<int:project_id>/report', ReportDetailView.as_view()),
     path('projects/<int:project_id>/report/generate/', ReportGenerateView.as_view(), name='report-generate'),
+    path('projects/<int:project_id>/report/generate', ReportGenerateView.as_view()),
     path('projects/<int:project_id>/report/sections/<int:section_id>/', SectionUpdateView.as_view(), name='section-update'),
+    path('projects/<int:project_id>/report/sections/<int:section_id>', SectionUpdateView.as_view()),
     path('projects/<int:project_id>/report/sections/<int:section_id>/regenerate/', SectionRegenerateView.as_view(), name='section-regenerate'),
+    path('projects/<int:project_id>/report/sections/<int:section_id>/regenerate', SectionRegenerateView.as_view()),
     path('projects/<int:project_id>/report/versions/', ReportVersionListView.as_view(), name='report-versions'),
+    path('projects/<int:project_id>/report/versions', ReportVersionListView.as_view()),
     path('projects/<int:project_id>/report/versions/<int:version_id>/revert/', ReportVersionRevertView.as_view(), name='report-version-revert'),
+    path('projects/<int:project_id>/report/versions/<int:version_id>/revert', ReportVersionRevertView.as_view()),
 
     # Document Export
     path('projects/<int:project_id>/export/docx/', ExportDocxView.as_view(), name='export-docx'),
@@ -84,9 +101,15 @@ urlpatterns = [
 
     # Defence Preparation
     path('projects/<int:project_id>/defence/generate/', DefenceGenerateView.as_view(), name='defence-generate'),
+    path('projects/<int:project_id>/defence/generate', DefenceGenerateView.as_view()),
     path('projects/<int:project_id>/defence/questions/', DefenceQuestionListView.as_view(), name='defence-questions'),
+    path('projects/<int:project_id>/defence/questions', DefenceQuestionListView.as_view()),
     path('projects/<int:project_id>/defence/questions/<int:question_id>/', DefenceQuestionDetailView.as_view(), name='defence-question-detail'),
+    path('projects/<int:project_id>/defence/questions/<int:question_id>', DefenceQuestionDetailView.as_view()),
     path('projects/<int:project_id>/defence/session/', DefenceSessionView.as_view(), name='defence-session'),
+    path('projects/<int:project_id>/defence/session', DefenceSessionView.as_view()),
     path('projects/<int:project_id>/defence/slides/', DefenceSlidesView.as_view(), name='defence-slides'),
+    path('projects/<int:project_id>/defence/slides', DefenceSlidesView.as_view()),
     path('projects/<int:project_id>/defence/script/', DefenceScriptView.as_view(), name='defence-script'),
+    path('projects/<int:project_id>/defence/script', DefenceScriptView.as_view()),
 ]
