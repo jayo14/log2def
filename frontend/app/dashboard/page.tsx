@@ -50,6 +50,7 @@ const FLD: [string, string][] = [
   ['matric', 'Matric number'],
   ['dept', 'Department'],
   ['fac', 'Faculty or College'],
+  ['degree', 'Degree'],
   ['inst', 'Institution'],
   ['co', 'Company'],
   ['addr', 'Company address'],
@@ -170,8 +171,9 @@ export default function DashboardPage() {
 
   const [details, setDetails] = useState<Record<string, string>>({
     name: userFullName,
-    inst: 'Lagos State University of Science and Technology',
-    fac: 'College of Basic Science',
+    inst: '',
+    fac: '',
+    degree: '',
     dept: '',
     matric: '',
     co: '',
@@ -374,6 +376,7 @@ export default function DashboardPage() {
   // Maps 28 backend institutional sections into the 11 presentation views
   const getSectionForChapterTab = (tabIdx: number, sections: any[]) => {
     if (!sections || !sections.length) return null;
+    if (sections.some((section) => section.section_key === 'ch1_importance')) return sections[tabIdx] || null;
     switch (tabIdx) {
       case 0:
         return sections.find((s) => s.section_key === 'cover') || sections.find((s) => s.section_key === 'title_page') || sections[0];
@@ -405,6 +408,10 @@ export default function DashboardPage() {
   const mapBackendSectionsToChapters = (sections: any[]): Record<number, string> => {
     const edits: Record<number, string> = {};
     if (!sections || sections.length === 0) return edits;
+    if (sections.some((section) => section.section_key === 'ch1_importance')) {
+      sections.forEach((section, index) => { edits[index] = section.content || ''; });
+      return edits;
+    }
 
     const findByKey = (k: string) => sections.find((s) => s.section_key === k)?.content || '';
     const findByChapter = (chapNum: number) =>
@@ -506,9 +513,10 @@ export default function DashboardPage() {
     setDetails((prev) => ({
       name: activeProject.full_name || prev.name || userFullName,
       matric: activeProject.matric_number || prev.matric || '',
-      dept: activeProject.department || prev.dept || 'Computer Science',
-      fac: activeProject.faculty_school || prev.fac || 'College of Basic Science',
-      inst: activeProject.university_name || prev.inst || 'Lagos State University of Science and Technology',
+      dept: activeProject.department || prev.dept || '',
+      fac: activeProject.college || activeProject.faculty_school || prev.fac || '',
+      degree: activeProject.degree || prev.degree || '',
+      inst: activeProject.university_name || prev.inst || '',
       co: activeProject.organization_name || prev.co || '',
       addr: activeProject.organization_address || prev.addr || '',
       unit: activeProject.industry_department || prev.unit || '',
@@ -599,7 +607,9 @@ export default function DashboardPage() {
         full_name: details.name || undefined,
         matric_number: details.matric || undefined,
         department: details.dept || undefined,
+        college: details.fac || undefined,
         faculty_school: details.fac || undefined,
+        degree: details.degree || undefined,
         university_name: details.inst || undefined,
         organization_name: details.co || undefined,
         organization_address: details.addr || undefined,
@@ -1134,6 +1144,9 @@ export default function DashboardPage() {
   const getSectionHtml = (i: number): string => {
     if (chapterEdits[i] !== undefined) return chapterEdits[i];
     if (dbReport && dbReport.sections && dbReport.sections.length > 0) {
+      if (dbReport.template_version === 'lasustech_cs:2.0.0') {
+        return dbReport.sections[i]?.content || '';
+      }
       const mapped = mapBackendSectionsToChapters(dbReport.sections);
       if (mapped[i]) return mapped[i];
     }
@@ -1727,7 +1740,9 @@ export default function DashboardPage() {
         full_name: details.name || undefined,
         matric_number: details.matric,
         department: details.dept,
+        college: details.fac,
         faculty_school: details.fac,
+        degree: details.degree,
         university_name: details.inst,
         organization_name: details.co,
         organization_address: details.addr,
@@ -2051,7 +2066,43 @@ export default function DashboardPage() {
   // ==========================================
   const renderReportViewer = () => {
     const layout = computeLayout();
-    const isTargetMet = layout.total >= 12 && layout.total <= 15;
+    const modelSections = dbReport?.document_model?.sections;
+    const modelRows = dbReport?.template_version === 'lasustech_cs:2.0.0' && Array.isArray(modelSections)
+      ? modelSections.map((section: any, index: number) => {
+          const escapeHtml = (value: string) => value.replace(/[&<>\"']/g, (char) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+          }[char] as string));
+          const renderNode = (node: any): string => {
+            if (node.type === 'paragraph' || node.type === 'heading') {
+              const text = escapeHtml(node.text || '').replace(/\n/g, '<br/>');
+              return node.type === 'heading' ? `<h3>${text}</h3>` : `<p>${text}</p>`;
+            }
+            if (node.type === 'list') {
+              const tag = node.attrs?.ordered ? 'ol' : 'ul';
+              return `<${tag}>${(node.children || []).map((item: any) => `<li>${escapeHtml(item.text || '')}</li>`).join('')}</${tag}>`;
+            }
+            if (node.type === 'table') {
+              return `<table>${(node.children || []).map((row: any) => `<tr>${(row.children || []).map((cell: any) => `<td>${escapeHtml(cell.text || '')}</td>`).join('')}</tr>`).join('')}</table>`;
+            }
+            if (node.type === 'figure') return node.attrs?.caption ? `<p>${escapeHtml(node.attrs.caption)}</p>` : '';
+            return '';
+          };
+          const priorChapter = index > 0 ? modelSections[index - 1]?.chapter : undefined;
+          const chapterHeading = section.chapter_title && section.chapter !== priorChapter
+            ? `<h2>${escapeHtml(section.chapter_title).replace(/\n/g, '<br/>')}</h2>` : '';
+          return {
+            t: section.title,
+            h: `${chapterHeading}<h3>${escapeHtml(section.title || '')}</h3>${(section.nodes || []).map(renderNode).join('')}`,
+            p: 1,
+            l: null,
+          };
+        })
+      : null;
+    const previewRows = modelRows || layout.rows;
+    const pageEstimate = dbReport?.page_estimate_breakdown || {};
+    const editorLabels = dbReport?.template_version === 'lasustech_cs:2.0.0'
+      ? (dbReport.sections || []).map((section: any) => section.title)
+      : SEC;
 
     if (genState !== 2) {
       return (
@@ -2099,7 +2150,7 @@ export default function DashboardPage() {
         {editorTab === 'edit' ? (
           <>
             <div className="pills" role="tablist" aria-label="Sections">
-              {SEC.map((x, i) => (
+              {editorLabels.map((x: string, i: number) => (
                 <button
                   key={x}
                   role="tab"
@@ -2170,7 +2221,7 @@ export default function DashboardPage() {
                 contentEditable
                 role="textbox"
                 aria-multiline="true"
-                aria-label={SEC[currentSectionIdx]}
+                aria-label={editorLabels[currentSectionIdx] || 'Report section'}
                 style={{ textAlign: 'justify' }}
                 dangerouslySetInnerHTML={{ __html: getSectionHtml(currentSectionIdx) }}
                 onInput={(e) => {
@@ -2206,32 +2257,28 @@ export default function DashboardPage() {
               Edit your details
             </button>
             <p className="hint" style={{ marginTop: '10px' }}>
-              Edits save automatically. Fill the [brackets].
+              Edits save automatically. Review missing required details before export.
             </p>
           </>
         ) : (
           <>
             <div className="card">
-              <span className={`chip ${isTargetMet ? '' : 'w'}`}>
-                <span className="ms" aria-hidden="true">
-                  {isTargetMet ? 'check_circle' : 'info'}
-                </span>
-                About {layout.total} pages
+              <span className="chip">
+                <span className="ms" aria-hidden="true">info</span>
+                Estimated {dbReport?.estimated_pages || layout.total} total pages
               </span>
               <p className="mut" style={{ fontSize: '13.5px', marginTop: '10px' }}>
-                Target 12–15 pages.{' '}
-                {layout.total < 12
-                  ? 'Short logbook, short report. No padding.'
-                  : layout.total > 15
-                  ? 'Over target.'
-                  : 'On target.'}
+                Informational estimate including front matter. Review the source coverage and required inputs.
               </p>
               <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
-                Times New Roman 12pt · 1.5 spacing · justified · template v1
+                Student-derived content: about {pageEstimate.student_derived_page_equivalent ?? '—'} page equivalents ({pageEstimate.student_derived_words ?? '—'} words). Fixed text: about {pageEstimate.fixed_text_page_equivalent ?? '—'} page equivalents ({pageEstimate.fixed_text_words ?? '—'} words).
+              </p>
+              <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
+                Times New Roman 12pt · 1.5 spacing · justified · template {dbReport?.template_version || 'v1'}
               </p>
             </div>
 
-            {layout.rows.map((q, idx) => (
+            {previewRows.map((q: any, idx: number) => (
               <React.Fragment key={idx}>
                 <p className="pl2">
                   {q.t} ·{' '}
@@ -2681,7 +2728,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Institution</div>
-                <div className="s-val">{details.inst || 'Lagos State University of Science and Technology'}</div>
+                <div className="s-val">{details.inst || 'Not provided'}</div>
               </div>
             </div>
 
@@ -2693,7 +2740,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Faculty or College</div>
-                <div className="s-val">{details.fac || 'College of Basic Science'}</div>
+                <div className="s-val">{details.fac || 'Not provided'}</div>
               </div>
             </div>
 
@@ -2879,8 +2926,8 @@ export default function DashboardPage() {
               if (typeof window !== 'undefined' && window.confirm('Reset this report project and start fresh?')) {
                 setDetails({
                   name: userFullName,
-                  inst: 'Lagos State University of Science and Technology',
-                  fac: 'College of Basic Science',
+                  inst: '',
+                  fac: '',
                   dept: '',
                   matric: '',
                   co: '',
@@ -3047,7 +3094,7 @@ export default function DashboardPage() {
                 <select
                   id="fac"
                   name="fac"
-                  value={details.fac || 'College of Basic Science'}
+                  value={details.fac || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, fac: e.target.value }))}
                   required
                 >
@@ -3079,11 +3126,7 @@ export default function DashboardPage() {
                 <select
                   id="inst"
                   name="inst"
-                  value={
-                    details.inst === 'Lagos State University of Science and Technology'
-                      ? 'Lagos State University of Science and Technology'
-                      : 'Other'
-                  }
+                  value={details.inst ? (INSTITUTIONS.includes(details.inst) ? details.inst : 'Other') : ''}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === 'Other') {
@@ -3094,16 +3137,14 @@ export default function DashboardPage() {
                   }}
                   required
                 >
+                  <option value="">Select an institution</option>
                   {INSTITUTIONS.map((instOption) => (
                     <option key={instOption} value={instOption}>
                       {instOption}
                     </option>
                   ))}
                 </select>
-                {(details.inst === 'Other' ||
-                  (details.inst &&
-                    details.inst !== 'Lagos State University of Science and Technology' &&
-                    details.inst !== 'Lagos State University of Science and Technology (LASUSTECH)')) && (
+                {(details.inst === 'Other' || (details.inst && !INSTITUTIONS.includes(details.inst))) && (
                   <input
                     type="text"
                     placeholder="Enter your institution name"
@@ -3819,7 +3860,7 @@ export default function DashboardPage() {
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <select
                       id={`a_${x.key}`}
-                      value={answers[x.key] || 'College of Basic Science'}
+                      value={answers[x.key] || ''}
                       onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
                       style={{ flex: 1, minWidth: 0 }}
                       required
@@ -3870,7 +3911,7 @@ export default function DashboardPage() {
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <select
                       id={`a_${x.key}`}
-                      value={answers[x.key] || 'Lagos State University of Science and Technology'}
+                      value={answers[x.key] || ''}
                       onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
                       style={{ flex: 1, minWidth: 0 }}
                       required
@@ -4401,7 +4442,7 @@ export default function DashboardPage() {
               <select
                 id="fv"
                 aria-label={activeSheet.label}
-                value={getVal(activeSheet.key) || 'College of Basic Science'}
+                value={getVal(activeSheet.key) || ''}
                 onChange={(e) => {
                   const val = e.target.value.trim();
                   setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
@@ -4422,11 +4463,7 @@ export default function DashboardPage() {
               <select
                 id="fv"
                 aria-label={activeSheet.label}
-                value={
-                  getVal(activeSheet.key) === 'Lagos State University of Science and Technology'
-                    ? 'Lagos State University of Science and Technology'
-                    : 'Other'
-                }
+                value={getVal(activeSheet.key) ? 'Other' : ''}
                 onChange={(e) => {
                   const val = e.target.value.trim();
                   setDetails((prev) => ({ ...prev, [activeSheet.key]: val }));
@@ -4471,6 +4508,8 @@ export default function DashboardPage() {
                   matric_number: details.matric || undefined,
                   department: details.dept || undefined,
                   faculty_school: details.fac || undefined,
+                  college: details.fac || undefined,
+                  degree: details.degree || undefined,
                   university_name: details.inst || undefined,
                   organization_name: details.co || undefined,
                   organization_address: details.addr || undefined,
@@ -4503,7 +4542,7 @@ export default function DashboardPage() {
                   <label htmlFor={`d_${key}`}>{label}</label>
                   <select
                     id={`d_${key}`}
-                    value={details[key] || 'College of Basic Science'}
+                    value={details[key] || ''}
                     onChange={(e) => {
                       const val = e.target.value.trim();
                       setDetails((prev) => ({ ...prev, [key]: val }));
@@ -4524,11 +4563,7 @@ export default function DashboardPage() {
                   <label htmlFor={`d_${key}`}>{label}</label>
                   <select
                     id={`d_${key}`}
-                    value={
-                      details[key] === 'Lagos State University of Science and Technology'
-                        ? 'Lagos State University of Science and Technology'
-                        : 'Other'
-                    }
+                    value={details[key] ? (INSTITUTIONS.includes(details[key]) ? details[key] : 'Other') : ''}
                     onChange={(e) => {
                       const val = e.target.value.trim();
                       setDetails((prev) => ({ ...prev, [key]: val }));
@@ -4568,6 +4603,8 @@ export default function DashboardPage() {
                   matric_number: details.matric || undefined,
                   department: details.dept || undefined,
                   faculty_school: details.fac || undefined,
+                  college: details.fac || undefined,
+                  degree: details.degree || undefined,
                   university_name: details.inst || undefined,
                   organization_name: details.co || undefined,
                   organization_address: details.addr || undefined,

@@ -114,10 +114,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     try {
       const newProj = await get().createProject({
-        title: 'LASUSTECH SIWES Technical Report',
-        department: 'Computer Science',
-        faculty_school: 'College of Basic Science',
-        university_name: 'Lagos State University of Science and Technology',
+        title: 'SIWES Technical Report',
       });
       return newProj;
     } catch (err) {
