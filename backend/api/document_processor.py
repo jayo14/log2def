@@ -210,7 +210,97 @@ def validate_structured_entry_anti_fabrication(
     }
 
 
-def run_multimodal_vision_analysis(image_path: str) -> tuple[str, float, dict]:
+def extract_week_from_string(text: str) -> int | None:
+    """Extracts week number from string like 'Week 3', 'Week_04', 'wk2', 'w5'."""
+    if not text:
+        return None
+    match = re.search(r'(?i)(?:^|[\W_])(?:week|wk|w)[\s_#-]*0*([1-9]\d?)(?=$|[\W_])', text)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+    return None
+
+
+def apply_cover_details_to_project(project, cover_details: dict):
+    """
+    Auto-populates project attributes (student details, company, dates)
+    when a cover or student particulars page is read via OCR/vision.
+    """
+    if not isinstance(cover_details, dict):
+        return
+
+    updated_fields = []
+    
+    # Student identity
+    name = str(cover_details.get('student_name') or '').strip()
+    if name and (not project.full_name or project.full_name in ['[Student Full Name]', 'Student Name', 'John Samuel']):
+        project.full_name = name
+        updated_fields.append('full_name')
+
+    matric = str(cover_details.get('matric_number') or '').strip()
+    if matric and (not project.matric_number or project.matric_number in ['[Matriculation Number]', 'MATRIC', '240303010036']):
+        project.matric_number = matric
+        updated_fields.append('matric_number')
+
+    dept = str(cover_details.get('department') or '').strip()
+    if dept and (not project.department or project.department in ['[Department Name]', 'Computer Science']):
+        project.department = dept
+        updated_fields.append('department')
+
+    faculty = str(cover_details.get('faculty') or '').strip()
+    if faculty and not project.faculty_school:
+        project.faculty_school = faculty
+        updated_fields.append('faculty_school')
+
+    inst = str(cover_details.get('institution') or '').strip()
+    if inst and (not project.university_name or 'Lagos State University' in project.university_name):
+        project.university_name = inst
+        updated_fields.append('university_name')
+
+    # Host organization
+    org = str(cover_details.get('organization_name') or '').strip()
+    if org and (not project.organization_name or project.organization_name in ['[Host Organization Name]', 'Mika Labs', 'Company Name']):
+        project.organization_name = org
+        updated_fields.append('organization_name')
+
+    addr = str(cover_details.get('organization_address') or '').strip()
+    if addr and not project.organization_address:
+        project.organization_address = addr
+        updated_fields.append('organization_address')
+
+    supervisor = str(cover_details.get('industry_supervisor') or '').strip()
+    if supervisor and not project.industry_supervisor_name:
+        project.industry_supervisor_name = supervisor
+        updated_fields.append('industry_supervisor_name')
+
+    # Dates
+    start_str = str(cover_details.get('start_date') or '').strip()
+    if start_str and not project.training_start_date:
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%B %d, %Y', '%b %d, %Y'):
+            try:
+                project.training_start_date = datetime.strptime(start_str, fmt).date()
+                updated_fields.append('training_start_date')
+                break
+            except Exception:
+                pass
+
+    end_str = str(cover_details.get('end_date') or '').strip()
+    if end_str and not project.training_end_date:
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%B %d, %Y', '%b %d, %Y'):
+            try:
+                project.training_end_date = datetime.strptime(end_str, fmt).date()
+                updated_fields.append('training_end_date')
+                break
+            except Exception:
+                pass
+
+    if updated_fields:
+        project.save(update_fields=updated_fields)
+
+
+def run_multimodal_vision_analysis(image_path: str, filename_hint: str = "") -> tuple[str, float, dict]:
     """
     Analyzes handwritten and scanned logbook pages using Google Gemini Flash Multimodal Vision.
     Extracts transcribed text, week number, daily entries, tools used, and technical observations.
@@ -233,15 +323,34 @@ def run_multimodal_vision_analysis(image_path: str) -> tuple[str, float, dict]:
         }
         mime_type = mime_map.get(ext, "image/jpeg")
 
+        hint_clause = f"Document filename: {filename_hint}\n" if filename_hint else ""
+
         prompt = (
             "You are an expert academic OCR and SIWES technical logbook analyzer. "
-            "Examine this handwritten or printed SIWES industrial training logbook page.\n\n"
+            "Examine this handwritten or printed SIWES industrial training logbook page.\n"
+            f"{hint_clause}"
+            "\n"
             "CRITICAL ANTI-FABRICATION RULE:\n"
             "- You must NEVER invent, extrapolate, or hallucinate activities, projects, tools, software, equipment, or accomplishments not stated in the image.\n"
             "- If tools or equipment are not mentioned in the source logbook, set them to empty string \"\". DO NOT assume standard tools.\n"
             "- Derive 'technical_area' only if directly indicated by recorded tasks (e.g. 'Network Cabling' -> 'Computer Networking').\n\n"
-            "Respond ONLY with a JSON object following this exact schema:\n"
+            "If this image is a COVER PAGE or STUDENT PARTICULARS PAGE, extract the cover metadata fields.\n"
+            "If this image is a WEEKLY LOGBOOK ENTRY page, extract the weekly/daily entries.\n\n"
+            "Respond ONLY with a valid JSON object matching this schema:\n"
             "{\n"
+            '  "is_cover_page": false,\n'
+            '  "cover_details": {\n'
+            '    "student_name": "",\n'
+            '    "matric_number": "",\n'
+            '    "department": "",\n'
+            '    "faculty": "",\n'
+            '    "institution": "",\n'
+            '    "organization_name": "",\n'
+            '    "organization_address": "",\n'
+            '    "industry_supervisor": "",\n'
+            '    "start_date": "",\n'
+            '    "end_date": ""\n'
+            '  },\n'
             '  "transcribed_text": "Full verbatim transcription of all text on this page",\n'
             '  "confidence": 0.94,\n'
             '  "week_number": 1,\n'
@@ -277,12 +386,30 @@ def run_multimodal_vision_analysis(image_path: str) -> tuple[str, float, dict]:
             clean_json = clean_json[:-3]
         clean_json = clean_json.strip()
 
-        data = json.loads(clean_json)
-        transcribed_text = data.get("transcribed_text", "").strip()
-        confidence = float(data.get("confidence", 0.92))
-        return transcribed_text, confidence, data
-    except Exception:
-        return "", 0.0, {}
+        # Regex match outermost JSON object or array
+        match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', clean_json)
+        if match:
+            clean_json = match.group(1).strip()
+
+        parsed = json.loads(clean_json)
+        if isinstance(parsed, list):
+            entries = [e for e in parsed if isinstance(e, dict)]
+            transcribed_text = "\n".join(
+                str(e.get("activity_summary") or e.get("raw_text") or e.get("task") or "")
+                for e in entries
+            ).strip()
+            data = {
+                "transcribed_text": transcribed_text,
+                "confidence": 0.90,
+                "entries": entries,
+                "week_number": 1,
+            }
+        elif isinstance(parsed, dict):
+            data = parsed
+        else:
+            data = {}
+
+        transcribed_text = str(data.get("transcribed_text", "")).strip()
         confidence = float(data.get("confidence", 0.92))
         return transcribed_text, confidence, data
     except Exception:
@@ -338,7 +465,7 @@ def run_ocr_on_image(image_path: str) -> tuple[str, float]:
         return "", 0.0
 
 
-def extract_logbook_entries_from_text(project, page_instance, text: str):
+def extract_logbook_entries_from_text(project, page_instance, text: str, fallback_week: int = 1):
     """
     Heuristically parses daily or weekly entries from extracted text,
     validates with anti-fabrication post-checks, and creates LogbookEntry records
@@ -348,15 +475,11 @@ def extract_logbook_entries_from_text(project, page_instance, text: str):
         return
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
-    current_week = 1
+    current_week = fallback_week
     
     # Check if a week header exists
-    week_match = re.search(r'week\s*[:#-]?\s*(\d+)', text, re.IGNORECASE)
-    if week_match:
-        try:
-            current_week = int(week_match.group(1))
-        except ValueError:
-            current_week = 1
+    detected_week = extract_week_from_string(text)
+    current_week = detected_week if detected_week else fallback_week
 
     # Extract date if mentioned e.g. 2024-06-10 or 10/06/2024 or June 10, 2024
     parsed_date = None
@@ -502,6 +625,8 @@ def process_source_document(doc_id: int):
     try:
         from .completeness import check_project_completeness
 
+        filename_week = extract_week_from_string(doc.original_filename or "")
+
         if doc.file_type == 'pdf' and file_path and os.path.exists(file_path):
             pdf = pymupdf.open(file_path)
             doc.page_count = len(pdf)
@@ -529,14 +654,18 @@ def process_source_document(doc_id: int):
                 sig_detected = False
                 sig_conf = 0.0
                 vision_entries = []
+                page_fallback_week = filename_week or page_num
 
-                # If text is too short, page might be scanned or image-based
-                if len(text) < 30:
+                # If text is too short or doesn't have structure, rasterize and run multimodal vision
+                if len(text) < 50:
                     pix = page.get_pixmap(dpi=150)
                     temp_img_path = f"{file_path}_p{page_num}.png"
                     pix.save(temp_img_path)
                     
-                    v_text, v_conf, v_data = run_multimodal_vision_analysis(temp_img_path)
+                    v_text, v_conf, v_data = run_multimodal_vision_analysis(
+                        temp_img_path,
+                        filename_hint=f"{doc.original_filename or 'Document'} Page {page_num}"
+                    )
                     if v_text:
                         text = v_text
                         confidence = v_conf
@@ -544,6 +673,9 @@ def process_source_document(doc_id: int):
                         sig_detected = bool(v_data.get('supervisor_signature_detected') or v_data.get('supervisor_signed'))
                         sig_conf = float(v_data.get('supervisor_signature_confidence', 0.85 if sig_detected else 0.0))
                         vision_entries = v_data.get('entries', [])
+
+                        if v_data.get('cover_details'):
+                            apply_cover_details_to_project(doc.project, v_data.get('cover_details'))
                     else:
                         ocr_text, ocr_conf = run_ocr_on_image(temp_img_path)
                         if ocr_text:
@@ -577,6 +709,7 @@ def process_source_document(doc_id: int):
                 # Step 3: Structuring with anti-fabrication
                 if vision_entries:
                     for idx, raw_entry in enumerate(vision_entries):
+                        entry_week = raw_entry.get('week_number') or page_fallback_week
                         validated = validate_structured_entry_anti_fabrication(
                             source_text=text,
                             entry_data=raw_entry,
@@ -586,7 +719,7 @@ def process_source_document(doc_id: int):
                         LogbookEntry.objects.create(
                             project=doc.project,
                             source_page=extracted_page,
-                            week_number=validated.get('week_number', page_num),
+                            week_number=validated.get('week_number', entry_week),
                             entry_date=validated.get('entry_date'),
                             day_of_week=validated.get('day_of_week', f'Day {idx+1}'),
                             raw_text=validated.get('raw_text', ''),
@@ -603,7 +736,7 @@ def process_source_document(doc_id: int):
                             is_verified=True
                         )
                 elif text:
-                    extract_logbook_entries_from_text(doc.project, extracted_page, text)
+                    extract_logbook_entries_from_text(doc.project, extracted_page, text, fallback_week=page_fallback_week)
 
                 # Step 4: Finalize page status
                 if confidence < 0.35:
@@ -632,7 +765,12 @@ def process_source_document(doc_id: int):
                 is_reviewed=False
             )
 
-            vision_text, vision_conf, vision_data = run_multimodal_vision_analysis(file_path)
+            fallback_week = filename_week or (doc.page_index + 1 if doc.page_index is not None and doc.page_index > 0 else 1)
+
+            vision_text, vision_conf, vision_data = run_multimodal_vision_analysis(
+                file_path,
+                filename_hint=doc.original_filename or ""
+            )
             sig_detected = False
             sig_conf = 0.0
             notes = ''
@@ -643,6 +781,9 @@ def process_source_document(doc_id: int):
                 notes = 'Analyzed with Gemini Flash Multimodal Vision'
                 sig_detected = bool(vision_data.get('supervisor_signature_detected') or vision_data.get('supervisor_signed'))
                 sig_conf = float(vision_data.get('supervisor_signature_confidence', 0.85 if sig_detected else 0.0))
+
+                if vision_data.get('cover_details'):
+                    apply_cover_details_to_project(doc.project, vision_data.get('cover_details'))
             else:
                 ocr_text, ocr_conf = run_ocr_on_image(file_path)
                 if ocr_text:
@@ -671,8 +812,10 @@ def process_source_document(doc_id: int):
 
             # Step 3: Structuring with anti-fabrication
             if vision_data and vision_data.get('entries'):
-                week_num = vision_data.get('week_number') or 1
+                detected_week = vision_data.get('week_number')
+                week_num = detected_week if (detected_week and isinstance(detected_week, int) and detected_week > 0) else fallback_week
                 for idx, entry in enumerate(vision_data.get('entries', [])):
+                    entry_week = entry.get('week_number') or week_num
                     validated = validate_structured_entry_anti_fabrication(
                         source_text=text,
                         entry_data=entry,
@@ -682,7 +825,7 @@ def process_source_document(doc_id: int):
                     LogbookEntry.objects.create(
                         project=doc.project,
                         source_page=extracted_page,
-                        week_number=validated.get('week_number', week_num),
+                        week_number=validated.get('week_number', entry_week),
                         entry_date=validated.get('entry_date'),
                         day_of_week=validated.get('day_of_week', f'Day {idx+1}'),
                         raw_text=validated.get('raw_text', ''),
@@ -699,7 +842,16 @@ def process_source_document(doc_id: int):
                         is_verified=True
                     )
             elif text:
-                extract_logbook_entries_from_text(doc.project, extracted_page, text)
+                extract_logbook_entries_from_text(doc.project, extracted_page, text, fallback_week=fallback_week)
+
+            # Step 4: Finalize page status
+            if confidence < 0.35:
+                extracted_page.status = 'flagged_illegible'
+            elif confidence < 0.65 or len(text.strip()) < 15:
+                extracted_page.status = 'manual_correction_needed'
+            else:
+                extracted_page.status = 'completed'
+            extracted_page.save(update_fields=['status'])
 
             # Step 4: Finalize page status
             if confidence < 0.35:

@@ -952,6 +952,8 @@ export default function DashboardPage() {
             }
           }
           dbEntries = await fetchLogbookEntries(projId).catch(() => []);
+          // Refresh active project in case cover details were updated during OCR
+          await fetchActiveProject(projId).catch(() => {});
         }
       }
 
@@ -2286,7 +2288,9 @@ export default function DashboardPage() {
                       {p.pdf ? 'picture_as_pdf' : 'sync'}
                     </span>
                   )}
-                  <span className="n">{i === 0 ? 'Cover' : `Page ${i}`}</span>
+                  <span className="n" title={p.n || (i === 0 ? 'Cover' : `Page ${i}`)}>
+                    {p.n ? (p.n.length > 14 ? p.n.slice(0, 11) + '…' : p.n) : (i === 0 ? 'Cover' : `Page ${i}`)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -3208,7 +3212,9 @@ export default function DashboardPage() {
                       Dark. Retake
                     </button>
                   )}
-                  <span className="n">{i === 0 ? 'Cover' : `Page ${i}`}</span>
+                  <span className="n" title={p.n || (i === 0 ? 'Cover' : `Page ${i}`)}>
+                    {p.n ? (p.n.length > 14 ? p.n.slice(0, 11) + '…' : p.n) : (i === 0 ? 'Cover' : `Page ${i}`)}
+                  </span>
                   <button
                     className="ib x"
                     type="button"
@@ -3413,45 +3419,64 @@ export default function DashboardPage() {
               </span>
             </div>
             <h2>No entries recorded yet</h2>
-            <p>Upload your logbook pages or add a weekly activity directly to the database.</p>
-            <button
-              className="btn w"
-              type="button"
-              onClick={async () => {
-                if (activeProject?.id) {
-                  try {
-                    const newEntry = await createLogbookEntry(activeProject.id, {
-                      week_number: 1,
-                      verified_text: 'Completed introductory departmental orientation and engineering workstation configuration.',
-                      technical_area: 'Engineering Practice',
-                      tools_used: 'Workstation, Git, Terminal',
-                      is_verified: true,
-                    });
-                    setEntries([
-                      {
-                        id: newEntry.id,
-                        w: newEntry.week_number || 1,
-                        t: newEntry.verified_text || newEntry.raw_text || '',
-                        area: newEntry.technical_area || 'Engineering Practice',
-                        tools: newEntry.tools_used || '',
-                        ok: 1,
-                        u: 0,
-                      },
-                    ]);
-                    showToast('Week 1 entry created in database');
-                    setActiveSheet({ type: 'editWeek', index: 0 });
-                  } catch (err: any) {
-                    showToast(err.message || 'Failed to create entry');
+            <p>
+              {pages.length > 0
+                ? `${pages.length} page${pages.length > 1 ? 's' : ''} uploaded. If your pages contain handwritten weekly logs, tap Re-read with OCR to extract them automatically, or add an entry below.`
+                : 'Upload your logbook pages or add a weekly activity directly to the database.'}
+            </p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              {pages.length > 0 && (
+                <button
+                  className="btn o s"
+                  type="button"
+                  onClick={() => startReading(true)}
+                  style={{ borderRadius: '20px', gap: '6px' }}
+                >
+                  <span className="ms" aria-hidden="true" style={{ color: 'var(--g)' }}>
+                    auto_awesome
+                  </span>
+                  Re-read with OCR
+                </button>
+              )}
+              <button
+                className="btn w s"
+                type="button"
+                onClick={async () => {
+                  if (activeProject?.id) {
+                    try {
+                      const newEntry = await createLogbookEntry(activeProject.id, {
+                        week_number: 1,
+                        verified_text: 'Completed introductory departmental orientation and engineering workstation configuration.',
+                        technical_area: 'Engineering Practice',
+                        tools_used: 'Workstation, Git, Terminal',
+                        is_verified: true,
+                      });
+                      setEntries([
+                        {
+                          id: newEntry.id,
+                          w: newEntry.week_number || 1,
+                          t: newEntry.verified_text || newEntry.raw_text || '',
+                          area: newEntry.technical_area || 'Engineering Practice',
+                          tools: newEntry.tools_used || '',
+                          ok: 1,
+                          u: 0,
+                        },
+                      ]);
+                      showToast('Week 1 entry created in database');
+                      setActiveSheet({ type: 'editWeek', index: 0 });
+                    } catch (err: any) {
+                      showToast(err.message || 'Failed to create entry');
+                    }
                   }
-                }
-              }}
-              style={{ marginTop: '16px' }}
-            >
-              <span className="ms" aria-hidden="true">
-                add
-              </span>
-              Add Week 1 Entry
-            </button>
+                }}
+                style={{ borderRadius: '20px', gap: '6px' }}
+              >
+                <span className="ms" aria-hidden="true">
+                  add
+                </span>
+                Add Week 1 Entry
+              </button>
+            </div>
           </div>
         ) : (
           <>
