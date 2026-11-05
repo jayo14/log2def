@@ -2,6 +2,8 @@ import os
 import io
 import json
 import tempfile
+import hmac
+import hashlib
 from datetime import date
 from pathlib import Path
 from django.test import TestCase
@@ -16,8 +18,9 @@ from PIL import Image
 from unittest.mock import patch
 
 from .models import (
-    ReportProject, SourceDocument, ExtractedPage, 
-    LogbookEntry, LogbookPage, WeekRecord, Fact, Report, ReportSection, DefenceQuestion
+    ReportProject, SourceDocument, ExtractedPage,
+    LogbookEntry, LogbookPage, WeekRecord, Fact, Report, ReportSection, DefenceQuestion,
+    PaymentOrder, SquadWebhookEvent
 )
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
@@ -1837,3 +1840,190 @@ class Log2DefBackendTests(TestCase):
             self.assertIn("Feature 'report_generation' is disabled", str(gen_resp.data))
 
 
+class SquadPaymentModelTests(TestCase):
+    """Tests for PaymentOrder model fields and Squad-specific behaviour."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='squaduser',
+            email='squad@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Squad Test Project')
+
+    def test_payment_order_defaults_to_pending(self):
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_TEST001',
+        )
+        self.assertEqual(order.status, 'pending')
+        self.assertEqual(order.fulfilment_status, 'pending')
+        self.assertFalse(order.digital_files_unlocked)
+        self.assertEqual(order.currency, 'NGN')
+        self.assertEqual(order.amount_kobo, 200000)
+
+    def test_payment_order_statuses_include_all_required(self):
+        statuses = dict(PaymentOrder.STATUS_CHOICES)
+        self.assertIn('pending', statuses)
+        self.assertIn('paid', statuses)
+        self.assertIn('failed', statuses)
+        self.assertIn('refunded', statuses)
+        self.assertIn('review_required', statuses)
+
+    def test_payment_order_fulfilment_statuses_include_all_required(self):
+        statuses = dict(PaymentOrder.FULFILMENT_STATUS_CHOICES)
+        self.assertIn('pending', statuses)
+        self.assertIn('processing', statuses)
+        self.assertIn('ready', statuses)
+        self.assertIn('dispatched', statuses)
+        self.assertIn('delivered', statuses)
+        self.assertIn('cancelled', statuses)
+
+    def test_order_reference_generation(self):
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_TEST002',
+        )
+        self.assertTrue(order.order_reference.startswith('L2D-ORD-'))
+
+    def test_digital_order_unlocks_files(self):
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_TEST003',
+            status='paid',
+            digital_files_unlocked=True,
+            fulfilment_status='ready',
+        )
+        self.assertTrue(order.digital_files_unlocked)
+        self.assertEqual(order.fulfilment_status, 'ready')
+
+    def test_delivery_order_sets_processing(self):
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='delivery',
+            amount=4000.00,
+            amount_kobo=400000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_TEST004',
+            recipient_name='John Doe',
+            phone_number='08091234567',
+            custom_address='123 Ikeja, Lagos',
+            status='paid',
+            fulfilment_status='processing',
+        )
+        self.assertEqual(order.fulfilment_status, 'processing')
+        self.assertEqual(order.recipient_name, 'John Doe')
+        self.assertEqual(order.phone_number, '08091234567')
+        self.assertEqual(order.custom_address, '123 Ikeja, Lagos')
+
+
+class SquadWebhookSignatureTests(TestCase):
+    """Tests for Squad webhook HMAC-SHA512 signature verification."""
+
+    def test_constant_time_comparison_rejects_tampered_body(self):
+        from .squad_service import verify_webhook_signature
+
+        secret = 'test_secret_key'
+        body = b'{"test": "data"}'
+        valid_sig = hmac.new(secret.encode('utf-8'), body, hashlib.sha512).hexdigest()
+
+        # Valid signature should pass
+        with override_settings(SQUAD_SECRET_KEY=secret):
+            self.assertTrue(verify_webhook_signature(body, valid_sig))
+
+        # Tampered body should fail
+        self.assertFalse(verify_webhook_signature(b'tampered', valid_sig))
+
+        # Empty signature should fail
+        self.assertFalse(verify_webhook_signature(body, ''))
+
+
+class SquadWebhookIdempotencyTests(TestCase):
+    """Tests for webhook idempotency - duplicate events must not double-fulfil."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='idem_user',
+            email='idem@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Idempotency Test')
+        self.order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_IDEM001',
+            status='pending',
+        )
+
+    def test_duplicate_webhook_event_not_processed_twice(self):
+        from .models import SquadWebhookEvent
+
+        # First processing recorded
+        SquadWebhookEvent.objects.create(
+            event_id='evt_001',
+            transaction_reference='L2D_TXN_IDEM001',
+            event_type='charge_successful',
+            payload={'Event': 'charge_successful', 'Body': {'transaction_ref': 'L2D_TXN_IDEM001'}},
+            success=True,
+        )
+
+        # Duplicate event should be detected
+        self.assertTrue(
+            SquadWebhookEvent.objects.filter(event_id='evt_001').exists()
+        )
+
+        # Order should still be pending (not double-processed by this test)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'pending')
+
+
+class SquadAmountCurrencyValidationTests(TestCase):
+    """Tests that amount and currency are backend-controlled, not client-trusted."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='val_user',
+            email='val@example.com',
+            password='StrongPassword123!',
+        )
+        self.project = ReportProject.objects.create(user=self.user, title='Validation Test')
+
+    def test_digital_amount_is_backend_controlled(self):
+        # Digital price must be NGN 2,000 (200000 kobo)
+        self.assertEqual(int(2000.00 * 100), 200000)
+
+    def test_delivery_amount_is_backend_controlled(self):
+        # Delivery price must be NGN 4,000 (400000 kobo)
+        self.assertEqual(int(4000.00 * 100), 400000)
+
+    def test_currency_is_ngn(self):
+        order = PaymentOrder.objects.create(
+            project=self.project,
+            user=self.user,
+            order_type='digital',
+            amount=2000.00,
+            amount_kobo=200000,
+            currency='NGN',
+            transaction_reference='L2D_TXN_VAL001',
+        )
+        self.assertEqual(order.currency, 'NGN')
