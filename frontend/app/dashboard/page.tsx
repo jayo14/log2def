@@ -3462,8 +3462,9 @@ export default function DashboardPage() {
                           copy[i] = { ...copy[i], t: val };
                           return copy;
                         });
-                        if (activeProject?.id && e.id) {
-                          updateLogbookEntry(activeProject.id, e.id, {
+                        const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+                        if (projId && e.id) {
+                          updateLogbookEntry(projId, e.id, {
                             verified_text: val,
                             raw_text: val,
                           }).catch(() => {});
@@ -3484,8 +3485,9 @@ export default function DashboardPage() {
                         copy[i] = { ...copy[i], ok: 1, u: 0 };
                         return copy;
                       });
-                      if (activeProject?.id && e.id) {
-                        updateLogbookEntry(activeProject.id, e.id, {
+                      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+                      if (projId && e.id) {
+                        updateLogbookEntry(projId, e.id, {
                           is_verified: true,
                           is_flagged: false,
                         }).catch(() => {});
@@ -3543,9 +3545,14 @@ export default function DashboardPage() {
                 className="btn w s"
                 type="button"
                 onClick={async () => {
-                  if (activeProject?.id) {
+                  let projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+                  if (!projId) {
+                    const ensured = await ensureActiveProject().catch(() => null);
+                    projId = ensured?.id;
+                  }
+                  if (projId) {
                     try {
-                      const newEntry = await createLogbookEntry(activeProject.id, {
+                      const newEntry = await createLogbookEntry(projId, {
                         week_number: 1,
                         verified_text: 'Completed introductory departmental orientation and engineering workstation configuration.',
                         technical_area: 'Engineering Practice',
@@ -3621,10 +3628,15 @@ export default function DashboardPage() {
               className="btn o w s"
               type="button"
               onClick={async () => {
-                if (activeProject?.id) {
+                let projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+                if (!projId) {
+                  const ensured = await ensureActiveProject().catch(() => null);
+                  projId = ensured?.id;
+                }
+                if (projId) {
                   try {
                     const nextWeek = entries.length + 1;
-                    const newEntry = await createLogbookEntry(activeProject.id, {
+                    const newEntry = await createLogbookEntry(projId, {
                       week_number: nextWeek,
                       verified_text: `Week ${nextWeek} technical tasks, system implementation, and supervisory review.`,
                       technical_area: 'Engineering Practice',
@@ -4236,8 +4248,9 @@ export default function DashboardPage() {
                   copy[activeSheet.index] = { ...copy[activeSheet.index], t: val };
                   return copy;
                 });
-                if (activeProject?.id && entry?.id) {
-                  updateLogbookEntry(activeProject.id, entry.id, {
+                const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+                if (projId && entry?.id) {
+                  updateLogbookEntry(projId, entry.id, {
                     verified_text: val,
                     raw_text: val,
                   }).catch(() => {});
