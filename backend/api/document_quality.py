@@ -39,6 +39,21 @@ DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2} [A-Z][a-z]+ \d{4}\b")
 CHAPTER_TITLES = {
     item["key"]: item.get("chapter_title", "") for item in LASUSTECH_CS_V2["sections"]
 }
+ENRICHMENT_QUESTIONS = {
+    "ch2_history": "What does the organisation do, and when or how did it begin?",
+    "ch2_objectives": "What are the organisation’s main objectives?",
+    "ch2_structure": "Which roles or units make up its structure, and who leads them?",
+    "ch2_organogram": "Can you confirm the reporting order shown in the organogram?",
+    "ch3_duties": "What specific responsibilities did you carry out in your unit?",
+    "ch3_activities": "Which additional activities are recorded in your reviewed logbook pages?",
+    "ch3_skills": "Which skills from the proposed list can you confirm?",
+    "ch3_tools": "Which tools or equipment did you personally use?",
+    "ch3_challenges": "What real challenge did you encounter during the training?",
+    "ch3_solutions": "What did you do in response to that challenge?",
+    "ch4_summary": "Which confirmed activities or skills should the summary cover?",
+    "ch4_conclusion": "What conclusion can you draw from the confirmed training record?",
+    "ch4_recommendations": "What would have improved the training experience?",
+}
 
 
 class QualityGateError(Exception):
@@ -63,12 +78,15 @@ def _all_text(section):
     return "\n".join(_node_text(node) for node in section.get("nodes", []) if _node_text(node))
 
 
-def _issue(code, message, section_key=None, severity="blocker"):
-    return {
+def _issue(code, message, section_key=None, severity="blocker", question=None):
+    issue = {
         "code": code, "message": message, "severity": severity,
         "section_key": section_key,
         "anchor": f"#section-{section_key}" if section_key else "#report-quality",
     }
+    if question:
+        issue["question"] = question
+    return issue
 
 
 def _american_spellings_in_text(text, names):
@@ -315,7 +333,10 @@ def evaluate_report_quality(report, model=None):
         definition = next((item for item in definitions if item["key"] == key), None)
         if definition and definition.get("required") and definition.get("source") != "FIXED_BOILERPLATE":
             if len(_all_text(section).split()) < 20:
-                add(warnings, "thin_section", f"“{definition['title']}” has limited student-derived detail.", key, severity="warning")
+                add(
+                    warnings, "thin_section", f"“{definition['title']}” has limited student-derived detail.",
+                    key, severity="warning", question=ENRICHMENT_QUESTIONS.get(key),
+                )
     return {
         "passed": not blockers,
         "blockers": blockers,

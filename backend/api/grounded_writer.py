@@ -17,6 +17,17 @@ BLOCKED_PATTERNS = (
     re.compile(r"\byou\b|\byour\b", re.I),
     re.compile(r"\bmorning briefings?\b|\bPPE\b|\bfast-paced environment\b", re.I),
 )
+KNOWN_TOOL_NAMES = (
+    "Python", "JavaScript", "TypeScript", "HTML", "CSS", "React", "Django",
+    "Git", "Linux", "Windows", "Excel", "Cisco", "MySQL", "PostgreSQL",
+    "VS Code", "Visual Studio Code", "Node.js", "PHP", "Java", "C++", "C#",
+    "SQL", "PowerShell", "Ubuntu", "Figma", "Canva", "Microsoft Word",
+    "Microsoft Excel", "Packet Tracer", "Multimeter", "Oscilloscope",
+)
+TOOL_PATTERNS = tuple(
+    re.compile(r"(?<!\w)" + re.escape(name) + r"(?!\w)", re.I)
+    for name in sorted(KNOWN_TOOL_NAMES, key=len, reverse=True)
+)
 
 
 @dataclass(frozen=True)
@@ -78,9 +89,14 @@ def validate_writer_output(document: dict, brief: SectionBrief, finish_reason="S
         for pattern in BLOCKED_PATTERNS:
             if pattern.search(text):
                 raise GroundedWriterError("banned_pattern")
-        if re.search(r"\bverified\b", text, re.I):
-            raise GroundedWriterError("verification_claim_requires_signature_evidence")
+        for claim in re.finditer(r"\b(?:verified|successfully|successful|success|achieved|enhanced|improved|realized|realised)\b", text, re.I):
+            if claim.group(0).casefold() not in " ".join(facts[fid] for fid in ids).casefold():
+                raise GroundedWriterError("unsupported_success_or_verification_claim")
         cited = " ".join(facts[fid] for fid in ids)
+        for pattern in TOOL_PATTERNS:
+            match = pattern.search(text)
+            if match and match.group(0).casefold() not in cited.casefold():
+                raise GroundedWriterError("unsupported_tool_name")
         tokens = re.findall(r"\b(?:\d[\w./:-]*|[A-Z][A-Za-z0-9&'’.-]*)\b", text)
         sentence_starters = {"I", "My", "The", "A", "An", "During", "At", "In", "On", "For", "This", "That"}
         for token in tokens:

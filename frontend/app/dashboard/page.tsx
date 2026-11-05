@@ -2104,6 +2104,9 @@ export default function DashboardPage() {
     const previewRows = modelRows || layout.rows;
     const pageEstimate = dbReport?.page_estimate_breakdown || {};
     const qualityGate = dbReport?.quality_gate || { passed: true, blockers: [], warnings: [], summary: {} };
+    const needsMoreDetail = (qualityGate.warnings || []).filter((issue: any) =>
+      ['thin_section', 'low_student_content', 'unconfirmed_inference'].includes(issue.code)
+    );
     const editorLabels = dbReport?.template_version === 'lasustech_cs:2.0.0'
       ? (dbReport.sections || []).map((section: any) => section.title)
       : SEC;
@@ -2277,6 +2280,33 @@ export default function DashboardPage() {
               />
             </div>
 
+            {needsMoreDetail.length > 0 && (
+              <aside className="card" aria-label="Needs more detail" style={{ marginTop: '12px' }}>
+                <h2 style={{ marginTop: 0 }}>Needs more detail</h2>
+                <p className="mut">Add only information you can confirm. These prompts are not included in the report.</p>
+                {needsMoreDetail.map((issue: any, idx: number) => (
+                  <div key={`${issue.code}-${issue.section_key || 'report'}-${idx}`} style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                    <p style={{ margin: '0 0 6px' }}>{issue.question || issue.message}</p>
+                    {issue.section_key && (
+                      <button
+                        className="btn o s"
+                        type="button"
+                        onClick={() => {
+                          const sectionIndex = (dbReport?.sections || []).findIndex((section: any) => section.section_key === issue.section_key);
+                          if (sectionIndex >= 0) {
+                            setCurrentSectionIdx(sectionIndex);
+                            if (editorRef.current) editorRef.current.innerHTML = getSectionHtml(sectionIndex);
+                          }
+                        }}
+                      >
+                        Open {dbReport?.sections?.find((section: any) => section.section_key === issue.section_key)?.title || 'section'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </aside>
+            )}
+
             <button
               className="btn o w s"
               type="button"
@@ -2327,7 +2357,10 @@ export default function DashboardPage() {
                         type="button"
                         onClick={() => {
                           const sectionIndex = (dbReport?.sections || []).findIndex((section: any) => section.section_key === issue.section_key);
-                          if (sectionIndex >= 0) setCurrentSectionIdx(sectionIndex);
+                          if (sectionIndex >= 0) {
+                            setCurrentSectionIdx(sectionIndex);
+                            if (editorRef.current) editorRef.current.innerHTML = getSectionHtml(sectionIndex);
+                          }
                           setEditorTab('edit');
                         }}
                       >

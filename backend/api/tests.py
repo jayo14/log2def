@@ -246,7 +246,7 @@ class ProvenanceExtractionTests(TestCase):
         brief = build_section_brief("ch3_activities", "Activities Performed", [fact])
         with self.assertRaisesRegex(GroundedWriterError, "sentence_citation_missing"):
             validate_writer_output({"paragraphs": [{"sentences": [{"text": "I configured a router."}]}]}, brief)
-        with self.assertRaisesRegex(GroundedWriterError, "unsupported_named_or_numeric_token"):
+        with self.assertRaisesRegex(GroundedWriterError, "unsupported_tool_name"):
             validate_writer_output({"paragraphs": [{"sentences": [{"text": "I configured Cisco router 4.", "fact_ids": [fact.id]}]}]}, brief)
 
     def test_grounded_writer_rejects_truncation_placeholders_and_bad_finish(self):
