@@ -7,6 +7,7 @@ All server-side operations only. Secret key never exposed to frontend.
 
 import hashlib
 import hmac
+import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -172,7 +173,15 @@ def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
     Verify Squad webhook signature using HMAC-SHA512 constant-time comparison.
 
     The x-squad-encrypted-body header contains an HMAC-SHA512 hex digest of the
-    raw request body signed with the Squad secret key.
+    event payload signed with the Squad secret key.
+
+    Per the official Squad documentation, there are two valid approaches:
+    - PHP example: HMAC on the raw request body (file_get_contents('php://input'))
+    - Node/C# examples: HMAC on JSON.stringify(parsed_body)
+
+    This implementation tries both: first the raw body as received, then a
+    deterministic re-serialization of the parsed JSON body. This ensures
+    compatibility regardless of how Squad computed the signature.
 
     Uses hmac.compare_digest for constant-time comparison to prevent timing attacks.
     """
@@ -183,11 +192,30 @@ def verify_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
     if not signature_header:
         return False
 
+    expected_sig = signature_header.strip().lower()
+
+    # Attempt 1: HMAC on the raw body as received over the wire
     expected = hmac.new(
         SQUAD_SECRET_KEY.encode('utf-8'),
         raw_body,
         hashlib.sha512,
     ).hexdigest()
+    if hmac.compare_digest(expected.lower(), expected_sig):
+        return True
 
-    # Constant-time comparison
-    return hmac.compare_digest(expected.lower(), signature_header.strip().lower())
+    # Attempt 2: HMAC on a deterministic re-serialization of the parsed JSON body
+    # This matches the Node.js and C# examples in the Squad documentation
+    try:
+        parsed = json.loads(raw_body)
+        canonical = json.dumps(parsed, separators=(',', ':'), sort_keys=True)
+        expected_canonical = hmac.new(
+            SQUAD_SECRET_KEY.encode('utf-8'),
+            canonical.encode('utf-8'),
+            hashlib.sha512,
+        ).hexdigest()
+        if hmac.compare_digest(expected_canonical.lower(), expected_sig):
+            return True
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass  # Not valid JSON, raw body was the only option
+
+    return False

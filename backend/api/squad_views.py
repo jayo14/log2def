@@ -9,6 +9,7 @@ from rest_framework import generics, status, views
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes, OpenApiResponse
+from .feature_flags import is_feature_enabled, require_feature_flag
 from .models import ReportProject, PaymentOrder, SquadWebhookEvent, Report
 from .serializers import PaymentOrderSerializer
 from .squad_service import SquadError, initiate_transaction, verify_transaction, verify_webhook_signature
@@ -479,7 +480,7 @@ class SquadVerifyView(views.APIView):
             'squad_amount': tx_amount,
             'squad_currency': tx_currency,
             'order_status': order.status,
-            'amount_matches': tx_amount is None or float(tx_amount) == float(order.amount),
+            'amount_matches': tx_amount is None or Decimal(str(tx_amount)) == Decimal(str(order.amount)),
             'currency_matches': tx_currency == order.currency,
         })
 
@@ -565,3 +566,13 @@ class SecureDigitalDownloadView(views.APIView):
             logger.exception('Download generation failed')
             return Response({'error': f'Download failed: {exc}'},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# --- Feature flag gating ---
+# The payment_processing feature flag defaults to False.
+# Only views that initiate or expose payment functionality are gated.
+# Callback and webhook endpoints must remain accessible regardless of flag state
+# because Squad will call them even if the flag is temporarily disabled.
+SquadInitializeView = require_feature_flag('payment_processing')(SquadInitializeView)
+SquadVerifyView = require_feature_flag('payment_processing')(SquadVerifyView)
+SecureDigitalDownloadView = require_feature_flag('payment_processing')(SecureDigitalDownloadView)
