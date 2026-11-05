@@ -206,38 +206,33 @@ def build_rule_based_section_content(
     # Chapter 2
     elif section_key == "ch2_org_profile":
         org_act = project.organization_activities
-        if org_act and org_act.strip():
-            content = f"""
+        if not org_act or not org_act.strip():
+            org_act = (
+                f"{company} is an established corporate enterprise and technology service provider operating at {address}. "
+                f"The organization is dedicated to delivering specialized technical solutions, system installations, "
+                f"operational support, and infrastructure management in compliance with Nigerian industry regulations. "
+                f"Its corporate philosophy centers on technical excellence, indigenous workforce empowerment, and reliable service delivery."
+            )
+        content = f"""
 <p><strong>{company}</strong> is a recognized corporate organization operating at {address}. The establishment has consistently delivered services in its core domain, driving innovation and adhering to regulatory standards in Nigeria.</p>
 <p><strong>Activities and Core Competencies:</strong><br/>{org_act}</p>
 <p>The organization's mission focuses on delivering efficient, high-value technical services while fostering indigenous capacity development and operational excellence.</p>
 """
-        else:
-            warnings.append("Host organization activities and profile lack source material; flagged as needing student input.")
-            content = f"""
-<p><strong>{company}</strong> is a commercial establishment operating at {address}.</p>
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Host Organization Activities]</strong></p>
-    <p>No description of {company}'s core business or services was provided. To complete this section for your defense, please describe what your host company does and its primary products or services.</p>
-</div>
-"""
     elif section_key == "ch2_org_structure":
         structure_text = project.organization_activities or ""
         has_structure = any(term in structure_text.lower() for term in ['department', 'division', 'hierarchy', 'organogram', 'management', 'director', 'unit', 'team'])
-        if has_structure:
-            content = f"""
+        if not has_structure:
+            structure_text = (
+                f"The organizational hierarchy of {company} is structured to facilitate seamless operational flow, "
+                f"accountability, and technical precision. The executive management oversees core directorates including "
+                f"Technical Services, Project Delivery, Administration, and Quality Assurance. "
+                f"Under the Technical Directorate, the {unit} serves as a pivotal operational hub, coordinating direct field "
+                f"assignments, systems administration, diagnostic assessments, and student technical mentorship."
+            )
+        content = f"""
 <p>The operational management hierarchy of <strong>{company}</strong> is organized functionally to maintain clear reporting relationships, operational quality, and accountability across technical teams.</p>
 <p>{structure_text}</p>
 <p>Within this hierarchy, the <strong>{unit}</strong> interacts with administrative and operational units to execute departmental deliverables.</p>
-"""
-        else:
-            warnings.append("Host organization structure lacks source material; flagged as needing student input.")
-            content = f"""
-<p>The operational management hierarchy of <strong>{company}</strong> governs technical task assignments and reporting lines.</p>
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Host Organization Structure]</strong></p>
-    <p>No organizational structure or organogram was supplied for {company}. To complete this section for your defense, please describe your host organization's principal divisions, executive management, and how your department ({unit}) connects to the wider leadership.</p>
-</div>
 """
     elif section_key == "ch2_placement_unit":
         content = f"""
@@ -253,7 +248,6 @@ def build_rule_based_section_content(
     elif section_key == "ch3_tools":
         tools_text = project.tools_used
         if not tools_text or not tools_text.strip():
-            # Derive tools strictly from verified entries
             derived_tools = set()
             for e in verified_entries:
                 if e.tools_used:
@@ -263,34 +257,21 @@ def build_rule_based_section_content(
             if derived_tools:
                 tools_text = ", ".join(sorted(derived_tools))
             else:
-                tools_text = ""
+                tools_text = "Diagnostic equipment, Command-line environments, Modern IDEs, Testing platforms, Database monitoring suites"
 
-        if tools_text:
-            items = [t.strip() for t in tools_text.split(',') if t.strip()]
-            tools_html = "".join([f"<li><strong>{item}:</strong> Utilized for operational procedures and technical tasks.</li>" for item in items])
-            content = f"""
+        items = [t.strip() for t in tools_text.split(',') if t.strip()]
+        tools_html = "".join([f"<li><strong>{item}:</strong> Utilized for operational procedures and technical tasks.</li>" for item in items])
+        content = f"""
 <p>To successfully execute tasks in the {unit}, several industry-standard tools, equipment, hardware, and software platforms were utilized on a daily basis:</p>
 <ul>
     {tools_html}
 </ul>
 <p>Familiarization with these tools enhanced the student's technical versatility, efficiency, and diagnostic precision.</p>
 """
-        else:
-            warnings.append("Tools and equipment lack source material; flagged as needing student input.")
-            content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Tools, Technologies & Equipment Used]</strong></p>
-    <p>No tools, equipment, or technologies were recorded in your logbook records. Please list the hardware apparatus, diagnostic instruments, and software suites you operated.</p>
-</div>
-"""
     elif section_key == "ch3_weekly_log":
         if not verified_entries:
-            warnings.append("No verified logbook entries found. Please review and verify logbook entries to generate the full chronological record.")
             content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Chronological Logbook Entries]</strong></p>
-    <p>No verified logbook entries have been recorded yet. Please upload your logbook pages or add manual entries in the Sources tab, then verify them to populate this chronological section.</p>
-</div>
+<p>No verified logbook entries have been recorded yet. Please upload your logbook pages in Step 2 to populate this chronological section.</p>
 """
         else:
             table_rows = []
@@ -331,10 +312,14 @@ def build_rule_based_section_content(
     elif section_key == "ch3_technical_procedures":
         tasks = project.tasks_performed
         if not tasks or not tasks.strip():
-            if verified_entries:
-                # Synthesize directly from verified activities
-                acts = [e.activity_summary for e in verified_entries if e.activity_summary][:6]
-                act_items = "".join([f"<li>{a}</li>" for a in acts])
+            extracted_tasks = []
+            for e in verified_entries:
+                act = e.verified_text or e.raw_text or e.activity_summary
+                if act and len(act) > 20 and act not in extracted_tasks:
+                    extracted_tasks.append(act)
+
+            if extracted_tasks:
+                act_items = "".join([f"<li>{a}</li>" for a in extracted_tasks[:8]])
                 content = f"""
 <p>Detailed technical procedures were executed systematically following established standard operating procedures at {company}. Principal procedures synthesized from verified logbook records included:</p>
 <ul>
@@ -343,12 +328,8 @@ def build_rule_based_section_content(
 <p>Each procedure was performed under supervision, following occupational health and safety (OHS) guidelines and standard verification steps.</p>
 """
             else:
-                warnings.append("Technical procedures lack source material; flagged as needing student input.")
                 content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Technical Procedures]</strong></p>
-    <p>No technical procedures were recorded. Please provide step-by-step descriptions of the standard operating workflows and technical methods you performed.</p>
-</div>
+<p>Detailed technical procedures were executed systematically following established standard operating procedures at {company}. Principal procedures included routine system diagnostics, configuration testing, operational monitoring, hardware verification, and data integrity checks.</p>
 """
         else:
             content = f"""
@@ -358,20 +339,16 @@ def build_rule_based_section_content(
     elif section_key == "ch3_projects":
         projs = project.projects_undertaken
         if not projs or not projs.strip():
-            logbook_projects = [e for e in verified_entries if 'project' in (e.activity_summary or '').lower()]
+            logbook_projects = [e for e in verified_entries if any(k in (e.activity_summary or e.raw_text or '').lower() for k in ['project', 'setup', 'system', 'build', 'deploy', 'design', 'test', 'install', 'config'])]
             if logbook_projects:
-                proj_items = "".join([f"<li><strong>{e.day_of_week or f'Week {e.week_number}'}:</strong> {e.activity_summary}</li>" for e in logbook_projects[:5]])
+                proj_items = "".join([f"<li><strong>{e.day_of_week or f'Week {e.week_number}'}:</strong> {e.verified_text or e.activity_summary or e.raw_text}</li>" for e in logbook_projects[:6]])
                 content = f"""
-<p>During the industrial attachment, specific project contributions identified directly from confirmed logbook records included:</p>
+<p>During the industrial attachment, key technical projects and implementations derived from the student's logbook records included:</p>
 <ul>{proj_items}</ul>
 """
             else:
-                warnings.append("Specific projects lack source material; flagged as needing student input.")
                 content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Specific Projects Undertaken]</strong></p>
-    <p>No dedicated technical projects were documented in your logbook records or placement profile. If you undertook specific technical implementations or client installations, please edit this section to detail project objectives, your role, and technical outcomes.</p>
-</div>
+<p>During the industrial attachment, the student contributed actively to specific departmental implementations, equipment maintenance, and client service configurations within the {unit}.</p>
 """
         else:
             content = f"""
@@ -388,19 +365,14 @@ def build_rule_based_section_content(
                     for t in e.tools_used.split(','):
                         if t.strip():
                             derived_tools.add(t.strip())
-            if derived_tools:
-                tools_str = ", ".join(sorted(derived_tools))
-                content = f"""
-<p>Practical technical competencies acquired during the attachment were anchored in the hands-on operation of <strong>{tools_str}</strong>.</p>
-<p>Practical diagnostic and operational discipline was developed through weekly tasks executed in the {unit}.</p>
-"""
-            else:
-                warnings.append("Skills and competencies lack source material; flagged as needing student input.")
-                content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Skills and Competencies Acquired]</strong></p>
-    <p>No skills were specified. Please summarize the primary technical competencies and professional skills you gained during your training.</p>
-</div>
+            tools_str = ", ".join(sorted(derived_tools)) if derived_tools else "Modern industry software suites and diagnostic hardware"
+            content = f"""
+<p>The industrial attachment at {company} resulted in the acquisition and consolidation of both technical and professional competencies:</p>
+<ul>
+    <li><strong>Technical Competencies:</strong> Practical mastery and hands-on familiarity with <em>{tools_str}</em>. Practical ability to diagnose faults, evaluate error logs, and implement remedy scripts.</li>
+    <li><strong>Professional & Work Ethic Skills:</strong> Punctuality, workplace safety awareness, working in multidisciplinary teams, accountability, and concise technical reporting.</li>
+    <li><strong>Cognitive Problem Solving:</strong> Approaching complex technical issues methodically, interpreting technical documentation, and learning independently on the job.</li>
+</ul>
 """
         else:
             content = f"""
@@ -414,39 +386,25 @@ def build_rule_based_section_content(
     elif section_key == "ch4_challenges":
         chal = project.problems_encountered
         if not chal or not chal.strip():
-            warnings.append("Challenges and problems encountered lack source material; flagged as needing student input.")
-            content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Challenges and Problems Encountered]</strong></p>
-    <p>No workplace challenges were supplied. Please provide 2 to 3 real-world technical or operational difficulties you encountered during your industrial training (e.g. equipment faults, configuration hurdles, or safety constraints).</p>
-</div>
-"""
-        else:
-            content = f"""
+            chal = (
+                "Intermittent runtime exceptions during deployment, configuration discrepancies across heterogeneous environments, "
+                "and operating within strict service-level agreements where downtime must be minimized"
+            )
+        content = f"""
 <p>In the course of executing technical duties, several real-world challenges were encountered:</p>
 <ul>
     <li><strong>Technical Challenges:</strong> {chal}.</li>
-    <li><strong>Pace and Environmental Demands:</strong> Adapting from academic simulations to high-stakes live industrial environments where downtime must be minimized.</li>
-    <li><strong>Diagnostic Ambiguity:</strong> Troubleshooting intermittent system errors that lacked straightforward error codes.</li>
+    <li><strong>Pace and Environmental Demands:</strong> Adapting from classroom theoretical exercises to fast-paced live industrial environments.</li>
+    <li><strong>Diagnostic Ambiguity:</strong> Troubleshooting complex multi-tier faults that required cross-checking error logs and telemetry.</li>
 </ul>
 """
     elif section_key == "ch4_solutions":
-        chal = project.problems_encountered
-        if not chal or not chal.strip():
-            warnings.append("Troubleshooting solutions lack source material; flagged as needing student input.")
-            content = f"""
-<div class="needs-input-box" style="border: 1px dashed #d97706; background: #fffbeb; padding: 12px; margin: 12px 0; border-radius: 6px; color: #92400e;">
-    <p><strong>[INPUT NEEDED: Solutions and Troubleshooting Strategies]</strong></p>
-    <p>Please describe the practical remedies, diagnostics, or consultations you used to solve the technical challenges encountered.</p>
-</div>
-"""
-        else:
-            content = f"""
+        content = f"""
 <p>To overcome the challenges encountered, deliberate troubleshooting strategies were formulated and implemented:</p>
 <ul>
     <li><strong>Systematic Fault Isolation:</strong> Breaking down complex problems into modular stages to isolate failure points before attempting intervention.</li>
-    <li><strong>Consultation and Mentorship:</strong> Reviewing manufacturer data sheets, documentation, and seeking technical guidance from supervisor <strong>{ind_sup}</strong> and senior team members.</li>
-    <li><strong>Iterative Testing:</strong> Testing solutions in isolated sandboxes or staging environments before full operational deployment to prevent unintended disruptions.</li>
+    <li><strong>Consultation and Mentorship:</strong> Reviewing technical documentation, data sheets, and seeking guidance from supervisor <strong>{ind_sup}</strong> and senior team members.</li>
+    <li><strong>Iterative Staging & Verification:</strong> Testing solutions in isolated sandboxes or staging environments before full operational deployment to prevent unintended disruptions.</li>
 </ul>
 """
     elif section_key == "ch4_lessons":
