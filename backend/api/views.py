@@ -532,7 +532,7 @@ class DocumentDetailView(views.APIView):
         doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
         LogbookEntry.objects.filter(source_page__document=doc).delete()
         doc.delete()
-        return Response({"message": "Source document deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class DocumentDownloadView(views.APIView):
