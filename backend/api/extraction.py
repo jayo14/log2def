@@ -171,15 +171,41 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
     # Legacy LogbookEntry verification has inconsistent provenance, so it does
     # not count as a confirmed Fact for safety/completeness decisions.
     activity_count = confirmed_activities
-    by_section = {
-        "ch3_activities": {"label": "Activities", "confirmed": activity_count, "pages": len(pages), "status": "sufficient" if activity_count >= minimum_activities else "insufficient_material"},
-        "ch3_tools": {"label": "Tools and equipment", "confirmed": Fact.objects.filter(project=project, kind__in=["tool", "equipment"], status="confirmed").count(), "status": "needs_student_input"},
+    from .templates import get_section_requirements
+    manifest = get_section_requirements()
+    section_fact_kinds = {
+        "ch1_scope": ["organisation_detail"], "ch2_history": ["organisation_detail"],
+        "ch2_objectives": ["organisation_detail"], "ch2_structure": ["organisation_detail"],
+        "ch2_organogram": ["organisation_detail"], "ch3_duties": ["duty"],
+        "ch3_activities": ["activity"], "ch3_skills": ["skill"],
+        "ch3_tools": ["tool", "equipment"], "ch3_challenges": ["challenge"],
+        "ch3_solutions": ["solution"], "ch4_summary": ["activity", "duty", "skill"],
+        "ch4_conclusion": ["activity", "duty", "skill"],
     }
+    by_section = {}
+    for section in manifest["sections"]:
+        key = section["key"]
+        kinds = section_fact_kinds.get(key, [])
+        count = Fact.objects.filter(project=project, kind__in=kinds, status="confirmed").count() if kinds else 0
+        status_value = "fixed_text" if section["source"] == "FIXED_BOILERPLATE" else (
+            "confirmed_material" if count else ("insufficient_material" if section["source"] in {"LOGBOOK", "INFERRED", "CONFIRMED_CONTENT"} else "needs_student_input")
+        )
+        if key == "ch3_activities":
+            status_value = "sufficient" if activity_count >= minimum_activities else "insufficient_material"
+            count = activity_count
+        by_section[key] = {
+            "label": section["title"], "required": section.get("required", False),
+            "source": section["source"], "confirmed": count, "pages": len(pages), "status": status_value,
+        }
     questions = []
     if activity_count < minimum_activities:
         questions.append("What other dated activities are recorded in your logbook? Confirm each from the page image or transcript.")
     if by_section["ch3_tools"]["confirmed"] == 0:
         questions.append("Did you use any specific tools or equipment? Enter names only if you can confirm them.")
+    if by_section["ch3_challenges"]["confirmed"] == 0:
+        questions.append("What challenge did you personally encounter during the placement, if any?")
+    if by_section["ch3_solutions"]["confirmed"] == 0 and by_section["ch3_challenges"]["confirmed"]:
+        questions.append("How was the recorded challenge addressed? Describe only what happened.")
     transcript_review = {"clarifying_questions": [], "spelling_suggestions": []}
     for entry in DayEntry.objects.filter(week_record__project=project).order_by("id"):
         review = review_ambiguities(entry.text)

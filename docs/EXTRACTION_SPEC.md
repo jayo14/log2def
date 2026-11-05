@@ -81,8 +81,9 @@ specialist content without supporting confirmed facts.
 
 ## Material sufficiency and completeness
 
-`material_sufficiency(project)` reports confirmed activities and tools by
-section, blank transcript pages first, and short targeted questions. One
+`material_sufficiency(project)` reports each manifest section's source,
+confirmed Fact count, required flag and status, blank transcript pages first,
+and short targeted questions. One
 confirmed activity Fact is `insufficient_material`; legacy
 `LogbookEntry.is_verified` is not counted because its provenance is inconsistent.
 Template boilerplate does not increase this count. In v2 completeness, this status blocks report generation
