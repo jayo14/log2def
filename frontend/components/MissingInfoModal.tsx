@@ -29,7 +29,7 @@ export default function MissingInfoModal({
       setFormData({
         full_name: project.full_name || '',
         matric_number: project.matric_number || '',
-        university_name: project.university_name || 'Lagos State University of Science and Technology (LASUSTECH)',
+        university_name: project.university_name || '',
         department: project.department || '',
         organization_name: project.organization_name || '',
         organization_address: project.organization_address || project.company_address || '',
@@ -153,7 +153,7 @@ export default function MissingInfoModal({
     university_name: {
       title: 'Institution Name',
       subtitle: 'Your higher institution.',
-      placeholder: 'Lagos State University of Science and Technology (LASUSTECH)',
+      placeholder: 'Enter your institution name',
     },
     placement_department: {
       title: 'Unit or Department at Company',
@@ -222,7 +222,7 @@ export default function MissingInfoModal({
               <p style={{ fontSize: '12.5px', color: 'var(--mut, #5f6761)', margin: '3px 0 0' }}>
                 {targetKeys.length > 0
                   ? `Only ${targetKeys.length} required field${targetKeys.length === 1 ? '' : 's'} needed for your LASUSTECH report.`
-                  : 'All essential information has been verified from your logbook.'}
+                  : 'Your profile fields are saved. Continue to the report interview for required narrative details.'}
               </p>
             </div>
           </div>
@@ -276,7 +276,7 @@ export default function MissingInfoModal({
                 All required details are in place!
               </h3>
               <p style={{ fontSize: '13px', color: 'var(--gd, #04513a)', margin: 0 }}>
-                You can generate your 12–15 page LASUSTECH technical report directly.
+                Profile details are in place. The report interview may still have required questions.
               </p>
             </div>
           ) : (
@@ -357,12 +357,21 @@ export default function MissingInfoModal({
           >
             <span className="ms" style={{ fontSize: '16px', color: 'var(--g, #066b4d)' }}>info</span>
             <span>
-              Log2Def only asks for missing essentials. Optional fields (like company unit) may remain blank without blocking generation.
+              Optional personal pages may be skipped. Required narrative answers are collected in the report interview.
             </span>
           </div>
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-3">
+            {project?.id && (
+              <a
+                href={`/projects/${project.id}/intake`}
+                className="px-4 py-2.5 rounded-full text-xs font-bold text-center"
+                style={{ border: '1px solid var(--g, #066b4d)', color: 'var(--g, #066b4d)' }}
+              >
+                Open report interview
+              </a>
+            )}
             <button
               type="button"
               onClick={onClose}

@@ -297,6 +297,17 @@ export const projectsApi = {
     });
   },
 
+  getGuidedIntake: async <T = unknown>(projectId: number | string) => {
+    return apiRequest<T>(`/projects/${projectId}/intake/`);
+  },
+
+  saveGuidedIntakeAnswer: async <T = unknown>(projectId: number | string, key: string, answer: unknown) => {
+    return apiRequest<T>(`/projects/${projectId}/intake/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ key, answer }),
+    });
+  },
+
   // Report & Sections
   getReport: async (projectId: number | string) => {
     return apiRequest(`/projects/${projectId}/report/`);
