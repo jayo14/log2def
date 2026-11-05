@@ -339,6 +339,7 @@ class ReportParagraph(models.Model):
     section_key = models.CharField(max_length=64)
     order = models.PositiveIntegerField(default=0)
     text = models.TextField()
+    student_confirmed = models.BooleanField(default=False)
     facts = models.ManyToManyField(Fact, related_name='report_paragraphs', blank=True)
 
 

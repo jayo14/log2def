@@ -55,9 +55,13 @@ them. Week start/end dates are the min/max valid dates found. Table structure is
    quantities and tool names, and may not add tools, outcomes, people, dates,
    metrics, projects or domain claims.
 
-The current v2 generator does not yet create normalized Fact-linked paragraphs.
-It therefore leaves logbook-derived duties, activities, and summary sections
-empty instead of copying transcript lines verbatim. Chapter 3 tools can use
+Student-normalized report paragraphs are stored with Fact IDs at
+`POST /api/projects/{id}/report/paragraphs/`. The API requires the student to
+confirm the wording and every linked Fact to already be confirmed.
+
+The current v2 renderer does not yet insert stored normalized paragraphs into
+the visible report model. The generator therefore leaves logbook-derived
+duties, activities, and summary sections empty instead of copying transcript lines verbatim. Chapter 3 tools can use
 the explicitly student-provided profile field; legacy tool values from parsed
 entries are not copied.
 

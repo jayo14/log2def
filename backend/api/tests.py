@@ -235,6 +235,29 @@ class ProvenanceExtractionTests(TestCase):
             self.assertEqual(section.source_links, [])
         self.assertEqual(report.sections.get(section_key="ch3_tools").content, "")
 
+    def test_normalized_report_paragraph_requires_confirmed_fact_ids(self):
+        report = generate_full_report(self.project)
+        fact, _ = persist_fact_candidate(self.project, {
+            "kind": "activity", "text": "checked a network link", "provenance": "LOGBOOK",
+            "evidence_quote": "checked a network link", "inference_reason": "",
+        }, "checked a network link")
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        endpoint = f"/api/projects/{self.project.id}/report/paragraphs/"
+        payload = {
+            "section_key": "ch3_activities", "text": "I checked a network link during the week.",
+            "fact_ids": [fact.id], "student_confirmed": True,
+        }
+        blocked = client.post(endpoint, payload, format="json")
+        self.assertEqual(blocked.status_code, 400)
+        fact.status = "confirmed"
+        fact.save(update_fields=["status"])
+        saved = client.post(endpoint, payload, format="json")
+        self.assertEqual(saved.status_code, 201)
+        self.assertEqual(saved.data["fact_ids"], [fact.id])
+        self.assertTrue(saved.data["student_confirmed"])
+        self.assertEqual(report.provenance_paragraphs.count(), 1)
+
 
 class Log2DefBackendTests(TestCase):
     def setUp(self):

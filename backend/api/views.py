@@ -24,14 +24,14 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiPara
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, PaymentOrder, Fact
+    DefenceQuestion, DefenceSession, PaymentOrder, Fact, ReportParagraph
 )
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from .serializers import (
     UserRegistrationSerializer, UserSerializer,
     ReportProjectSerializer, ReportProjectDetailSerializer,
     SourceDocumentSerializer, ExtractedPageSerializer,
-    LogbookEntrySerializer, FactSerializer, ReportSerializer, ReportSectionSerializer,
+    LogbookEntrySerializer, FactSerializer, ReportParagraphSerializer, ReportSerializer, ReportSectionSerializer,
     ReportVersionSerializer, ReportVersionCreateRequestSerializer,
     ReportTemplateSerializer,
     PresentationSlidesResponseSerializer, PresentationScriptResponseSerializer,
@@ -704,6 +704,47 @@ class FactReviewView(views.APIView):
         fact.status = request.data["status"]
         fact.save(update_fields=["status"])
         return Response(FactSerializer(fact).data)
+
+
+class ReportParagraphView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(responses=ReportParagraphSerializer(many=True))
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        report = get_object_or_404(Report, project=project)
+        paragraphs = report.provenance_paragraphs.prefetch_related("facts").order_by("section_key", "order")
+        return Response(ReportParagraphSerializer(paragraphs, many=True).data)
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=ReportParagraphSerializer)
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        report = get_object_or_404(Report, project=project)
+        section_key = request.data.get("section_key")
+        text_value = request.data.get("text")
+        fact_ids = request.data.get("fact_ids")
+        if not isinstance(text_value, str) or not text_value.strip():
+            return Response({"error": "A non-empty normalized paragraph is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if request.data.get("student_confirmed") is not True:
+            return Response({"error": "Student confirmation of this wording is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(fact_ids, list) or not fact_ids:
+            return Response({"error": "At least one supporting Fact ID is required."}, status=status.HTTP_400_BAD_REQUEST)
+        from .templates import get_section_requirements
+        sections = {section["key"]: section for section in get_section_requirements()["sections"]}
+        if section_key not in sections or sections[section_key]["source"] not in {
+            "LOGBOOK", "INFERRED", "CONFIRMED_CONTENT", "STUDENT_PROVIDED"
+        }:
+            return Response({"error": "Paragraph section is not a student-derived template section."}, status=status.HTTP_400_BAD_REQUEST)
+        facts = list(Fact.objects.filter(project=project, id__in=fact_ids, status="confirmed"))
+        if len(facts) != len(set(fact_ids)):
+            return Response({"error": "Every supporting Fact must belong to this project and be confirmed."}, status=status.HTTP_400_BAD_REQUEST)
+        paragraph = ReportParagraph.objects.create(
+            report=report, section_key=section_key,
+            order=report.provenance_paragraphs.filter(section_key=section_key).count(),
+            text=text_value.strip(), student_confirmed=True,
+        )
+        paragraph.facts.set(facts)
+        return Response(ReportParagraphSerializer(paragraph).data, status=status.HTTP_201_CREATED)
 
 
 class LogbookBulkVerifyView(views.APIView):

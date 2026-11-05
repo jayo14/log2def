@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder, Fact
+    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder, Fact, ReportParagraph
 )
 
 
@@ -130,6 +130,14 @@ class FactSerializer(serializers.ModelSerializer):
         fields = ('id', 'kind', 'text', 'provenance', 'source_entry_ids', 'evidence_quote',
                   'inference_reason', 'status', 'validation_error')
         read_only_fields = fields
+
+
+class ReportParagraphSerializer(serializers.ModelSerializer):
+    fact_ids = serializers.PrimaryKeyRelatedField(source="facts", many=True, read_only=True)
+
+    class Meta:
+        model = ReportParagraph
+        fields = ("id", "section_key", "order", "text", "student_confirmed", "fact_ids")
 
 
 class ReportSectionSerializer(serializers.ModelSerializer):
