@@ -481,18 +481,14 @@ class PaymentOrder(models.Model):
         return f"{self.project_id} - {self.order_type} - {self.transaction_reference} ({self.status})"
 
     def save(self, *args, **kwargs):
-        if not self.order_reference:
-            self.order_reference = f"L2D-ORD-{self.id or 0:06d}"
         if not self.transaction_reference:
             import uuid
             self.transaction_reference = f"L2D_TXN_{uuid.uuid4().hex[:12]}"
         if self.amount and not self.amount_kobo:
             self.amount_kobo = int(self.amount * 100)
         super().save(*args, **kwargs)
-        # Ensure order_reference is stable after first save (id is now known)
-        if not self.order_reference or self.order_reference == f"L2D-ORD-{self.id:06d}":
-            pass  # already set
-        elif self.pk and not self.order_reference.startswith('L2D-ORD-'):
+        # Generate stable order_reference now that id is known
+        if not self.order_reference:
             self.order_reference = f"L2D-ORD-{self.pk:06d}"
             super().save(update_fields=['order_reference'])
 
