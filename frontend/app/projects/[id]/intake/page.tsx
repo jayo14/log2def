@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { projectsApi } from '@/lib/api';
 
@@ -29,7 +29,7 @@ const defaultAnswer = (step: Step, data: IntakeData | null): Answer => {
 };
 const errorText = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
-export default function GuidedIntakePage() {
+function GuidedIntakePageContent() {
   const params = useParams();
   const router = useRouter();
   const projectId = String(params?.id || '');
@@ -215,5 +215,13 @@ export default function GuidedIntakePage() {
         </form>
       </section>
     </main>
+  );
+}
+
+export default function GuidedIntakePage() {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-xl p-6 text-sm text-slate-600">Loading your report interview…</main>}>
+      <GuidedIntakePageContent />
+    </Suspense>
   );
 }
