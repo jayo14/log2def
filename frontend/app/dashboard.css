@@ -748,14 +748,67 @@
 }
 
 .dashboard-root .doc {
-  min-height: 300px;
-  padding: 20px 18px;
-  font: 16.5px/1.75 'Times New Roman', Times, serif;
+  min-height: 520px;
+  padding: 32px 28px;
+  background: #ffffff;
+  font: 15px/1.75 'Times New Roman', Times, Georgia, serif;
+  color: #111827;
   outline: none;
+  border-radius: 0 0 12px 12px;
 }
 
 .dashboard-root .doc:focus {
-  box-shadow: inset 0 0 0 3px rgba(15, 163, 122, 0.22);
+  box-shadow: inset 0 0 0 2px rgba(15, 163, 122, 0.35);
+}
+
+.dashboard-root .doc p {
+  margin: 0 0 12px;
+  text-align: justify;
+}
+
+.dashboard-root .doc h2 {
+  font-size: 17px;
+  font-weight: bold;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 18px 0 12px;
+}
+
+.dashboard-root .doc h3 {
+  font-size: 15px;
+  font-weight: bold;
+  margin: 16px 0 8px;
+  color: #1f2937;
+}
+
+.dashboard-root .doc h4 {
+  font-size: 14px;
+  font-weight: bold;
+  font-style: italic;
+  margin: 12px 0 6px;
+}
+
+.dashboard-root .doc ul,
+.dashboard-root .doc ol {
+  margin: 10px 0 14px;
+  padding-left: 26px;
+}
+
+.dashboard-root .doc li {
+  margin-bottom: 6px;
+}
+
+.dashboard-root .doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 13px;
+}
+
+.dashboard-root .doc table th,
+.dashboard-root .doc table td {
+  border: 1px solid #d1d5db;
+  padding: 8px 10px;
 }
 
 .dashboard-root .tag {
@@ -1026,28 +1079,76 @@
 
 .dashboard-root .pgp {
   position: relative;
-  aspect-ratio: 210/297;
-  background: #fff;
+  min-height: 580px;
+  background: #ffffff;
   border-radius: 6px;
-  box-shadow: 0 14px 30px -14px rgba(20, 32, 27, 0.4), 0 0 0 1px var(--line);
-  padding: 24px 22px;
-  font: 12px/1.65 'Times New Roman', Times, serif;
-  overflow: hidden;
-  margin-bottom: 6px;
+  box-shadow: 0 4px 20px -4px rgba(20, 32, 27, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  padding: 38px 32px 42px;
+  font: 13px/1.7 'Times New Roman', Times, Georgia, serif;
+  overflow: visible;
+  margin-bottom: 24px;
 }
 
 .dashboard-root .pgp p {
-  margin: 0 0 8px;
+  margin: 0 0 12px;
+  text-align: justify;
+  text-justify: inter-word;
+}
+
+.dashboard-root .pgp h2 {
+  font-size: 15px;
+  font-weight: bold;
+  text-align: center;
+  text-transform: uppercase;
+  margin: 18px 0 14px;
+  letter-spacing: 0.5px;
+}
+
+.dashboard-root .pgp h3 {
+  font-size: 13.5px;
+  font-weight: bold;
+  margin: 16px 0 8px;
+}
+
+.dashboard-root .pgp h4 {
+  font-size: 13px;
+  font-weight: bold;
+  font-style: italic;
+  margin: 12px 0 6px;
+}
+
+.dashboard-root .pgp ul,
+.dashboard-root .pgp ol {
+  margin: 8px 0 12px;
+  padding-left: 24px;
+}
+
+.dashboard-root .pgp li {
+  margin-bottom: 6px;
+  line-height: 1.6;
+}
+
+.dashboard-root .pgp table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 11px;
+}
+
+.dashboard-root .pgp table th,
+.dashboard-root .pgp table td {
+  border: 1px solid #d1d5db;
+  padding: 6px 8px;
 }
 
 .dashboard-root .pgp .pn {
-  position: absolute;
-  bottom: 10px;
-  left: 0;
-  right: 0;
+  position: relative;
   text-align: center;
-  font-size: 10px;
-  color: #666;
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 24px;
+  padding-top: 10px;
+  border-top: 1px solid #f3f4f6;
 }
 
 .dashboard-root .pl2 {

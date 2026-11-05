@@ -2243,15 +2243,9 @@ export default function DashboardPage() {
                   className="pgp"
                   role="group"
                   aria-label={q.t}
-                  style={{
-                    fontFamily: "'Times New Roman', Times, serif",
-                    textAlign: 'justify',
-                    lineHeight: 1.65,
-                    paddingLeft: '22px',
-                  }}
                 >
                   <div dangerouslySetInnerHTML={{ __html: q.h }} />
-                  {q.l && <div className="pn">{q.l}</div>}
+                  {q.l && <div className="pn">Page {q.l}{q.p > 1 ? ` – ${+q.l + q.p - 1}` : ''}</div>}
                 </div>
               </React.Fragment>
             ))}
