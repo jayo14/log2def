@@ -1,6 +1,8 @@
 import os
 import io
+import json
 from datetime import date
+from pathlib import Path
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -24,6 +26,36 @@ from .defence_generator import (
     generate_presentation_script
 )
 from .feature_flags import DEFAULT_FEATURE_FLAGS, is_feature_enabled, get_all_feature_flags
+from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requirements, ensure_default_template_in_db
+
+
+class TemplateV2ContractTests(TestCase):
+    def test_v2_matches_coordinator_section_order(self):
+        sections = LASUSTECH_CS_V2["sections"]
+        self.assertEqual(
+            [section["title"] for section in sections if section["chapter"] in range(1, 5)],
+            [
+                "1.1 Background of SIWES", "1.2 Objectives of SIWES", "1.3 Importance of SIWES",
+                "1.4 Scope of the Training", "1.5 Duration of the Training",
+                "2.1 Brief History of the Organisation", "2.2 Objectives of the Organisation",
+                "2.3 Organisational Structure", "2.4 Organogram of the Organisation",
+                "3.1 Duties and Responsibilities", "3.2 Activities Performed", "3.3 Skills Acquired",
+                "3.4 Equipment/Tools Used", "3.5 Challenges Encountered", "3.6 Solutions to the Challenges",
+                "4.1 Summary", "4.2 Conclusion", "4.3 Recommendations",
+            ],
+        )
+
+    def test_v2_manifest_confirmation_defaults(self):
+        manifest = get_section_requirements()
+        self.assertEqual(manifest["version"], "2.0.0")
+        fields = manifest["required_fields"]
+        self.assertEqual(fields["college"]["status"], "NEEDS_CONFIRMATION")
+        self.assertFalse(fields["abstract_enabled"]["default"])
+        self.assertTrue(fields["toc_enabled"]["default"])
+
+    def test_v1_snapshot_definition_remains_unchanged(self):
+        original = json.loads((Path(__file__).parent / "templates" / "lasustech_standard_v1.json").read_text())
+        self.assertEqual(LASUSTECH_STANDARD_V1, original)
 
 
 class Log2DefBackendTests(TestCase):
@@ -76,6 +108,14 @@ class Log2DefBackendTests(TestCase):
             tasks_performed='Monitoring fiber route telemetry, configuring VLAN subnets, and splicing multi-strand armored optical cables.',
             problems_encountered='Fiber attenuation losses due to physical micro-bending in patch cords.',
             skills_acquired='Optical Time Domain Reflectometer (OTDR) analysis, IP subnetting, and enterprise network diagnostics.'
+        )
+        # Existing report fixtures are explicitly pinned to v1 for regeneration compatibility tests.
+        legacy_template = ensure_default_template_in_db()
+        Report.objects.create(
+            project=self.project1,
+            template=legacy_template,
+            template_version='lasustech-standard:1.0.0',
+            template_snapshot=LASUSTECH_STANDARD_V1,
         )
 
     def test_registration_and_authentication(self):
@@ -774,27 +814,55 @@ class Log2DefBackendTests(TestCase):
 
         report = generate_full_report(sparse_proj)
 
-        # 1. Organization structure: no source material -> flagged with [INPUT NEEDED], not invented
-        sec_structure = report.sections.get(section_key='ch2_org_structure')
-        self.assertIn('[INPUT NEEDED', sec_structure.content)
-        self.assertTrue(any('lacks source material' in w for w in sec_structure.warnings))
+        self.assertEqual(report.template_version, 'lasustech_cs:2.0.0')
+        self.assertEqual({s.chapter_number for s in report.sections.filter(chapter_number__gt=0).exclude(section_key='references')}, {1, 2, 3, 4})
+        all_content = '\n'.join(s.content for s in report.sections.all())
+        for invented in ('Engineering / IT Unit', 'Standard toolkit', 'Mika Labs', '[INPUT NEEDED', '[Student'):
+            self.assertNotIn(invented, all_content)
+        self.assertEqual(report.sections.get(section_key='ch2_history').content, '')
+        self.assertEqual(report.sections.get(section_key='ch3_skills').content, '')
+        self.assertIn('Attended morning briefing', report.sections.get(section_key='ch3_activities').content)
+        self.assertTrue(report.page_estimate_breakdown['informational_only'])
+        self.assertIn('student_derived_words', report.page_estimate_breakdown)
 
-        # 2. Specific projects: no source material -> flagged with [INPUT NEEDED], not invented
-        sec_projects = report.sections.get(section_key='ch3_projects')
-        self.assertIn('[INPUT NEEDED', sec_projects.content)
-        self.assertTrue(any('source material' in w for w in sec_projects.warnings))
-
-        # 3. Challenges & solutions: no source material -> flagged with [INPUT NEEDED], not invented
-        sec_challenges = report.sections.get(section_key='ch4_challenges')
-        self.assertIn('[INPUT NEEDED', sec_challenges.content)
-        sec_solutions = report.sections.get(section_key='ch4_solutions')
-        self.assertIn('[INPUT NEEDED', sec_solutions.content)
-
-        # 4. Estimated pages and length feedback: report is under target -> provides actionable recommendations
-        breakdown = report.page_estimate_breakdown
-        self.assertTrue(breakdown['is_under_target'])
-        self.assertGreater(len(report.readiness_feedback), 0)
-        self.assertTrue(any('verified entries' in tip for tip in report.readiness_feedback))
+    def test_v2_docx_uses_four_chapters_and_configured_format(self):
+        project = ReportProject.objects.create(
+            user=self.user1,
+            full_name='Ada Example',
+            matric_number='SYN/0001',
+            department='Computer Science',
+            college='',
+            degree='Bachelor of Science',
+            organization_name='Example Systems Ltd',
+            organization_address='Lagos, Nigeria',
+            placement_department='Software Unit',
+            training_start_date=date(2026, 1, 5),
+            training_end_date=date(2026, 4, 3),
+            tools_used='Python',
+            skills_acquired='Python programming',
+            problems_encountered='A test environment could not reach the package registry.',
+        )
+        LogbookEntry.objects.create(
+            project=project, week_number=3, activity_summary='Created a small Python script.',
+            verified_text='Created a small Python script.', tools_used='Python', is_verified=True,
+        )
+        report = generate_full_report(project)
+        self.assertEqual(report.template_version, 'lasustech_cs:2.0.0')
+        doc = docx.Document(generate_docx_report(report))
+        text = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
+        self.assertIn('CHAPTER ONE\nINTRODUCTION', text)
+        self.assertIn('CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS', text)
+        self.assertNotIn('CHAPTER FIVE', text)
+        self.assertIn('Industrial-Based Supervisor', text)
+        self.assertIn('SIWES Coordinator - Computer Science', text)
+        self.assertIn('HOD, Computer Science', text)
+        self.assertIn('DATE:', text)
+        self.assertNotIn('[INPUT NEEDED', text)
+        self.assertIn('TOC', doc._element.xml)
+        for paragraph in doc.paragraphs:
+            for run in paragraph.runs:
+                if run.text.strip():
+                    self.assertEqual(run.font.name, 'Times New Roman')
 
     def test_generated_report_structure_snapshot(self):
         LogbookEntry.objects.create(

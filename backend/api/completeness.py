@@ -86,14 +86,44 @@ def check_project_completeness(project) -> Dict[str, Any]:
     missing_required: List[str] = []
     uncertain_fields: List[str] = []
 
-    # 1. Check basic student & company fields
-    for field_key, field_label, is_required, aliases in REQUIRED_STUDENT_FIELDS:
+    # Existing v1 reports retain their original completeness contract. New
+    # projects use the active v2 field manifest as the source of requirements.
+    report = getattr(project, "report", None)
+    is_v1 = bool(report and report.template_version.startswith("lasustech-standard:1."))
+    if is_v1:
+        requirements = REQUIRED_STUDENT_FIELDS
+    else:
+        from .templates import get_section_requirements
+        manifest_fields = get_section_requirements()["required_fields"]
+        mappings = {
+            "student_name": ("Full name", ["full_name"]),
+            "matric": ("Matriculation number", ["matric_number"]),
+            "department": ("Department", ["department"]),
+            "college": ("College", ["college"]),
+            "organisation": ("Organisation", ["organization_name"]),
+            "organisation_address": ("Organisation address", ["organization_address"]),
+            "training_dates": ("Training dates", ["training_start_date", "training_end_date"]),
+            "training_duration": ("Training duration", ["training_start_date", "training_end_date"]),
+            "degree": ("Degree", ["degree"]),
+        }
+        requirements = [
+            (key, mappings[key][0], field_spec.get("required", False), mappings[key][1])
+            for key, field_spec in manifest_fields.items()
+            if key in mappings and field_spec.get("source") == "STUDENT_PROVIDED"
+        ]
+
+    # 1. Check basic student & company fields from the selected manifest.
+    for field_key, field_label, is_required, aliases in requirements:
         val = None
         for alias in aliases:
             v = getattr(project, alias, None)
-            if v:
+            if v and not (field_key == "training_duration" and alias == "training_start_date"):
                 val = v
-                break
+                if field_key != "training_dates" and field_key != "training_duration":
+                    break
+                elif val and getattr(project, "training_start_date", None) and getattr(project, "training_end_date", None):
+                    val = f"{project.training_start_date} to {project.training_end_date}"
+                    break
 
         status = "Missing"
         confidence = 1.0

@@ -37,13 +37,16 @@ class ReportProject(models.Model):
     full_name = models.CharField(max_length=255, blank=True)
     matric_number = models.CharField(max_length=64, blank=True)
     department = models.CharField(max_length=255, blank=True)
+    college = models.CharField(max_length=255, blank=True)
+    degree = models.CharField(max_length=255, blank=True)
     programme = models.CharField(max_length=255, blank=True)
     level = models.CharField(max_length=32, blank=True, default='400')
 
     # Institution
     university_name = models.CharField(
-        max_length=255, 
-        default='Lagos State University of Science and Technology (LASUSTECH)'
+        max_length=255,
+        blank=True,
+        default=''
     )
     faculty_school = models.CharField(max_length=255, blank=True)
     department_requirements = models.TextField(blank=True)
@@ -233,6 +236,7 @@ class Report(models.Model):
     template = models.ForeignKey(ReportTemplate, on_delete=models.SET_NULL, null=True, blank=True)
     template_version = models.CharField(max_length=64, default='lasustech-standard:1.0.0')
     template_snapshot = models.JSONField(default=dict, blank=True)
+    template_options = models.JSONField(default=dict, blank=True)
     document_model = models.JSONField(default=dict, blank=True)
     estimated_pages = models.IntegerField(default=1)
     page_estimate_breakdown = models.JSONField(default=dict, blank=True)

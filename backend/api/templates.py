@@ -398,11 +398,32 @@ def ensure_default_template_in_db():
         defaults={
             "name": spec["name"],
             "description": spec["description"],
-            "is_default": True,
+            "is_default": False,
             "required_fields": spec["required_fields"],
             "section_order": [s["key"] for s in spec["sections"]],
             "formatting_spec": spec["formatting_spec"],
             "structure": spec,
         }
     )
+    return tmpl
+
+
+def ensure_v2_template_in_db():
+    """Create the v2 template row without mutating the historical v1 row."""
+    from .models import ReportTemplate
+
+    spec = LASUSTECH_CS_V2
+    tmpl, _ = ReportTemplate.objects.get_or_create(
+        code=spec["template_id"], version=spec["version"],
+        defaults={
+            "name": spec["name"],
+            "description": spec["description"],
+            "is_default": True,
+            "required_fields": get_section_requirements()["required_fields"],
+            "section_order": [section["key"] for section in spec["sections"]],
+            "formatting_spec": spec["formatting_spec"],
+            "structure": spec,
+        },
+    )
+    ReportTemplate.objects.exclude(pk=tmpl.pk).filter(is_default=True).update(is_default=False)
     return tmpl

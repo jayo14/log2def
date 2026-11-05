@@ -1,12 +1,19 @@
 import json
+import logging
 import re
+from html import escape
 from datetime import datetime
 from typing import Dict, Any, List, Tuple
 from django.utils import timezone
 from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion, ReportTemplate
 from .ai_provider import is_ai_available, generate_completion, AIProviderUnavailableError
 from .security import wrap_untrusted_prompt_input, sanitize_html
-from .templates import get_template_spec, ensure_default_template_in_db, LASUSTECH_STANDARD_V1
+from .templates import (
+    get_template_spec, ensure_default_template_in_db, ensure_v2_template_in_db,
+    LASUSTECH_STANDARD_V1, LASUSTECH_CS_V2,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # Dynamic section definitions derived directly from LASUSTECH Standard v1.0.0
@@ -678,12 +685,189 @@ def generate_creative_dedication_or_ack(project: ReportProject, section_key: str
     return base_content
 
 
+def _generate_v2_report(project: ReportProject, report: Report | None, force_all: bool) -> Report:
+    """Build v2 exclusively from fixed text, confirmed profile fields and logbook rows."""
+    template = ensure_v2_template_in_db()
+    report, created = Report.objects.get_or_create(
+        project=project,
+        defaults={
+            "title": f"SIWES Report - {project.full_name}" if project.full_name else "SIWES Technical Report",
+            "template": template,
+            "template_version": "lasustech_cs:2.0.0",
+            "template_snapshot": LASUSTECH_CS_V2,
+            "template_options": {key: field.get("default") for key, field in LASUSTECH_CS_V2["fields"].items() if "default" in field},
+        },
+    )
+    if not report.template_options:
+        report.template_options = {key: field.get("default") for key, field in LASUSTECH_CS_V2["fields"].items() if "default" in field}
+        report.save(update_fields=["template_options"])
+    if created:
+        report.template = template
+        report.template_version = "lasustech_cs:2.0.0"
+        report.template_snapshot = LASUSTECH_CS_V2
+    entries = list(project.logbook_entries.filter(is_verified=True).order_by("week_number", "order", "entry_date", "id"))
+    verified_ids = [entry.id for entry in entries]
+    entry_text = lambda entry: (entry.verified_text or entry.activity_summary or "").strip()
+    start = project.training_start_date.strftime("%-d %B %Y") if project.training_start_date else ""
+    end = project.training_end_date.strftime("%-d %B %Y") if project.training_end_date else ""
+    duration = ""
+    if project.training_start_date and project.training_end_date:
+        days = (project.training_end_date - project.training_start_date).days + 1
+        duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
+
+    source_text = {
+        "title_page": "\n".join(filter(None, [project.full_name, project.matric_number, project.department, project.college, project.degree,
+            project.organization_name, project.organization_address, f"{start} – {end}" if start and end else ""])),
+        "certification": "",
+        "dedication": "",
+        "acknowledgement": "",
+        "abstract": "",
+        "table_of_contents": "",
+        "ch1_background": LASUSTECH_CS_V2["fixed_text"]["siwes_background"],
+        "ch1_objectives": "\n".join(LASUSTECH_CS_V2["fixed_text"]["siwes_objectives"]),
+        "ch1_importance": LASUSTECH_CS_V2["fixed_text"]["siwes_importance"],
+        "ch1_scope": " ".join(filter(None, [
+            f"My training took place at {project.organization_name}." if project.organization_name else "",
+            f"I was attached to {project.placement_department}." if project.placement_department else "",
+            f"The recorded training areas included {', '.join(sorted({e.technical_area for e in entries if e.technical_area}))}." if any(e.technical_area for e in entries) else "",
+        ])),
+        "ch1_duration": f"The training ran from {start} to {end} ({duration})." if start and end else "",
+        "ch2_history": "",
+        "ch2_objectives": "",
+        "ch2_structure": "",
+        "ch2_organogram": "",
+        "ch3_duties": "\n".join(dict.fromkeys(entry_text(e) for e in entries if entry_text(e))),
+        "ch3_activities": "",
+        "ch3_skills": project.skills_acquired.strip(),
+        "ch3_tools": "\n".join(dict.fromkeys(filter(None, [
+            ", ".join(filter(None, [e.tools_used, e.equipment_used])).strip(", ") for e in entries
+        ] + [project.tools_used]))),
+        "ch3_challenges": project.problems_encountered.strip(),
+        "ch3_solutions": "",
+        "ch4_summary": "\n".join(dict.fromkeys(entry_text(e) for e in entries if entry_text(e))),
+        "ch4_conclusion": "",
+        "ch4_recommendations": "",
+        "references": LASUSTECH_CS_V2["fixed_text"]["itf_reference"],
+        "appendices": "",
+    }
+    # Weekly activities are prose blocks headed by the actual consecutive week range.
+    weekly: dict[int, list[str]] = {}
+    for entry in entries:
+        text = entry_text(entry)
+        if text:
+            weekly.setdefault(entry.week_number, []).append(text)
+    week_numbers = sorted(weekly)
+    groups: list[tuple[int, int, list[str]]] = []
+    for week in week_numbers:
+        if groups and week == groups[-1][1] + 1:
+            first, _, collected = groups[-1]
+            groups[-1] = (first, week, collected + weekly[week])
+        else:
+            groups.append((week, week, weekly[week]))
+    source_text["ch3_activities"] = "\n\n".join(
+        f"WEEK {first}-{last}: {activities[0]}\n" + "\n".join(activities)
+        for first, last, activities in groups
+    )
+    # Do not repeat a single entry as both a heading and prose.
+    source_text["ch3_activities"] = "\n\n".join(
+        f"WEEK {first}-{last}: {activities[0]}" + ("\n" + "\n".join(activities[1:]) if len(activities) > 1 else "")
+        for first, last, activities in groups
+    )
+    if project.full_name and project.matric_number and project.department and project.organization_name and duration:
+        certification = LASUSTECH_CS_V2["fixed_text"]["certification"].format(
+            name=project.full_name, matric=project.matric_number, department=project.department,
+            organisation=project.organization_name, duration=duration,
+        )
+        signatories = [
+            "Industrial-Based Supervisor", f"SIWES Coordinator - {project.department}", f"HOD, {project.department}"
+        ]
+        source_text["certification"] = certification + "\n\n" + "\n\n".join(
+            f"____________________________\n{title}\nDATE: ____________________" for title in signatories
+        )
+
+    for position, definition in enumerate(LASUSTECH_CS_V2["sections"]):
+        key = definition["key"]
+        content_text = source_text.get(key, "")
+        if definition.get("flag") == "abstract_enabled" and not report.template_options.get("abstract_enabled", False):
+            continue
+        if definition.get("flag") == "toc_enabled" and not report.template_options.get("toc_enabled", True):
+            continue
+        if definition.get("chapter") in (5, 6) and not content_text:
+            continue
+        if definition.get("chapter") == 0 and key in {"dedication", "acknowledgement", "abstract"} and not content_text:
+            continue
+        section, _ = ReportSection.objects.get_or_create(
+            report=report, section_key=key,
+            defaults={"chapter_number": definition["chapter"], "title": definition["title"],
+                "order": (position + 1) * 10, "is_required": definition.get("required", False)},
+        )
+        if section.last_edited_by_student and not force_all:
+            continue
+        section.chapter_number = definition["chapter"]
+        section.title = definition["title"]
+        section.order = (position + 1) * 10
+        section.is_required = definition.get("required", False)
+        section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
+        section.warnings = ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
+        section.source_links = verified_ids if definition.get("source") in {"LOGBOOK", "INFERRED"} else []
+        section.save()
+    allowed_keys = {item["key"] for item in LASUSTECH_CS_V2["sections"]}
+    report.sections.exclude(section_key__in=allowed_keys).delete()
+    from .document_model import model_from_sections
+    report.document_model = model_from_sections(report, LASUSTECH_CS_V2).to_dict()
+    source_by_key = {item["key"]: item["source"] for item in LASUSTECH_CS_V2["sections"]}
+    fixed_words = student_words = 0
+    for item in report.sections.exclude(chapter_number=0):
+        words = len(strip_html_tags(item.content).split())
+        if source_by_key.get(item.section_key) == "FIXED_BOILERPLATE":
+            fixed_words += words
+        else:
+            student_words += words
+    fixed_pages = round(fixed_words / 350, 1)
+    student_pages = round(student_words / 350, 1)
+    front_pages = report.sections.filter(chapter_number=0).count()
+    body_pages = max(1, int((fixed_words + student_words + 349) / 350)) + 4
+    report.estimated_pages = front_pages + body_pages
+    report.page_estimate_breakdown = {
+        "estimated_pages": report.estimated_pages,
+        "informational_only": True,
+        "fixed_text_words": fixed_words,
+        "student_derived_words": student_words,
+        "fixed_text_page_equivalent": fixed_pages,
+        "student_derived_page_equivalent": student_pages,
+        "front_matter_pages": front_pages,
+        "body_pages": body_pages,
+    }
+    report.readiness_feedback = ["Page count is informational; review required student inputs and source coverage."]
+    report.version += 1
+    report.save()
+    ReportVersion.objects.create(report=report, version_number=report.version, title=report.title,
+        sections_snapshot=[{"section_key": s.section_key, "chapter_number": s.chapter_number, "title": s.title,
+            "content": s.content, "order": s.order} for s in report.sections.all().order_by("chapter_number", "order")],
+        change_summary=f"Generated with template {report.template_version}")
+    project.status = "editing_report"
+    project.save(update_fields=["status"])
+    return report
+
+
 def generate_full_report(project: ReportProject, force_all: bool = False) -> Report:
     """
     Creates or updates the Report and all ReportSection instances for a project.
     Freezes and pins the template version and snapshot.
     If section has last_edited_by_student=True and force_all=False, preserves student edits!
     """
+    existing_report = Report.objects.filter(project=project).first()
+    if existing_report and existing_report.template_snapshot:
+        pinned_template = existing_report.template_snapshot
+    elif existing_report and existing_report.template_version.startswith("lasustech-standard:1."):
+        pinned_template = LASUSTECH_STANDARD_V1
+    else:
+        pinned_template = None
+    if pinned_template and pinned_template.get("version") == "2.0.0":
+        return _generate_v2_report(project, existing_report, force_all)
+    if existing_report is None or not pinned_template:
+        return _generate_v2_report(project, None, force_all)
+
     db_template = ensure_default_template_in_db()
     template_code = db_template.code
     template_ver = db_template.version
