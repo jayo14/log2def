@@ -118,6 +118,7 @@ export default function DashboardPage() {
     uploadDocument,
     deleteDocument,
     reorderDocuments,
+    reprocessDocument,
     fetchLogbookEntries,
     createLogbookEntry,
     updateLogbookEntry,
@@ -334,6 +335,69 @@ export default function DashboardPage() {
     }
   }, [user]);
 
+  // Report chapter templates
+  const getSectionDefaultHtml = (i: number): string => {
+    const N = details.name || 'John Samuel';
+    const C = details.co || 'Company Ltd';
+    const A = details.addr || answers.addr || '[address]';
+    const c = 'style="text-align:center"';
+    const per = `${details.start || answers.start || ''} to ${details.end || answers.end || ''}`;
+
+    const chapters = [
+      `<p ${c}><b>TECHNICAL REPORT ON THE STUDENT INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</b></p><p ${c}>Undertaken at<br><b>${C}</b><br>${A}</p><p ${c}>BY<br><b>${N}</b><br>${details.matric || ''}<br>${details.dept || ''}</p><p ${c}>${details.inst || ''}<br>${per}</p>`,
+      `<p ${c}><b>CERTIFICATION</b></p><p>This is to certify that ${N} (${details.matric || ''}) completed the industrial training at ${C}.</p><p>________________<br>Industry-based supervisor${details.sup ? ': ' + details.sup : ''}</p><p>________________<br>Institution-based supervisor${details.isup ? ': ' + details.isup : ''}</p>`,
+      `<p ${c}><b>DEDICATION</b></p><p>[Add your dedication here.]</p>`,
+      `<p ${c}><b>ACKNOWLEDGEMENT</b></p><p>[Add your acknowledgements here.]</p>`,
+      `<p ${c}><b>ABSTRACT</b></p><p>This report presents the industrial training of ${N} at ${C}. It covers the organisation, the activities recorded in the logbook, the skills gained and the challenges met.</p>`,
+      `<p><b>CHAPTER ONE: INTRODUCTION</b></p><p>The Student Industrial Work Experience Scheme (SIWES) exposes students to practical work in their field. This report describes the training of ${N} at ${C}.</p>`,
+      `<p><b>CHAPTER TWO: ORGANISATION PROFILE</b></p><p>${C} is located at ${A}.${details.unit ? ' The student worked in the ' + details.unit + ' unit.' : ''}</p><p>[Add the company’s background, structure and services.]</p>`,
+      `<p><b>CHAPTER THREE: TRAINING ACTIVITIES</b></p>${entries.map((e) => `<p>Week ${e.w}: ${e.t}</p>`).join('')}`,
+      `<p><b>CHAPTER FOUR: SKILLS AND EXPERIENCE</b></p><p>Skills worked on in the recorded activities: ${Array.from(new Set(entries.map((e) => e.tools).filter(Boolean))).join(', ')}.</p><p>[Add challenges you met and how you solved them.]</p>`,
+      `<p><b>CHAPTER FIVE: CONCLUSION AND RECOMMENDATIONS</b></p><p>[Add your conclusion and recommendations.]</p>`,
+      `<p ${c}><b>REFERENCES</b></p><p>[Add references, if you used any.]</p>`,
+    ];
+
+    return chapters[i] || '';
+  };
+
+  // Maps 28 backend institutional sections into the 11 presentation views
+  const mapBackendSectionsToChapters = (sections: any[]): Record<number, string> => {
+    const edits: Record<number, string> = {};
+    if (!sections || sections.length === 0) return edits;
+
+    const findByKey = (k: string) => sections.find((s) => s.section_key === k)?.content || '';
+    const findByChapter = (chapNum: number) =>
+      sections
+        .filter((s) => s.chapter_number === chapNum)
+        .map((s) => `<h3>${s.title}</h3>${s.content}`)
+        .join('<br/><br/>');
+
+    // 0: Cover page
+    edits[0] = findByKey('cover') || findByKey('title_page') || getSectionDefaultHtml(0);
+    // 1: Certification
+    edits[1] = findByKey('certification') || getSectionDefaultHtml(1);
+    // 2: Dedication
+    edits[2] = findByKey('dedication') || getSectionDefaultHtml(2);
+    // 3: Acknowledgement
+    edits[3] = findByKey('acknowledgements') || getSectionDefaultHtml(3);
+    // 4: Abstract
+    edits[4] = findByKey('abstract') || getSectionDefaultHtml(4);
+    // 5: Chapter 1: Introduction
+    edits[5] = findByChapter(1) || getSectionDefaultHtml(5);
+    // 6: Chapter 2: Organisation profile
+    edits[6] = findByChapter(2) || getSectionDefaultHtml(6);
+    // 7: Chapter 3: Training activities
+    edits[7] = findByChapter(3) || getSectionDefaultHtml(7);
+    // 8: Chapter 4: Skills and experience
+    edits[8] = findByChapter(4) || getSectionDefaultHtml(8);
+    // 9: Chapter 5: Conclusion
+    edits[9] = findByChapter(5) || getSectionDefaultHtml(9);
+    // 10: References
+    edits[10] = findByChapter(6) || findByKey('references') || getSectionDefaultHtml(10);
+
+    return edits;
+  };
+
   // Initialize and synchronize project from PostgreSQL database
   useEffect(() => {
     let isMounted = true;
@@ -352,8 +416,29 @@ export default function DashboardPage() {
         }
         if (projId && isMounted) {
           await fetchActiveProject(projId);
-          await fetchLogbookEntries(projId).catch(() => {});
-          await fetchReport(projId).catch(() => {});
+          const entriesData = await fetchLogbookEntries(projId).catch(() => []);
+          if (entriesData && entriesData.length > 0) {
+            setEntries(
+              entriesData.map((e: any) => ({
+                id: e.id,
+                w: e.week_number || 1,
+                t: e.verified_text || e.raw_text || e.activity_summary || '',
+                area: e.technical_area || 'Practical Engineering',
+                tools: e.tools_used || '',
+                u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
+                ph: e.department_unit || 'activity details',
+                ok: e.is_verified ? 1 : 0,
+              }))
+            );
+          }
+          const repData = await fetchReport(projId).catch(() => null);
+          if (repData && repData.sections && repData.sections.length > 0) {
+            const hasContent = repData.sections.some((s: any) => s.content && s.content.trim().length > 20);
+            if (hasContent) {
+              setGenState(2);
+              setChapterEdits(mapBackendSectionsToChapters(repData.sections));
+            }
+          }
           await fetchPayments(projId).catch(() => {});
         }
       } catch (err) {
@@ -822,15 +907,33 @@ export default function DashboardPage() {
     }
   };
 
-  // Step 3 Reading logic: fetches real logbook entries from PostgreSQL database
+  // Step 3 Reading logic: runs OCR & fetches real logbook entries from PostgreSQL database
   const startReading = async () => {
     setReading(true);
     setReadProgress(0);
     const n = Math.max(pages.length, 1);
 
+    const iv = setInterval(() => {
+      setReadProgress((prev) => (prev < n ? prev + 1 : prev));
+    }, Math.max(120, Math.min(350, 2000 / n)));
+
     if (activeProject?.id) {
       try {
-        const dbEntries = await fetchLogbookEntries(activeProject.id);
+        let dbEntries = await fetchLogbookEntries(activeProject.id);
+
+        // If no entries exist yet, check if project has source documents and trigger extraction/reprocess
+        if ((!dbEntries || dbEntries.length === 0) && activeProject.source_documents?.length > 0) {
+          showToast('Reading and analyzing logbook pages with AI OCR...');
+          for (const doc of activeProject.source_documents) {
+            try {
+              await reprocessDocument(activeProject.id, doc.id);
+            } catch (e) {
+              console.warn('Document OCR reprocess error:', e);
+            }
+          }
+          dbEntries = await fetchLogbookEntries(activeProject.id);
+        }
+
         if (dbEntries && dbEntries.length > 0) {
           setEntries(
             dbEntries.map((e: any) => ({
@@ -850,18 +953,10 @@ export default function DashboardPage() {
       }
     }
 
-    let p = 0;
-    const intervalTime = Math.max(120, Math.min(400, 3000 / n));
-
-    const iv = setInterval(() => {
-      p++;
-      setReadProgress(p);
-      if (p >= n) {
-        clearInterval(iv);
-        setReading(false);
-        setReadDone(true);
-      }
-    }, intervalTime);
+    clearInterval(iv);
+    setReadProgress(n);
+    setReading(false);
+    setReadDone(true);
   };
 
   // Step 5 Report Generation: triggers real generation in PostgreSQL
@@ -877,10 +972,7 @@ export default function DashboardPage() {
       if (activeProject?.id) {
         const rep = await storeGenerateReport(activeProject.id, true);
         if (rep && rep.sections && rep.sections.length > 0) {
-          const edits: Record<number, string> = {};
-          rep.sections.forEach((sec: any, idx: number) => {
-            edits[idx] = sec.content;
-          });
+          const edits = mapBackendSectionsToChapters(rep.sections);
           setChapterEdits(edits);
         }
       }
@@ -896,35 +988,11 @@ export default function DashboardPage() {
     }
   };
 
-  // Report chapter templates
-  const getSectionDefaultHtml = (i: number): string => {
-    const N = details.name || 'John Samuel';
-    const C = details.co || 'Company Ltd';
-    const A = details.addr || answers.addr || '[address]';
-    const c = 'style="text-align:center"';
-    const per = `${details.start || answers.start || ''} to ${details.end || answers.end || ''}`;
-
-    const chapters = [
-      `<p ${c}><b>TECHNICAL REPORT ON THE STUDENT INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</b></p><p ${c}>Undertaken at<br><b>${C}</b><br>${A}</p><p ${c}>BY<br><b>${N}</b><br>${details.matric || ''}<br>${details.dept || ''}</p><p ${c}>${details.inst || ''}<br>${per}</p>`,
-      `<p ${c}><b>CERTIFICATION</b></p><p>This is to certify that ${N} (${details.matric || ''}) completed the industrial training at ${C}.</p><p>________________<br>Industry-based supervisor${details.sup ? ': ' + details.sup : ''}</p><p>________________<br>Institution-based supervisor${details.isup ? ': ' + details.isup : ''}</p>`,
-      `<p ${c}><b>DEDICATION</b></p><p>[Add your dedication here.]</p>`,
-      `<p ${c}><b>ACKNOWLEDGEMENT</b></p><p>[Add your acknowledgements here.]</p>`,
-      `<p ${c}><b>ABSTRACT</b></p><p>This report presents the industrial training of ${N} at ${C}. It covers the organisation, the activities recorded in the logbook, the skills gained and the challenges met.</p>`,
-      `<p><b>CHAPTER ONE: INTRODUCTION</b></p><p>The Student Industrial Work Experience Scheme (SIWES) exposes students to practical work in their field. This report describes the training of ${N} at ${C}.</p>`,
-      `<p><b>CHAPTER TWO: ORGANISATION PROFILE</b></p><p>${C} is located at ${A}.${details.unit ? ' The student worked in the ' + details.unit + ' unit.' : ''}</p><p>[Add the company’s background, structure and services.]</p>`,
-      `<p><b>CHAPTER THREE: TRAINING ACTIVITIES</b></p>${entries.map((e) => `<p>Week ${e.w}: ${e.t}</p>`).join('')}`,
-      `<p><b>CHAPTER FOUR: SKILLS AND EXPERIENCE</b></p><p>Skills worked on in the recorded activities: ${Array.from(new Set(entries.map((e) => e.tools).filter(Boolean))).join(', ')}.</p><p>[Add challenges you met and how you solved them.]</p>`,
-      `<p><b>CHAPTER FIVE: CONCLUSION AND RECOMMENDATIONS</b></p><p>[Add your conclusion and recommendations.]</p>`,
-      `<p ${c}><b>REFERENCES</b></p><p>[Add references, if you used any.]</p>`,
-    ];
-
-    return chapters[i] || '';
-  };
-
   const getSectionHtml = (i: number): string => {
     if (chapterEdits[i] !== undefined) return chapterEdits[i];
-    if (dbReport && dbReport.sections && dbReport.sections[i]) {
-      return dbReport.sections[i].content || getSectionDefaultHtml(i);
+    if (dbReport && dbReport.sections && dbReport.sections.length > 0) {
+      const mapped = mapBackendSectionsToChapters(dbReport.sections);
+      if (mapped[i]) return mapped[i];
     }
     return getSectionDefaultHtml(i);
   };
@@ -2927,10 +2995,26 @@ export default function DashboardPage() {
 
     return (
       <div className="view" id="step-3">
-        <h1 className="wt" id="wh" tabIndex={-1}>
-          Check what we read
-        </h1>
-        <p className="wd">{entries.length} entries found</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+          <div>
+            <h1 className="wt" id="wh" tabIndex={-1}>
+              Check what we read
+            </h1>
+            <p className="wd">{entries.length} entries found</p>
+          </div>
+          <button
+            type="button"
+            className="btn o s"
+            onClick={startReading}
+            title="Re-analyze uploaded pages with AI OCR"
+            style={{ fontSize: '12px', padding: '6px 12px', borderRadius: '20px', gap: '4px', flexShrink: 0, marginTop: '8px' }}
+          >
+            <span className="ms" style={{ fontSize: '16px', color: 'var(--g)' }}>
+              auto_awesome
+            </span>
+            Re-read with OCR
+          </button>
+        </div>
 
         {un.length > 0 ? (
           <>

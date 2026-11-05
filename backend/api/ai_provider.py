@@ -50,8 +50,11 @@ def generate_gemini_content(
     if not api_key:
         raise AIProviderUnavailableError("Gemini API key is not configured on the server.")
 
-    model = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash')
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    primary_model = getattr(settings, 'GEMINI_MODEL', 'gemini-flash-lite-latest')
+    candidate_models = [primary_model]
+    for fallback in ['gemini-flash-lite-latest', 'gemini-flash-latest']:
+        if fallback not in candidate_models:
+            candidate_models.append(fallback)
 
     parts = []
     if image_bytes:
@@ -75,7 +78,8 @@ def generate_gemini_content(
         }
     }
 
-    if response_json:
+    # Only enforce responseMimeType on text-only prompts to prevent multimodal timeout
+    if response_json and not image_bytes:
         payload["generationConfig"]["responseMimeType"] = "application/json"
 
     if system_prompt:
@@ -85,22 +89,30 @@ def generate_gemini_content(
 
     headers = {"Content-Type": "application/json"}
 
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=50)
-        response.raise_for_status()
-        data = response.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            raise AIProviderUnavailableError("Gemini API returned no candidates.")
-        
-        content = candidates[0].get("content", {})
-        res_parts = content.get("parts", [])
-        if not res_parts:
-            raise AIProviderUnavailableError("Gemini API returned empty response parts.")
-        
-        return res_parts[0].get("text", "").strip()
-    except requests.RequestException as e:
-        raise AIProviderUnavailableError(f"Gemini API request failed: {str(e)}")
+    last_error = None
+    for model in candidate_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=20)
+            if response.status_code in (404, 503, 429) and model != candidate_models[-1]:
+                continue
+            response.raise_for_status()
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                continue
+
+            content = candidates[0].get("content", {})
+            res_parts = content.get("parts", [])
+            if not res_parts:
+                continue
+
+            return res_parts[0].get("text", "").strip()
+        except requests.RequestException as e:
+            last_error = e
+            continue
+
+    raise AIProviderUnavailableError(f"Gemini API request failed across models: {str(last_error)}")
 
 def generate_completion(system_prompt: str, user_prompt: str, temperature: float = 0.3) -> str:
     """

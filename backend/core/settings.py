@@ -242,7 +242,7 @@ AI_BASE_URL = os.getenv('AI_BASE_URL', '')
 
 # Google Gemini Flash Configuration
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', os.getenv('AI_API_KEY', ''))
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.0-flash')
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-flash-lite-latest')
 
 # External binary configuration (LibreOffice for PDF exports & Tesseract for OCR)
 import shutil
