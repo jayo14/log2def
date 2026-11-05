@@ -685,6 +685,7 @@ class LogbookEntryDetailView(views.APIView):
 class FactListView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(responses=FactSerializer(many=True))
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
         facts = project.facts.prefetch_related("source_entry_ids").order_by("status", "id")
@@ -694,6 +695,7 @@ class FactListView(views.APIView):
 class FactReviewView(views.APIView):
     permission_classes = (IsAuthenticated,)
 
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=FactSerializer)
     def patch(self, request, project_id, fact_id):
         project = get_user_project(request.user, project_id)
         fact = get_object_or_404(Fact, id=fact_id, project=project)

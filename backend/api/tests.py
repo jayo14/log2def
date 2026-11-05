@@ -970,7 +970,7 @@ class Log2DefBackendTests(TestCase):
             self.assertNotIn(invented, all_content)
         self.assertEqual(report.sections.get(section_key='ch2_history').content, '')
         self.assertEqual(report.sections.get(section_key='ch3_skills').content, '')
-        self.assertIn('Attended morning briefing', report.sections.get(section_key='ch3_activities').content)
+        self.assertEqual(report.sections.get(section_key='ch3_activities').content, '')
         self.assertTrue(report.page_estimate_breakdown['informational_only'])
         self.assertIn('student_derived_words', report.page_estimate_breakdown)
 
