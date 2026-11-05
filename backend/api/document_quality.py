@@ -97,7 +97,20 @@ def evaluate_report_quality(report, model=None):
     if not report.template_version.startswith("lasustech_cs:2."):
         return {"passed": True, "blockers": [], "warnings": [], "summary": {"total_pages": report.estimated_pages, "student_derived_pages": 0}}
     model = model or report.document_model or {}
-    sections = model.get("sections", [])
+    if not isinstance(model, dict):
+        blocker = _issue("invalid_document_model", "The report document model is malformed. Regenerate the report before preview or export.")
+        return {"passed": False, "blockers": [blocker], "warnings": [], "summary": {
+            "total_pages": report.estimated_pages or 0, "student_derived_pages": 0,
+            "blocker_count": 1, "warning_count": 0,
+        }}
+    raw_sections = model.get("sections", [])
+    if not isinstance(raw_sections, list):
+        raw_sections = []
+        model_error = True
+    else:
+        model_error = False
+    invalid_entries = [section for section in raw_sections if not isinstance(section, dict)]
+    sections = [section for section in raw_sections if isinstance(section, dict)]
     definitions = LASUSTECH_CS_V2["sections"]
     by_key = {section.get("key"): section for section in sections}
     blockers, warnings = [], []
@@ -120,6 +133,12 @@ def evaluate_report_quality(report, model=None):
 
     def add(target, *args, **kwargs):
         target.append(_issue(*args, **kwargs))
+
+    if model_error or invalid_entries:
+        add(blockers, "invalid_document_sections", "The report has malformed sections. Regenerate it before preview or export.", None)
+    options = report.template_options if isinstance(report.template_options, dict) else {}
+    template_snapshot = report.template_snapshot if isinstance(report.template_snapshot, dict) else {}
+    page_breakdown = report.page_estimate_breakdown if isinstance(report.page_estimate_breakdown, dict) else {}
 
     seen_titles = {}
     found_dates = {}
@@ -211,8 +230,8 @@ def evaluate_report_quality(report, model=None):
         key = definition["key"]
         section = by_key.get(key)
         content = _all_text(section) if section else ""
-        is_generated_toc = key == "table_of_contents" and report.template_options.get("toc_enabled", True)
-        if key == "table_of_contents" and not report.template_options.get("toc_enabled", True):
+        is_generated_toc = key == "table_of_contents" and options.get("toc_enabled", True)
+        if key == "table_of_contents" and not options.get("toc_enabled", True):
             if section:
                 add(blockers, "disabled_optional_section_present", "Remove the disabled table of contents section.", key)
             continue
@@ -246,6 +265,7 @@ def evaluate_report_quality(report, model=None):
         add(warnings, "inconsistent_date_format", "Use one date format consistently throughout the report.", None, severity="warning")
 
     formatting = model.get("formatting", {})
+    formatting = formatting if isinstance(formatting, dict) else {}
     if (
         formatting.get("font_family") != "Times New Roman"
         or formatting.get("font_size_pt") != 12
@@ -257,11 +277,12 @@ def evaluate_report_quality(report, model=None):
         or formatting.get("chapter_heading", {}).get("alignment") != "center"
     ):
         add(blockers, "formatting_spec", "Document model font, spacing, alignment, or chapter-heading settings do not match the template.", None)
-    pagination = report.template_snapshot.get("formatting_spec", {}).get("pagination", {})
+    format_snapshot = template_snapshot.get("formatting_spec", {})
+    pagination = format_snapshot.get("pagination", {}) if isinstance(format_snapshot, dict) else {}
     if (pagination.get("front_matter") != "lowerRoman" or pagination.get("main_body") != "decimal"
             or pagination.get("main_body_restart") != 1 or pagination.get("page_label") != "Page {number}"):
         add(blockers, "pagination_spec", "Page numbering settings do not match the selected template.", None)
-    if report.template_options.get("toc_enabled", True) and "table_of_contents" not in by_key:
+    if options.get("toc_enabled", True) and "table_of_contents" not in by_key:
         add(blockers, "toc_missing", "The enabled table of contents is missing.", "table_of_contents")
 
     # Unconfirmed inferred facts are review warnings; they do not invalidate unrelated confirmed prose.
@@ -286,7 +307,7 @@ def evaluate_report_quality(report, model=None):
         add(warnings, "unconfirmed_inference", "Unconfirmed inferred Facts remain in the project; confirm or remove them before relying on them.", None, severity="warning")
 
     total_pages = report.estimated_pages or 0
-    student_words = report.page_estimate_breakdown.get("student_derived_words", 0)
+    student_words = page_breakdown.get("student_derived_words", 0)
     if student_words < 100:
         add(warnings, "low_student_content", "The report contains very little student-derived content; add confirmed detail where available.", None, severity="warning")
     for section in sections:
@@ -320,6 +341,8 @@ def validate_docx_artifact(report, path):
     result = require_report_quality(report)
     if not report.template_version.startswith("lasustech_cs:2."):
         return result
+    model = report.document_model if isinstance(report.document_model, dict) else {}
+    options = report.template_options if isinstance(report.template_options, dict) else {}
     document = Document(str(path))
     issues = []
     for section in document.sections:
@@ -339,11 +362,11 @@ def validate_docx_artifact(report, path):
     chapter_started = False
     expected_chapters = {
         section.get("chapter_title", "").replace("\n", " ").casefold()
-        for section in report.document_model.get("sections", [])
+        for section in model.get("sections", []) if isinstance(section, dict)
         if section.get("chapter_title", "")
     }
     heading_styles = {re.sub(r"\s+", " ", paragraph.text).strip(): paragraph.style.name for paragraph in document.paragraphs}
-    for model_section in report.document_model.get("sections", []):
+    for model_section in model.get("sections", []):
         if model_section.get("chapter") in range(1, 5):
             style_name = heading_styles.get(model_section.get("title", ""))
             if style_name != "Heading 2":
@@ -375,14 +398,14 @@ def validate_docx_artifact(report, path):
                 break
     if issues:
         raise QualityGateError({**result, "passed": False, "blockers": issues, "summary": {**result["summary"], "blocker_count": len(issues)}})
-    if report.template_options.get("toc_enabled", True) and 'TOC \\o' not in document._element.xml:
+    if options.get("toc_enabled", True) and 'TOC \\o' not in document._element.xml:
         issues.append(_issue("toc_field_missing", "The exported table of contents field is missing.", "table_of_contents"))
     footer_text = " ".join(p.text for section in document.sections for p in section.footer.paragraphs)
     xml = "\n".join(section._sectPr.xml for section in document.sections)
     if "Page " not in footer_text or 'w:fmt="lowerRoman"' not in xml or 'w:fmt="decimal"' not in xml or 'w:start="1"' not in xml:
         issues.append(_issue("page_number_format", "Exported page numbering does not match roman front matter and Arabic “Page N” body numbering.", None))
     first_section = document.sections[0]
-    cover_numbered = bool(report.template_options.get("cover_numbered", True))
+    cover_numbered = bool(options.get("cover_numbered", True))
     if first_section.different_first_page_header_footer == cover_numbered:
         issues.append(_issue("cover_page_numbering", "Cover-page numbering does not match the selected template option.", "title_page"))
     first_footer_xml = (first_section.footer if cover_numbered else first_section.first_page_footer)._element.xml

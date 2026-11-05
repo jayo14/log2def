@@ -97,6 +97,12 @@ class DocumentQualityGateTests(TestCase):
         self.assertTrue(any(item["code"] == "required_section_empty" for item in result["blockers"]))
         self.assertTrue(all(item["anchor"] for item in result["blockers"]))
 
+    def test_malformed_document_model_returns_a_blocker_instead_of_crashing(self):
+        self.report.document_model = ["not", "a", "typed document"]
+        result = evaluate_report_quality(self.report)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["blockers"][0]["code"], "invalid_document_model")
+
     def test_duplicate_heading_and_truncated_paragraph_are_blockers(self):
         from copy import deepcopy
         self.report.document_model["sections"][0]["nodes"][0]["text"] = "Incomplete sentence"
