@@ -43,8 +43,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       const userData = await authApi.getCurrentUser();
       set({ user: userData, isLoading: false, error: null });
     } catch (err: any) {
-      removeAuthToken();
-      set({ user: null, token: null, isLoading: false, error: err.message || 'Session expired' });
+      if (err.status === 401 || err.status === 403) {
+        removeAuthToken();
+        set({ user: null, token: null, isLoading: false, error: err.message || 'Session expired' });
+      } else {
+        set({ isLoading: false, error: err.message || 'Could not verify user session' });
+      }
     }
   },
 
