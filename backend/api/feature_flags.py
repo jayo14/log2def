@@ -25,7 +25,7 @@ DEFAULT_FEATURE_FLAGS: Dict[str, bool] = {
     # Out-of-Scope Capabilities (Default: OFF)
     "defence_preparation": False,
     "slide_generation": False,
-    "payment_processing": False,
+    "payment_processing": True,
     "print_fulfilment": False,
     "delivery_management": False,
     "supervisor_portal": False,

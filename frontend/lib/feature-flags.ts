@@ -47,7 +47,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   // Out-of-Scope Capabilities (Default: OFF)
   defence_preparation: false,
   slide_generation: false,
-  payment_processing: false,
+  payment_processing: true,
   print_fulfilment: false,
   delivery_management: false,
   supervisor_portal: false,
