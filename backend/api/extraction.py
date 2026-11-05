@@ -77,9 +77,13 @@ def classify_page(text: str, signature_present: bool = False) -> str:
 def parse_reviewed_page(logbook_page: LogbookPage) -> list[DayEntry]:
     """Split a reviewed transcript into source-preserving lines and week records."""
     transcript = logbook_page.reviewed_text or ""
+    if logbook_page.extracted_page.supervisor_signature_detected:
+        logbook_page.signature_present = True
+    if re.search(r"\b(?:stamp|official seal|company seal)\b", transcript, re.I):
+        logbook_page.stamp_present = True
     if not transcript.strip():
         logbook_page.page_type = "blank"
-        logbook_page.save(update_fields=["page_type"])
+        logbook_page.save(update_fields=["page_type", "signature_present", "stamp_present"])
         return []
     project = logbook_page.extracted_page.document.project
     week_match = WEEK_RE.search(transcript)
@@ -111,7 +115,7 @@ def parse_reviewed_page(logbook_page: LogbookPage) -> list[DayEntry]:
             confidence=logbook_page.quality_score,
         ))
     logbook_page.page_type = classify_page(transcript, logbook_page.extracted_page.supervisor_signature_detected)
-    logbook_page.save(update_fields=["page_type"])
+    logbook_page.save(update_fields=["page_type", "signature_present", "stamp_present"])
     validate_week_record(week)
     return created
 

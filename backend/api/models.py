@@ -239,6 +239,8 @@ class LogbookPage(models.Model):
     page_index = models.PositiveIntegerField(db_index=True)
     page_type = models.CharField(max_length=32, choices=PAGE_TYPES, default='other')
     quality_score = models.FloatField(null=True, blank=True)
+    signature_present = models.BooleanField(null=True, blank=True)
+    stamp_present = models.BooleanField(null=True, blank=True)
 
     class Meta:
         ordering = ['page_index', 'id']

@@ -197,6 +197,27 @@ class ProvenanceExtractionTests(TestCase):
         ])
         self.assertEqual(week.day_entries.first().weekday, "Monday")
 
+    def test_signature_and_stamp_evidence_remain_explicit(self):
+        document = SourceDocument.objects.create(
+            project=self.project, original_filename="synthetic-marks.jpg", file_type="image", page_index=2,
+        )
+        extracted = ExtractedPage.objects.create(
+            document=document, page_index=2, extracted_text="Official seal affixed",
+            supervisor_signature_detected=True,
+        )
+        page = LogbookPage.objects.create(extracted_page=extracted, page_index=2)
+        parse_reviewed_page(page)
+        page.refresh_from_db()
+        self.assertIs(page.signature_present, True)
+        self.assertIs(page.stamp_present, True)
+
+        unknown = ExtractedPage.objects.create(document=document, page_index=3, extracted_text="A plain entry")
+        unknown_page = LogbookPage.objects.create(extracted_page=unknown, page_index=3)
+        parse_reviewed_page(unknown_page)
+        unknown_page.refresh_from_db()
+        self.assertIsNone(unknown_page.signature_present)
+        self.assertIsNone(unknown_page.stamp_present)
+
     def test_v2_report_does_not_copy_raw_logbook_lines(self):
         LogbookEntry.objects.create(
             project=self.project, week_number=1, verified_text="Configured Cisco router for 12 users",

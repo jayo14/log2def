@@ -27,8 +27,9 @@ The provenance model is:
 ## Extraction sequence
 
 1. **Deterministic pass:** classify blank/student-details/weekly/supervisor/cover
-   pages; identify week labels, dates, weekday labels, table-like separators,
-   and existing supervisor signature detection. Dates are parsed only when
+   pages; identify week labels, dates, weekday labels, table-like lines,
+   existing supervisor signature detections, and explicit stamp/seal text.
+   Unobserved signature/stamp values stay unknown rather than false. Dates are parsed only when
    calendar-valid. Weekday/date conflicts are retained as source text and
 surfaced on the WeekRecord as sequence warnings; the parser does not repair
 them. Week start/end dates are the min/max valid dates found. Table structure is
