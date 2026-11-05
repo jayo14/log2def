@@ -1,5 +1,7 @@
 import os
 import re
+from html import escape
+from types import SimpleNamespace
 import shutil
 import subprocess
 from pathlib import Path
@@ -335,7 +337,27 @@ def generate_docx_report(report: Report) -> str:
     normal_style.font.size = Pt(12)
     normal_style.font.color.rgb = RGBColor(0x11, 0x18, 0x27)
 
-    all_sections = list(report.sections.all().order_by('chapter_number', 'order', 'id'))
+    model = report.document_model
+    if not model or not model.get("sections"):
+        # Legacy v1 reports keep their stored section content and template snapshot.
+        from .document_model import model_from_sections
+        from .templates import get_template_spec
+        model = model_from_sections(report, report.template_snapshot or get_template_spec()).to_dict()
+    all_sections = []
+    for section in model.get("sections", []):
+        paragraphs = []
+        for node in section.get("nodes", []):
+            if node.get("type") == "paragraph" and node.get("text"):
+                paragraphs.append(f"<p>{escape(node['text'])}</p>")
+            elif node.get("type") == "list":
+                items = "".join(f"<li>{escape(child.get('text', ''))}</li>" for child in node.get("children", []))
+                paragraphs.append(f"<ul>{items}</ul>")
+        all_sections.append(SimpleNamespace(
+            section_key=section.get("key", ""),
+            chapter_number=section.get("chapter", 0),
+            title=section.get("title", ""),
+            content="".join(paragraphs),
+        ))
 
     cover_sec = next((s for s in all_sections if s.section_key == 'cover'), None)
     prelim_secs = [s for s in all_sections if s.chapter_number == 0 and s.section_key != 'cover']

@@ -826,6 +826,11 @@ def generate_full_report(project: ReportProject, force_all: bool = False) -> Rep
             sec.order = s_def["order"]
             sec.save()
 
+    # Freeze a typed, provenance-bearing representation for preview and exports.
+    from .document_model import model_from_sections
+    model_spec = report.template_snapshot or LASUSTECH_STANDARD_V1
+    report.document_model = model_from_sections(report, model_spec).to_dict()
+
     # Calculate estimated page count and feedback
     page_estimate = calculate_report_estimated_pages(report)
     report.estimated_pages = page_estimate["estimated_pages"]
@@ -833,7 +838,7 @@ def generate_full_report(project: ReportProject, force_all: bool = False) -> Rep
     report.readiness_feedback = page_estimate["recommendations"]
 
     report.version += 1
-    report.save()
+    report.save(update_fields=["document_model", "estimated_pages", "page_estimate_breakdown", "readiness_feedback", "version", "updated_at"])
 
     # Save initial / generation version snapshot for version control
     try:
