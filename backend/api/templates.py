@@ -353,6 +353,9 @@ TEMPLATE_REGISTRY: Dict[str, Dict[str, Any]] = {
 LASUSTECH_CS_V2: Dict[str, Any] = json.loads(
     (Path(__file__).parent / "templates" / "lasustech_cs_v2.json").read_text(encoding="utf-8")
 )
+LASUSTECH_STANDARD_V1_SNAPSHOT: Dict[str, Any] = json.loads(
+    (Path(__file__).parent / "templates" / "lasustech_standard_v1.json").read_text(encoding="utf-8")
+)
 TEMPLATE_REGISTRY["lasustech_cs:2.0.0"] = LASUSTECH_CS_V2
 
 
