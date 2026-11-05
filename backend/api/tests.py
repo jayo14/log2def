@@ -4,6 +4,7 @@ import json
 import tempfile
 import hmac
 import hashlib
+from decimal import Decimal
 from datetime import date
 from pathlib import Path
 from django.test import TestCase
@@ -2035,7 +2036,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
     def test_invalid_webhook_signature_rejected(self):
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', 'test_secret_key'):
             body = b'{"Event": "charge_successful", "Body": {}}'
             wrong_sig = hmac.new(b'wrong_key', body, hashlib.sha512).hexdigest()
             self.assertFalse(verify_webhook_signature(body, wrong_sig))
@@ -2043,7 +2044,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
     def test_tampered_webhook_body_rejected(self):
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', 'test_secret_key'):
             original_body = b'{"Event": "charge_successful", "Body": {"amount": 200000}}'
             valid_sig = hmac.new(b'test_secret_key', original_body, hashlib.sha512).hexdigest()
 
@@ -2053,7 +2054,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
     def test_empty_signature_rejected(self):
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', 'test_secret_key'):
             body = b'{"test": "data"}'
             self.assertFalse(verify_webhook_signature(body, ''))
             self.assertFalse(verify_webhook_signature(body, None))
@@ -2061,7 +2062,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
     def test_missing_webhook_secret_fails_safely(self):
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY=''):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', ''):
             body = b'{"test": "data"}'
             valid_sig = hmac.new(b'any_key', body, hashlib.sha512).hexdigest()
             self.assertFalse(verify_webhook_signature(body, valid_sig))
@@ -2069,7 +2070,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
     def test_webhook_signature_case_insensitive(self):
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', 'test_secret_key'):
             body = b'{"test": "data"}'
             valid_sig = hmac.new(b'test_secret_key', body, hashlib.sha512).hexdigest()
             self.assertTrue(verify_webhook_signature(body, valid_sig.upper()))
@@ -2078,7 +2079,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
         """PHP example: HMAC on raw request body."""
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', 'test_secret_key'):
             raw_body = b'{"Event":"charge_successful","TransactionRef":"SQTEST123","Body":{"amount":200000,"transaction_ref":"SQTEST123","transaction_status":"Success","currency":"NGN"}}'
             sig = hmac.new(b'test_secret_key', raw_body, hashlib.sha512).hexdigest()
             self.assertTrue(verify_webhook_signature(raw_body, sig))
@@ -2087,7 +2088,7 @@ class SquadWebhookSignatureSecurityTests(TestCase):
         """Node/C# example: HMAC on JSON.stringify(parsed_body)."""
         from .squad_service import verify_webhook_signature
 
-        with override_settings(SQUAD_SECRET_KEY='test_secret_key'):
+        with patch('api.squad_service.SQUAD_SECRET_KEY', 'test_secret_key'):
             raw_body = b'{ "Event": "charge_successful", "Body": { "amount": 200000 } }'
             parsed = json.loads(raw_body)
             canonical = json.dumps(parsed, separators=(',', ':'), sort_keys=True)

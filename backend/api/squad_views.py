@@ -361,16 +361,16 @@ class SquadWebhookView(views.APIView):
             except (ValueError, TypeError):
                 tx_amount_decimal = None
             if tx_amount_decimal is not None and tx_amount_decimal != expected_amount:
-            webhook_event.error_message = f'Amount mismatch: expected {expected_amount}, got {tx_amount}'
-            webhook_event.success = True
-            webhook_event.save()
-            order.status = 'review_required'
-            order.save(update_fields=['status', 'updated_at'])
-            logger.warning(
-                'Webhook amount mismatch for order %s: expected %s, got %s',
-                order.order_reference, expected_amount, tx_amount
-            )
-            return Response({'error': 'Amount mismatch'}, status=status.HTTP_400_BAD_REQUEST)
+                webhook_event.error_message = f'Amount mismatch: expected {expected_amount}, got {tx_amount}'
+                webhook_event.success = True
+                webhook_event.save()
+                order.status = 'review_required'
+                order.save(update_fields=['status', 'updated_at'])
+                logger.warning(
+                    'Webhook amount mismatch for order %s: expected %s, got %s',
+                    order.order_reference, expected_amount, tx_amount
+                )
+                return Response({'error': 'Amount mismatch'}, status=status.HTTP_400_BAD_REQUEST)
 
         if tx_currency != order.currency:
             webhook_event.error_message = f'Currency mismatch: expected {order.currency}, got {tx_currency}'
