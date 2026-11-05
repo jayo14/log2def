@@ -171,6 +171,11 @@ class ReportTemplateSerializer(serializers.ModelSerializer):
 class ReportSerializer(serializers.ModelSerializer):
     sections = ReportSectionSerializer(many=True, read_only=True)
     versions = ReportVersionSerializer(many=True, read_only=True)
+    quality_gate = serializers.SerializerMethodField()
+
+    def get_quality_gate(self, report):
+        from .document_quality import evaluate_report_quality
+        return evaluate_report_quality(report)
 
     class Meta:
         model = Report

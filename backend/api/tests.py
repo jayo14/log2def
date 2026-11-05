@@ -32,6 +32,7 @@ from .templates import LASUSTECH_CS_V2, LASUSTECH_STANDARD_V1, get_section_requi
 from .ocr_trace import save_tesseract_tsv, trace_root
 from .extraction import validate_fact_candidate, persist_fact_candidate, material_sufficiency, classify_page, review_ambiguities, parse_reviewed_page
 from .completeness import check_project_completeness
+from .document_quality import QualityGateError, evaluate_report_quality
 from .grounded_writer import (
     GroundedWriterError, build_section_brief, validate_writer_output,
 )
@@ -64,6 +65,142 @@ class TemplateV2ContractTests(TestCase):
     def test_v1_snapshot_definition_remains_unchanged(self):
         original = json.loads((Path(__file__).parent / "templates" / "lasustech_standard_v1.json").read_text())
         self.assertEqual(LASUSTECH_STANDARD_V1, original)
+
+
+class DocumentQualityGateTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="quality-gate", password="StrongPassword123!")
+        self.project = ReportProject.objects.create(user=self.user, title="Quality gate case")
+        self.report = Report.objects.create(
+            project=self.project,
+            template_version="lasustech_cs:2.0.0",
+            template_snapshot=LASUSTECH_CS_V2,
+            template_options={"toc_enabled": True},
+            document_model={
+                "template_version": "lasustech_cs:2.0.0",
+                "formatting": {"font_family": "Times New Roman", "font_size_pt": 12},
+                "sections": [{
+                    "key": "title_page", "title": "Title Page", "chapter": 0,
+                    "chapter_title": "", "source_type": "STUDENT_PROVIDED",
+                    "nodes": [{
+                        "type": "paragraph", "text": "Student: [INPUT NEEDED].",
+                        "provenance": {"source_type": "STUDENT_PROVIDED", "source_ids": [1]},
+                        "children": [], "attrs": {},
+                    }],
+                }],
+            },
+        )
+
+    def test_sparse_document_reports_required_section_blockers(self):
+        result = evaluate_report_quality(self.report)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any(item["code"] == "required_section_empty" for item in result["blockers"]))
+        self.assertTrue(all(item["anchor"] for item in result["blockers"]))
+
+    def test_duplicate_heading_and_truncated_paragraph_are_blockers(self):
+        from copy import deepcopy
+        self.report.document_model["sections"][0]["nodes"][0]["text"] = "Incomplete sentence"
+        self.report.document_model["sections"].append(
+            deepcopy(self.report.document_model["sections"][0])
+        )
+        result = evaluate_report_quality(self.report)
+        codes = {item["code"] for item in result["blockers"]}
+        self.assertIn("duplicate_heading", codes)
+        self.assertIn("truncated_paragraph", codes)
+
+    def test_second_person_and_unconfirmed_provenance_are_blockers(self):
+        node = self.report.document_model["sections"][0]["nodes"][0]
+        node["text"] = "For your defense, discuss this."
+        node["provenance"]["source_ids"] = []
+        result = evaluate_report_quality(self.report)
+        codes = {item["code"] for item in result["blockers"]}
+        self.assertIn("second_person", codes)
+        self.assertIn("missing_provenance", codes)
+
+    def test_unsupported_verified_claim_and_generic_toolkit_are_blockers(self):
+        node = self.report.document_model["sections"][0]["nodes"][0]
+        node["text"] = "Standard toolkit was used."
+        result = evaluate_report_quality(self.report)
+        self.assertIn("generic_filler", {item["code"] for item in result["blockers"]})
+        node["text"] = "The work was verified."
+        result = evaluate_report_quality(self.report)
+        self.assertIn("unsupported_success_claim", {item["code"] for item in result["blockers"]})
+
+    def test_preview_and_export_status_expose_quality_blockers(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        report = client.get(f"/api/projects/{self.project.id}/report/")
+        self.assertEqual(report.status_code, 200)
+        self.assertFalse(report.data["quality_gate"]["passed"])
+        export_status = client.get(f"/api/projects/{self.project.id}/export/status/?format=docx")
+        self.assertEqual(export_status.status_code, 422)
+        self.assertIn("quality_gate", export_status.data)
+
+    def test_injected_placeholder_blocks_export_at_document_boundary(self):
+        from .document_exporter import generate_docx_report
+        result = evaluate_report_quality(self.report)
+        self.assertIn("placeholder_text", {item["code"] for item in result["blockers"]})
+        with self.assertRaises(QualityGateError):
+            generate_docx_report(self.report)
+
+    def test_valid_v2_model_exports_with_expected_word_properties(self):
+        from tempfile import TemporaryDirectory
+        import shutil
+        from .document_exporter import generate_docx_report, export_report_documents
+        fact = Fact.objects.create(
+            project=self.project, kind="activity", text="I configured a router.",
+            provenance="STUDENT_PROVIDED", status="confirmed",
+        )
+        sections = []
+        for definition in LASUSTECH_CS_V2["sections"]:
+            key = definition["key"]
+            if not definition.get("required") and key not in {"table_of_contents", "references"}:
+                continue
+            text = "" if key == "table_of_contents" else (
+                LASUSTECH_CS_V2["fixed_text"]["siwes_background"]
+                if key == "ch1_background" else
+                LASUSTECH_CS_V2["fixed_text"]["itf_reference"]
+                if key == "references" else
+                "I configured a router."
+            )
+            source = definition.get("source", "STUDENT_PROVIDED")
+            nodes = [] if not text else [{
+                "type": "paragraph", "text": text,
+                "provenance": {"source_type": source, "source_ids": [] if source == "FIXED_BOILERPLATE" else [fact.id]},
+                "children": [], "attrs": {},
+            }]
+            sections.append({
+                "key": key, "title": definition["title"], "chapter": definition["chapter"],
+                "chapter_title": definition.get("chapter_title", ""), "source_type": source, "nodes": nodes,
+            })
+        self.report.document_model = {
+            "template_version": "lasustech_cs:2.0.0",
+            "formatting": LASUSTECH_CS_V2["formatting_spec"],
+            "sections": sections,
+        }
+        self.report.template_options = {"toc_enabled": True, "cover_numbered": True}
+        self.report.page_estimate_breakdown = {"student_derived_words": 20}
+        self.report.save()
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            path = generate_docx_report(self.report)
+            doc = docx.Document(path)
+        text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+        self.assertIn("CHAPTER ONE\nINTRODUCTION", text)
+        self.assertIn("CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS", text)
+        self.assertIn("TOC", doc._element.xml)
+        section_xml = "\n".join(section._sectPr.xml for section in doc.sections)
+        self.assertIn('w:fmt="lowerRoman"', section_xml)
+        self.assertIn('w:fmt="decimal"', section_xml)
+        self.assertIn('w:start="1"', section_xml)
+        if shutil.which("libreoffice"):
+            exported = export_report_documents(self.report)
+            pdf = pymupdf.open(exported["pdf_path"])
+            pdf_text = " ".join(page.get_text() for page in pdf)
+            normalized_pdf = " ".join(pdf_text.split()).casefold()
+            self.assertGreater(pdf.page_count, 0)
+            self.assertIn("chapter one introduction", normalized_pdf)
+            self.assertIn("chapter four summary, conclusion and recommendations", normalized_pdf)
+            self.assertRegex(pdf_text, r"Page\s+1")
 
 
 class OcrTraceHarnessTests(TestCase):
@@ -1218,26 +1355,8 @@ class Log2DefBackendTests(TestCase):
         self.assertEqual(report.template_version, 'lasustech_cs:2.0.0')
         section_check = check_project_completeness(project)
         self.assertIn('section:ch2_history', section_check['missing_required_fields'])
-        doc = docx.Document(generate_docx_report(report))
-        text = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
-        self.assertIn('CHAPTER ONE\nINTRODUCTION', text)
-        self.assertIn('CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS', text)
-        self.assertNotIn('CHAPTER FIVE', text)
-        self.assertIn('Industrial-Based Supervisor', text)
-        self.assertIn('SIWES Coordinator - Computer Science', text)
-        self.assertIn('HOD, Computer Science', text)
-        self.assertIn('DATE:', text)
-        self.assertNotIn('[INPUT NEEDED', text)
-        self.assertIn('TOC', doc._element.xml)
-        section_xml = '\n'.join(section._sectPr.xml for section in doc.sections)
-        self.assertIn('w:fmt="lowerRoman"', section_xml)
-        self.assertIn('w:fmt="decimal"', section_xml)
-        self.assertIn('w:start="1"', section_xml)
-        self.assertTrue(any('Page ' in paragraph.text for section in doc.sections for paragraph in section.footer.paragraphs))
-        for paragraph in doc.paragraphs:
-            for run in paragraph.runs:
-                if run.text.strip():
-                    self.assertEqual(run.font.name, 'Times New Roman')
+        with self.assertRaises(QualityGateError):
+            generate_docx_report(report)
 
     def test_generated_report_structure_snapshot(self):
         LogbookEntry.objects.create(

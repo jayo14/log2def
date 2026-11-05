@@ -705,6 +705,35 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         report.template = template
         report.template_version = "lasustech_cs:2.0.0"
         report.template_snapshot = LASUSTECH_CS_V2
+    # Profile answers are student-provided evidence. Persist them as confirmed
+    # Facts so even title-page and date statements have auditable provenance.
+    profile_fact_fields = {
+        "full_name": ("person", project.full_name),
+        "matric_number": ("person", project.matric_number),
+        "department": ("organisation_detail", project.department),
+        "college": ("organisation_detail", project.college),
+        "degree": ("organisation_detail", project.degree),
+        "organization_name": ("organisation_detail", project.organization_name),
+        "organization_address": ("organisation_detail", project.organization_address),
+        "placement_department": ("organisation_detail", project.placement_department),
+        "tools_used": ("tool", project.tools_used),
+        "skills_acquired": ("skill", project.skills_acquired),
+    }
+    for field_name, (kind, value) in profile_fact_fields.items():
+        value = str(value or "").strip()
+        if not value:
+            continue
+        Fact.objects.update_or_create(
+            project=project, source_field=f"profile:{field_name}",
+            defaults={"kind": kind, "text": value, "provenance": "STUDENT_PROVIDED", "status": "confirmed"},
+        )
+    for date_field in ("training_start_date", "training_end_date"):
+        value = getattr(project, date_field)
+        if value:
+            Fact.objects.update_or_create(
+                project=project, source_field=f"profile:{date_field}",
+                defaults={"kind": "organisation_detail", "text": value.strftime("%-d %B %Y"), "provenance": "STUDENT_PROVIDED", "status": "confirmed"},
+            )
     start = project.training_start_date.strftime("%-d %B %Y") if project.training_start_date else ""
     end = project.training_end_date.strftime("%-d %B %Y") if project.training_end_date else ""
     duration = ""
@@ -734,6 +763,11 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             depth = (len(line) - len(line.lstrip(" "))) // 2
             organogram.append("\u2003" * depth + line.strip())
     section_fact_fields = {
+        "title_page": [f"profile:{field}" for field in profile_fact_fields] + ["profile:training_start_date", "profile:training_end_date"],
+        "ch1_scope": ["profile:organization_name", "profile:placement_department"],
+        "ch1_duration": ["profile:training_start_date", "profile:training_end_date"],
+        "ch3_skills": ["profile:skills_acquired"],
+        "ch3_tools": ["profile:tools_used"],
         "ch2_history": ["organisation_what", "organisation_history"],
         "ch2_objectives": ["organisation_objectives"], "ch2_structure": ["organisation_structure"],
         "ch2_organogram": ["organogram_tree"],
@@ -828,7 +862,12 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         ).prefetch_related("facts").order_by("order"))
         if student_paragraphs:
             content_text = "\n".join(paragraph.text for paragraph in student_paragraphs)
-        elif linked_facts.exists() and is_ai_available():
+        elif key in {
+            "ch2_history", "ch2_objectives", "ch2_structure", "ch2_organogram",
+            "ch3_duties", "ch3_activities", "ch3_skills", "ch3_tools",
+            "ch3_challenges", "ch3_solutions", "ch4_summary", "ch4_conclusion",
+            "ch4_recommendations",
+        } and linked_facts.exists() and is_ai_available():
             from .grounded_writer import GroundedWriterError, build_section_brief, write_section
             brief = build_section_brief(key, definition["title"], linked_facts)
             try:

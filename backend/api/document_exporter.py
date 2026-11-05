@@ -363,6 +363,8 @@ def generate_docx_report(report: Report) -> str:
       * Section 3 (Main Body): Decimal Arabic numerals (1, 2, 3...) restarting at 1 at Chapter One.
       * Table of Contents with real page numbers.
     """
+    from .document_quality import require_report_quality, validate_docx_artifact
+    require_report_quality(report)
     doc = Document()
     is_v2 = report.template_version == "lasustech_cs:2.0.0"
     if is_v2:
@@ -527,6 +529,13 @@ def generate_docx_report(report: Report) -> str:
     docx_path = export_dir / docx_filename
 
     doc.save(str(docx_path))
+
+    try:
+        validate_docx_artifact(report, docx_path)
+    except Exception:
+        if docx_path.exists():
+            docx_path.unlink()
+        raise
 
     rel_path = f"projects/{report.project.id}/exports/{docx_filename}"
     report.docx_file.name = rel_path

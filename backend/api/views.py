@@ -2,7 +2,8 @@ import os
 import re
 import sys
 import threading
-from html import escape
+from html import escape, unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from django.db import transaction
 from django.conf import settings
@@ -1123,6 +1124,37 @@ class SectionUpdateView(views.APIView):
 
         section.save()
         report = section.report
+        if content is not None and report.template_version == "lasustech_cs:2.0.0":
+            class ParagraphTextParser(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.parts = []
+                    self.current = ""
+
+                def handle_starttag(self, tag, attrs):
+                    if tag == "p" and self.current.strip():
+                        self.parts.append(self.current.strip())
+                        self.current = ""
+
+                def handle_endtag(self, tag):
+                    if tag == "p":
+                        if self.current.strip():
+                            self.parts.append(self.current.strip())
+                        self.current = ""
+
+                def handle_data(self, data):
+                    self.current += data
+
+            parser = ParagraphTextParser()
+            parser.feed(section.content or "")
+            if parser.current.strip():
+                parser.parts.append(parser.current.strip())
+            report.provenance_paragraphs.filter(section_key=section.section_key).delete()
+            for order, paragraph_text in enumerate(parser.parts):
+                ReportParagraph.objects.create(
+                    report=report, section_key=section.section_key, order=order,
+                    text=unescape(paragraph_text), student_confirmed=True, origin="STUDENT_EDITED",
+                )
         from .document_model import model_from_sections
         report.document_model = model_from_sections(report, report.template_snapshot or {}).to_dict()
         report.save(update_fields=['document_model', 'updated_at'])
@@ -1151,6 +1183,21 @@ class SectionRegenerateView(views.APIView):
 EXPORT_JOBS = {}  # In-memory job registry for async export polling: (project_id, fmt) -> dict
 
 
+def _quality_gate_failure(report):
+    from .document_quality import evaluate_report_quality
+    quality = evaluate_report_quality(report)
+    if quality["passed"]:
+        return None
+    return Response({
+        "error": "This report is blocked from export. Fix the issues below, then try again.",
+        "quality_gate": quality,
+    }, status=422)
+
+
+def _export_is_current(path, report):
+    return path.exists() and path.stat().st_mtime >= report.updated_at.timestamp()
+
+
 def run_export_background(project_id: int, fmt: str):
     """
     Background worker thread for asynchronous PDF/DOCX generation.
@@ -1171,7 +1218,11 @@ def run_export_background(project_id: int, fmt: str):
             res = export_report_documents(project.report)
             EXPORT_JOBS[key] = {'status': 'ready', 'progress_percent': 100, 'error': None, 'path': res['pdf_path']}
     except Exception as exc:
-        EXPORT_JOBS[key] = {'status': 'failed', 'progress_percent': 0, 'error': str(exc)}
+        from .document_quality import QualityGateError
+        EXPORT_JOBS[key] = {
+            'status': 'failed', 'progress_percent': 0, 'error': str(exc),
+            'quality_gate': exc.result if isinstance(exc, QualityGateError) else None,
+        }
 
 
 class ExportStatusView(views.APIView):
@@ -1194,6 +1245,10 @@ class ExportStatusView(views.APIView):
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
 
+        blocked = _quality_gate_failure(project.report)
+        if blocked:
+            return blocked
+
         fmt = request.query_params.get('format', 'pdf').lower()
         if fmt not in ['pdf', 'docx']:
             return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1214,7 +1269,7 @@ class ExportStatusView(views.APIView):
 
         job = EXPORT_JOBS.get(key)
 
-        if file_path.exists() and (not trigger or (job and job.get('status') == 'ready')):
+        if _export_is_current(file_path, project.report) and (not trigger or (job and job.get('status') == 'ready')):
             signer = TimestampSigner(salt='report-export-download')
             token = signer.sign(f"{project.id}:{request.user.id}:{fmt}")
             download_url = f"/api/projects/{project.id}/export/download/?format={fmt}&token={token}"
@@ -1253,7 +1308,8 @@ class ExportStatusView(views.APIView):
                 "progress_percent": job.get('progress_percent', 50),
                 "download_url": dl,
                 "filename": expected_filename,
-                "error": job.get('error')
+                "error": job.get('error'),
+                "quality_gate": job.get('quality_gate'),
             })
 
         return Response({
@@ -1308,6 +1364,9 @@ class ExportDownloadView(views.APIView):
         project = get_user_project(user, project_id)
         if not hasattr(project, 'report'):
             raise Http404("Report not found.")
+        blocked = _quality_gate_failure(project.report)
+        if blocked:
+            return blocked
 
         if fmt == 'pdf' and not is_feature_enabled('report_pdf_export'):
             return Response({"detail": "PDF export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
@@ -1319,11 +1378,17 @@ class ExportDownloadView(views.APIView):
         export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
         file_path = export_dir / expected_filename
 
-        if not file_path.exists():
-            if fmt == 'docx':
-                generate_docx_report(project.report)
-            else:
-                export_report_documents(project.report)
+        if not _export_is_current(file_path, project.report):
+            try:
+                if fmt == 'docx':
+                    generate_docx_report(project.report)
+                else:
+                    export_report_documents(project.report)
+            except Exception as exc:
+                from .document_quality import QualityGateError
+                if isinstance(exc, QualityGateError):
+                    return Response({"error": str(exc), "quality_gate": exc.result}, status=422)
+                raise
 
         if not file_path.exists():
             raise Http404(f"Exported file {expected_filename} not found.")
@@ -1356,8 +1421,16 @@ class ExportDocxView(views.APIView):
         project = get_user_project(request.user, project_id)
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        docx_path = generate_docx_report(project.report)
+        blocked = _quality_gate_failure(project.report)
+        if blocked:
+            return blocked
+        try:
+            docx_path = generate_docx_report(project.report)
+        except Exception as exc:
+            from .document_quality import QualityGateError
+            if isinstance(exc, QualityGateError):
+                return Response({"error": str(exc), "quality_gate": exc.result}, status=422)
+            raise
         if not os.path.exists(docx_path):
             raise Http404("Document could not be generated.")
 
@@ -1390,11 +1463,17 @@ class ExportPdfView(views.APIView):
         project = get_user_project(request.user, project_id)
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
+        blocked = _quality_gate_failure(project.report)
+        if blocked:
+            return blocked
 
         try:
             export_result = export_report_documents(project.report)
             pdf_path = export_result['pdf_path']
         except Exception as e:
+            from .document_quality import QualityGateError
+            if isinstance(e, QualityGateError):
+                return Response({"error": str(e), "quality_gate": e.result}, status=422)
             return Response({"error": f"PDF export failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         resolved_path = os.path.realpath(pdf_path)

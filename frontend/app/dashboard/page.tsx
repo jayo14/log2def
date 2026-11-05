@@ -205,6 +205,7 @@ export default function DashboardPage() {
   const [editorTab, setEditorTab] = useState<'edit' | 'prev'>('edit');
   const [currentSectionIdx, setCurrentSectionIdx] = useState<number>(0);
   const [chapterEdits, setChapterEdits] = useState<Record<number, string>>({});
+  const [isRefreshingQuality, setIsRefreshingQuality] = useState(false);
   const [saveStatusText, setSaveStatusText] = useState<'saved' | 'saving'>('saved');
 
   // Payment & Checkout State
@@ -2102,9 +2103,35 @@ export default function DashboardPage() {
       : null;
     const previewRows = modelRows || layout.rows;
     const pageEstimate = dbReport?.page_estimate_breakdown || {};
+    const qualityGate = dbReport?.quality_gate || { passed: true, blockers: [], warnings: [], summary: {} };
     const editorLabels = dbReport?.template_version === 'lasustech_cs:2.0.0'
       ? (dbReport.sections || []).map((section: any) => section.title)
       : SEC;
+
+    const openQualityCheckedPreview = async () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      setIsRefreshingQuality(true);
+      let checked = false;
+      try {
+        const projectId = activeProject?.id;
+        if (projectId && dbReport?.sections) {
+          const section = getSectionForChapterTab(currentSectionIdx, dbReport.sections);
+          const content = editorRef.current?.innerHTML;
+          if (section?.id && content !== undefined) {
+            await saveSection(projectId, section.id, content, section.title);
+          }
+          await fetchReport(projectId);
+          checked = true;
+        } else if (dbReport?.quality_gate) {
+          checked = true;
+        }
+      } catch (error) {
+        showToast('Could not check the latest report. Please try again.');
+      } finally {
+        setIsRefreshingQuality(false);
+        if (checked) setEditorTab('prev');
+      }
+    };
 
     if (genState !== 2) {
       return (
@@ -2143,9 +2170,11 @@ export default function DashboardPage() {
             role="tab"
             type="button"
             aria-selected={editorTab === 'prev'}
-            onClick={() => setEditorTab('prev')}
+            onClick={openQualityCheckedPreview}
+            disabled={isRefreshingQuality}
+            aria-busy={isRefreshingQuality}
           >
-            Preview
+            {isRefreshingQuality ? 'Checking…' : 'Preview'}
           </button>
         </div>
 
@@ -2267,20 +2296,48 @@ export default function DashboardPage() {
             <div className="card">
               <span className="chip">
                 <span className="ms" aria-hidden="true">info</span>
-                Estimated {dbReport?.estimated_pages || layout.total} total pages
+                Estimated {qualityGate.summary?.total_pages ?? dbReport?.estimated_pages ?? layout.total} total pages
               </span>
               <p className="mut" style={{ fontSize: '13.5px', marginTop: '10px' }}>
-                Informational estimate including front matter. Review the source coverage and required inputs.
+                Student-derived content: {qualityGate.summary?.student_derived_pages ?? pageEstimate.student_derived_page_equivalent ?? '—'} pages. {qualityGate.blockers?.length || 0} blockers · {qualityGate.warnings?.length || 0} warnings.
               </p>
               <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
-                Student-derived content: about {pageEstimate.student_derived_page_equivalent ?? '—'} page equivalents ({pageEstimate.student_derived_words ?? '—'} words). Fixed text: about {pageEstimate.fixed_text_page_equivalent ?? '—'} page equivalents ({pageEstimate.fixed_text_words ?? '—'} words).
+                Student-derived words: {qualityGate.summary?.student_derived_words ?? pageEstimate.student_derived_words ?? '—'}.
               </p>
               <p className="mut" style={{ fontSize: '13.5px', marginTop: '6px' }}>
                 Times New Roman 12pt · 1.5 spacing · justified · template {dbReport?.template_version || 'v1'}
               </p>
+              {(qualityGate.warnings || []).map((issue: any, idx: number) => (
+                <p key={`${issue.code}-${idx}`} className="mut" style={{ fontSize: '13px', marginTop: '6px' }}>
+                  Warning: {issue.message}
+                </p>
+              ))}
             </div>
 
-            {previewRows.map((q: any, idx: number) => (
+            {!qualityGate.passed ? (
+              <div className="card" id="report-quality" role="alert" style={{ border: '1px solid #b42318' }}>
+                <h2 style={{ marginTop: 0 }}>Preview blocked</h2>
+                <p>Fix these report issues before preview or export.</p>
+                {[...(qualityGate.blockers || []), ...(qualityGate.warnings || [])].map((issue: any, idx: number) => (
+                  <div key={`${issue.code}-${idx}`} id={issue.anchor?.replace('#', '')} style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
+                    <p style={{ margin: 0 }}>{issue.message}</p>
+                    {issue.section_key && (
+                      <button
+                        className="btn o s"
+                        type="button"
+                        onClick={() => {
+                          const sectionIndex = (dbReport?.sections || []).findIndex((section: any) => section.section_key === issue.section_key);
+                          if (sectionIndex >= 0) setCurrentSectionIdx(sectionIndex);
+                          setEditorTab('edit');
+                        }}
+                      >
+                        Go to {dbReport?.sections?.find((section: any) => section.section_key === issue.section_key)?.title || 'section'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : previewRows.map((q: any, idx: number) => (
               <React.Fragment key={idx}>
                 <p className="pl2">
                   {q.t} ·{' '}
