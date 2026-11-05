@@ -1526,7 +1526,21 @@ export default function DashboardPage() {
       try {
         await deleteDocument(projId, page.id);
         await fetchActiveProject(projId).catch(() => {});
-        await fetchLogbookEntries(projId).catch(() => {});
+        const fresh = await fetchLogbookEntries(projId).catch(() => []);
+        if (fresh && Array.isArray(fresh)) {
+          setEntries(
+            fresh.map((e: any) => ({
+              id: e.id,
+              w: e.week_number || 1,
+              t: e.verified_text || e.raw_text || e.activity_summary || '',
+              area: e.technical_area || 'Practical Engineering',
+              tools: e.tools_used || '',
+              u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
+              ph: e.department_unit || 'activity details',
+              ok: e.is_verified ? 1 : 0,
+            }))
+          );
+        }
         showToast('Page removed');
       } catch (err: any) {
         showToast(err.message || 'Failed to remove page from server');

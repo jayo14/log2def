@@ -329,6 +329,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await get().fetchActiveProject(projectId);
       return updated;
     } catch (err: any) {
+      if (err?.status === 404 || err?.message?.includes('404')) {
+        // If entry was deleted on backend, resync entries cleanly without error banner
+        try {
+          const freshEntries = await projectsApi.getLogbookEntries(projectId);
+          set((state) => ({
+            activeProject: state.activeProject
+              ? { ...state.activeProject, logbook_entries: freshEntries }
+              : state.activeProject,
+          }));
+        } catch {}
+        return null;
+      }
       set({ error: err.message || 'Failed to update logbook entry' });
       throw err;
     }
