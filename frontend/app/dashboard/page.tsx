@@ -4394,8 +4394,8 @@ export default function DashboardPage() {
                   </span>
                 </label>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    id={`a_${x.key}`}
+                  <input                    id={`a_${x.key}`}
+                    ref={(el) => { intakeRefs.current[x.key] = el; }}
                     type={isDate ? 'date' : 'text'}
                     placeholder={isDate ? 'dd/mm/yyyy' : `Enter ${x.label.toLowerCase()}`}
                     value={answers[x.key] || ''}
@@ -4405,6 +4405,7 @@ export default function DashboardPage() {
                         e.preventDefault();
                         handleConfirmField(x.key);
                       }
+
                     }}
                     style={{ flex: 1, minWidth: 0 }}
                     required
