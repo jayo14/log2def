@@ -1095,7 +1095,12 @@ export default function DashboardPage() {
         if (key === 'end') payload.training_end_date = val;
         if (key === 'matric') payload.matric_number = val;
         if (key === 'dept') payload.department = val;
-        if (key === 'fac') payload.faculty_school = val;
+        if (key === 'degree') payload.degree = val;
+        if (key === 'fac') {
+          const facVal = val === 'Other' ? (details.customFac || val) : val;
+          payload.faculty_school = facVal;
+          payload.college = facVal;
+        }
         if (key === 'inst') payload.university_name = val;
         if (key === 'sup') payload.industry_supervisor_name = val;
         if (key === 'isup') payload.institution_supervisor_name = val;
@@ -1891,20 +1896,24 @@ export default function DashboardPage() {
       return;
     }
 
-    const required = ['name', 'matric', 'dept', 'fac', 'inst', 'co'];
+    const required = ['name', 'matric', 'dept', 'fac', 'degree', 'inst', 'co', 'addr', 'start', 'end'];
     let firstBadField: string | null = null;
 
     for (const k of required) {
       const val = details[k] ? details[k].trim() : '';
-      if (!val) {
-        firstBadField = k;
+      if (!val || (k === 'inst' && val === 'Other') || (k === 'fac' && val === 'Other' && !details.customFac?.trim())) {
+        firstBadField = k === 'fac' && val === 'Other' ? 'fac' : k;
         break;
       }
+    }
+    if (!firstBadField && details.start && details.end && details.end <= details.start) {
+      firstBadField = 'end';
     }
 
     if (firstBadField) {
       const el = document.getElementById(firstBadField);
       if (el) el.focus();
+      showToast('Please complete required details, including training dates.');
       return;
     }
 
@@ -1920,9 +1929,9 @@ export default function DashboardPage() {
         full_name: details.name || undefined,
         matric_number: details.matric,
         department: details.dept,
-        college: details.fac,
-        faculty_school: details.fac,
-        degree: details.degree,
+        college: details.fac === 'Other' ? (details.customFac || details.fac) : details.fac,
+        faculty_school: details.fac === 'Other' ? (details.customFac || details.fac) : details.fac,
+        degree: details.degree || undefined,
         university_name: details.inst,
         organization_name: details.co,
         organization_address: details.addr,
@@ -3400,6 +3409,24 @@ export default function DashboardPage() {
                 </p>
               </div>
 
+              <div className="f" data-f="degree">
+                <label htmlFor="degree">
+                  Degree / programme <em aria-hidden="true">*</em>
+                </label>
+                <input
+                  id="degree"
+                  name="degree"
+                  type="text"
+                  placeholder="e.g. B.Sc. Computer Science"
+                  value={details.degree || ''}
+                  onChange={(e) => setDetails((prev) => ({ ...prev, degree: e.target.value }))}
+                  required
+                />
+                <p className="err" id="degree-e" hidden={Boolean(details.degree?.trim())}>
+                  Please fill this in.
+                </p>
+              </div>
+
               <div className="f" data-f="inst">
                 <label htmlFor="inst">
                   Institution <em aria-hidden="true">*</em>
@@ -3463,7 +3490,7 @@ export default function DashboardPage() {
 
               <div className="f" data-f="addr">
                 <label htmlFor="addr">
-                  Company address <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
+                  Company address <em aria-hidden="true">*</em>
                 </label>
                 <input
                   id="addr"
@@ -3471,7 +3498,11 @@ export default function DashboardPage() {
                   type="text"
                   value={details.addr || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, addr: e.target.value }))}
+                  required
                 />
+                <p className="err" id="addr-e" hidden={Boolean(details.addr?.trim())}>
+                  Please fill this in.
+                </p>
               </div>
 
               <div className="f" data-f="unit">
@@ -3489,7 +3520,7 @@ export default function DashboardPage() {
 
               <div className="f" data-f="start">
                 <label htmlFor="start">
-                  Training start date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
+                  Training start date <em aria-hidden="true">*</em>
                 </label>
                 <input
                   id="start"
@@ -3497,12 +3528,16 @@ export default function DashboardPage() {
                   type="date"
                   value={details.start || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, start: e.target.value }))}
+                  required
                 />
+                <p className="err" id="start-e" hidden={Boolean(details.start?.trim())}>
+                  Please select a start date.
+                </p>
               </div>
 
               <div className="f" data-f="end">
                 <label htmlFor="end">
-                  Training end date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
+                  Training end date <em aria-hidden="true">*</em>
                 </label>
                 <input
                   id="end"
@@ -3510,7 +3545,11 @@ export default function DashboardPage() {
                   type="date"
                   value={details.end || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, end: e.target.value }))}
+                  required
                 />
+                <p className="err" id="end-e" hidden={Boolean(details.end?.trim() && (!details.start || details.end > details.start))}>
+                  {details.end && details.start && details.end <= details.start ? 'End date must be after start date.' : 'Please select an end date.'}
+                </p>
               </div>
 
               <p className="gt">SUPERVISORS</p>
