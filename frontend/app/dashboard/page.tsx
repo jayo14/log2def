@@ -210,7 +210,6 @@ export default function DashboardPage() {
   // Payment & Checkout State
   const [checkoutModal, setCheckoutModal] = useState<'digital' | 'delivery' | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer' | 'ussd'>('card');
-  const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
   const [hasPaidDigital, setHasPaidDigital] = useState<boolean>(false);
 
   const [paymentSuccess, setPaymentSuccess] = useState<{
@@ -874,6 +873,99 @@ export default function DashboardPage() {
       window.removeEventListener('hashchange', handleUrlChange);
     };
   }, []);
+
+  // 5. Handle Squad payment callback URL params (returning from Squad checkout)
+  useEffect(() => {
+    const handleSquadCallback = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const transactionRef =
+        searchParams.get('transaction_ref') ||
+        searchParams.get('transaction_reference') ||
+        searchParams.get('transactionRef');
+      const orderRef = searchParams.get('order_ref');
+      const type = searchParams.get('type');
+      const error = searchParams.get('error');
+
+      if (error) {
+        showToast('Payment was not completed. Please try again.', 'error');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+
+      if (transactionRef && activeProject?.id) {
+        try {
+          setSquadCheckoutLoading(true);
+          const result = await verifySquadPayment(activeProject.id, transactionRef);
+          if (result.order_status === 'paid') {
+            setCheckoutModal(null);
+            setHasPaidDigital(true);
+            setPaymentSuccess({
+              type: type === 'delivery' ? 'delivery' : 'digital',
+              txRef: orderRef || transactionRef,
+              deliveryDetails: {
+                location: deliveryData.campusLocation,
+                customAddress: deliveryData.customAddress,
+                date: deliveryData.deliveryDate,
+                recipient: deliveryData.recipientName || details.name || userFullName,
+                phone: deliveryData.phone,
+              },
+            });
+            showToast('Payment verified! Report unlocked.', 'success');
+          } else {
+            showToast('Payment not yet confirmed. Please try again.', 'error');
+          }
+        } catch (err: any) {
+          showToast(err.message || 'Payment verification failed', 'error');
+        } finally {
+          setSquadCheckoutLoading(false);
+        }
+        // Clean up URL params
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    };
+
+    handleSquadCallback();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 6. Restore payment state from backend on load
+  useEffect(() => {
+    const restorePaymentState = async () => {
+      if (!activeProject?.id) return;
+      try {
+        const payments = await fetchPayments(activeProject.id);
+        const paidDigital = (payments || []).find(
+          (p: any) => p.order_type === 'digital' && p.status === 'paid'
+        );
+        const paidDelivery = (payments || []).find(
+          (p: any) => p.order_type === 'delivery' && p.status === 'paid'
+        );
+
+        if (paidDigital) {
+          setHasPaidDigital(true);
+          setPaymentSuccess({
+            type: 'digital',
+            txRef: paidDigital.transaction_reference || paidDigital.order_reference,
+          });
+        } else if (paidDelivery) {
+          setPaymentSuccess({
+            type: 'delivery',
+            txRef: paidDelivery.transaction_reference || paidDelivery.order_reference,
+            deliveryDetails: {
+              location: paidDelivery.campus_location || '',
+              customAddress: paidDelivery.custom_address || '',
+              date: paidDelivery.delivery_date || '',
+              recipient: paidDelivery.recipient_name || '',
+              phone: paidDelivery.phone_number || '',
+            },
+          });
+        }
+      } catch (err) {
+        // Silently fail - payments will be fetched when needed
+      }
+    };
+
+    restorePaymentState();
+  }, [activeProject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update document title based on view
   useEffect(() => {
@@ -2436,10 +2528,7 @@ export default function DashboardPage() {
             type="button"
             onClick={() => {
               if (hasPaidDigital) {
-                setPaymentSuccess({
-                  type: 'digital',
-                  txRef: `L2D_PAID_${Date.now().toString().slice(-6)}`,
-                });
+                executeRealFileDownload('PDF');
               } else {
                 setCheckoutModal('digital');
               }
@@ -5012,7 +5101,7 @@ export default function DashboardPage() {
         {/* ======================================================== */}
         {checkoutModal === 'digital' && (
           <div id="checkout-digital">
-            <div className="bd" onClick={() => !isProcessingPayment && setCheckoutModal(null)} />
+            <div className="bd" onClick={() => !squadCheckoutLoading && setCheckoutModal(null)} />
             <div
               className="sht"
               role="dialog"
@@ -5135,7 +5224,7 @@ export default function DashboardPage() {
         {/* ======================================================== */}
         {checkoutModal === 'delivery' && (
           <div id="checkout-delivery">
-            <div className="bd" onClick={() => !isProcessingPayment && setCheckoutModal(null)} />
+            <div className="bd" onClick={() => !squadCheckoutLoading && setCheckoutModal(null)} />
             <div
               className="sht"
               role="dialog"
