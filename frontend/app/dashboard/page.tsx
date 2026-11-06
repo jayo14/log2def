@@ -211,6 +211,7 @@ export default function DashboardPage() {
   const [checkoutModal, setCheckoutModal] = useState<'digital' | 'delivery' | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
   const [hasPaidDigital, setHasPaidDigital] = useState<boolean>(false);
+  const [downloadLoading, setDownloadLoading] = useState<boolean>(false);
 
   const [paymentSuccess, setPaymentSuccess] = useState<{
     type: 'digital' | 'delivery';
@@ -1705,10 +1706,11 @@ export default function DashboardPage() {
       showToast('No active project');
       return;
     }
-    // Verify payment via secure backend endpoint
-    const url = `${getApiBaseUrl()}/projects/${projId}/squad/download/${format.toLowerCase()}/`;
-    const token = getAuthToken();
+    setDownloadLoading(true);
     try {
+      // Verify payment via secure backend endpoint
+      const url = `${getApiBaseUrl()}/projects/${projId}/squad/download/${format.toLowerCase()}/`;
+      const token = getAuthToken();
       const res = await fetch(url, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
@@ -1732,6 +1734,8 @@ export default function DashboardPage() {
       a.remove();
     } catch (err: any) {
       showToast(err.message || 'Download failed');
+    } finally {
+      setDownloadLoading(false);
     }
   };
 
@@ -2527,6 +2531,7 @@ export default function DashboardPage() {
           <button
             className="btn w"
             type="button"
+            disabled={downloadLoading}
             onClick={() => {
               if (hasPaidDigital) {
                 executeRealFileDownload('PDF');
@@ -2535,10 +2540,14 @@ export default function DashboardPage() {
               }
             }}
           >
-            <span className="ms" aria-hidden="true">
+            <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
               download
             </span>
-            {hasPaidDigital ? 'Download Report (Paid)' : 'Download Report (NGN 100)'}
+            {downloadLoading
+              ? 'Preparing download…'
+              : hasPaidDigital
+                ? 'Download Report (Paid)'
+                : 'Download Report (NGN 100)'}
           </button>
 
           <button
