@@ -1335,7 +1335,7 @@ export default function DashboardPage() {
             }
           }, 0);
         }
-        setGenState(lastGenerateBlock.canGenerate ? 0 : 0);
+        setGenState(0);
         return;
       }
     }
