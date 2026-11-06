@@ -126,6 +126,8 @@ export default function DashboardPage() {
     ensureActiveProject,
     createProject,
     updateActiveProject,
+    deleteProject,
+    clearActiveProject,
     uploadDocument,
     deleteDocument,
     reorderDocuments,
@@ -149,6 +151,7 @@ export default function DashboardPage() {
     generateReport: storeGenerateReport,
     saveSection,
     isGeneratingReport,
+    resetReportState,
   } = useReportStore();
 
   // Primary navigation tab: 'home' | 'logbooks' | 'reports' | 'settings'
@@ -3192,10 +3195,17 @@ export default function DashboardPage() {
             type="button"
             style={{ marginBottom: '10px' }}
             onClick={async () => {
-              if (typeof window !== 'undefined' && window.confirm('Reset this report project and start fresh?')) {
+              if (typeof window === 'undefined' || !window.confirm('Reset this project and start over? This will clear uploaded logbook pages, entries, and generated reports for the current project.')) return;
+              const projectId = activeProject?.id;
+              try {
+                if (projectId) await deleteProject(projectId);
+                resetReportState();
+                clearActiveProject();
+                await createProject({ title: 'SIWES Technical Report' });
                 setDetails({
                   name: userFullName,
                   inst: '',
+                  degree: '',
                   fac: '',
                   dept: '',
                   matric: '',
@@ -3207,28 +3217,30 @@ export default function DashboardPage() {
                   sup: '',
                   isup: '',
                 });
+                setFieldSources({});
+                setAnswers({});
                 setPages([]);
                 setEntries([]);
-                setAnswers({});
-                setFieldSources({});
-                setChapterEdits({});
+                setReading(false);
+                setReadProgress(0);
+                setReadDone(false);
                 setStep(1);
+                setMethod('manual');
                 setGenState(0);
+                setGenProgress(0);
+                setGenError(null);
+                setEditorTab('edit');
+                setCurrentSectionIdx(0);
+                setChapterEdits({});
                 setInFlow(false);
+                setLogbookView('pages');
                 setHasPaidDigital(false);
                 setPaymentSuccess(null);
-                if (activeProject?.id) {
-                  try {
-                    await updateActiveProject(activeProject.id, {
-                      matric_number: '',
-                      organization_name: '',
-                      organization_address: '',
-                      training_start_date: null,
-                      training_end_date: null,
-                    });
-                  } catch {}
-                }
-                showToast('Report project reset');
+                setStep4SaveError(null);
+                showToast('Project reset. Starting fresh.');
+              } catch (err: any) {
+                console.error('Reset project failed:', err);
+                showToast(err?.message || 'Failed to reset project');
               }
             }}
           >
