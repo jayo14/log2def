@@ -786,7 +786,7 @@ export default function DashboardPage() {
         restoredGenState = 2;
       } else {
         const s = parseInt(paramStep, 10);
-        if (s >= 1 && s <= 5) {
+        if (s >= 1 && s <= 7) {
           restoredStep = s;
           restoredInFlow = true;
         }
@@ -798,7 +798,7 @@ export default function DashboardPage() {
         restoredGenState = 2;
       } else {
         const s = parseInt(hash.replace('step-', ''), 10);
-        if (s >= 1 && s <= 5) {
+        if (s >= 1 && s <= 7) {
           restoredStep = s;
           restoredInFlow = true;
         }
@@ -881,7 +881,7 @@ export default function DashboardPage() {
       hash = '#delivery-success';
     } else if (inFlow) {
       if (step === 7 && genState === 2) {
-        params.set('step', '5');
+        params.set('step', '7');
         params.set('status', 'ready');
         hash = '#step-success';
       } else {
@@ -943,11 +943,11 @@ export default function DashboardPage() {
       if (paramStep) {
         if (paramStep === 'success' || paramStep === 'ready') {
           setInFlow(true);
-          setStep(5);
+          setStep(7);
           setGenState(2);
         } else {
           const s = parseInt(paramStep, 10);
-          if (s >= 1 && s <= 5) {
+          if (s >= 1 && s <= 7) {
             setStep(s);
             setInFlow(true);
           }
@@ -955,11 +955,11 @@ export default function DashboardPage() {
       } else if (hash.startsWith('step-')) {
         if (hash === 'step-success') {
           setInFlow(true);
-          setStep(5);
+          setStep(7);
           setGenState(2);
         } else {
           const s = parseInt(hash.replace('step-', ''), 10);
-          if (s >= 1 && s <= 5) {
+          if (s >= 1 && s <= 7) {
             setStep(s);
             setInFlow(true);
           }
@@ -968,7 +968,7 @@ export default function DashboardPage() {
 
       if (hash === 'step-success' || hash === 'generated' || paramStatus === 'ready' || paramStatus === 'success') {
         setInFlow(true);
-        setStep(5);
+        setStep(7);
         setGenState(2);
       }
 

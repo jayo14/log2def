@@ -139,7 +139,7 @@ function GuidedIntakePageContent() {
           <p className="text-sm font-semibold">Optional pages and details</p>
           {data.optional_steps.map((optional) => <button key={optional.key} onClick={() => setActiveOptional(optional)} className="block min-h-11 text-left text-sm font-medium text-emerald-800">Add {optional.title.toLowerCase()} →</button>)}
         </div>}
-        <button onClick={() => router.push('/dashboard#home')} className="mt-7 min-h-12 rounded-xl bg-emerald-800 px-5 font-semibold text-white">Return to report checklist</button>
+        <button onClick={() => router.push(`/dashboard?step=6#step-6`)} className="mt-7 min-h-12 rounded-xl bg-emerald-800 px-5 font-semibold text-white">Continue to images</button>
       </main>
     );
   }
