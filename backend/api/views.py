@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import threading
+from io import BytesIO
 from html import escape, unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -14,6 +15,7 @@ from rest_framework import generics, status, views, serializers
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
 from .security import (
     validate_file_content, sanitize_html,
     AuthRateThrottle, HeavyGenerationRateThrottle, UploadRateThrottle
@@ -26,7 +28,7 @@ from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiPara
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, PaymentOrder, Fact, ReportParagraph
+    DefenceQuestion, DefenceSession, PaymentOrder, Fact, ReportParagraph, ReportImage
 )
 from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
 from .guided_intake import intake_answer_complete
@@ -34,7 +36,7 @@ from .serializers import (
     UserRegistrationSerializer, UserSerializer,
     ReportProjectSerializer, ReportProjectDetailSerializer,
     SourceDocumentSerializer, ExtractedPageSerializer,
-    LogbookEntrySerializer, FactSerializer, ReportParagraphSerializer, ReportSerializer, ReportSectionSerializer,
+    LogbookEntrySerializer, FactSerializer, ReportParagraphSerializer, ReportImageSerializer, ReportSerializer, ReportSectionSerializer,
     ReportVersionSerializer, ReportVersionCreateRequestSerializer,
     ReportTemplateSerializer,
     PresentationSlidesResponseSerializer, PresentationScriptResponseSerializer,
@@ -57,6 +59,31 @@ from .defence_generator import (
 )
 from .ai_provider import get_ai_status
 from .feature_flags import get_all_feature_flags, is_feature_enabled, require_feature_flag
+
+
+def _process_report_image(uploaded_file):
+    from PIL import Image, ImageOps
+
+    with Image.open(uploaded_file) as source:
+        image = ImageOps.exif_transpose(source)
+        has_alpha = image.mode in ("RGBA", "LA") or ("transparency" in image.info)
+        if max(image.size) > 1800:
+            image.thumbnail((1800, 1800), Image.Resampling.LANCZOS)
+        if image.width < 700:
+            low_resolution = True
+        else:
+            low_resolution = False
+        output = BytesIO()
+        if has_alpha:
+            image.save(output, format="PNG", optimize=True)
+            content_type = "image/png"
+            extension = ".png"
+        else:
+            image.convert("RGB").save(output, format="JPEG", quality=80, optimize=True)
+            content_type = "image/jpeg"
+            extension = ".jpg"
+        output.seek(0)
+        return output, content_type, extension, image.width, image.height, low_resolution
 
 
 # --- Configuration & Feature Flag Views ---
@@ -473,6 +500,88 @@ class DocumentListUploadView(views.APIView):
                 process_source_document(doc.id)
                 doc.refresh_from_db()
             return Response(SourceDocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+
+class ReportImageListView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        return Response(ReportImageSerializer(project.report_images.all(), many=True).data)
+
+    def post(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        upload = request.FILES.get("file")
+        caption = str(request.data.get("caption", "")).strip()
+        placement = str(request.data.get("placement", "week")).strip()
+        week_number = request.data.get("week_number")
+        if not upload:
+            return Response({"error": "Choose an image to upload."}, status=status.HTTP_400_BAD_REQUEST)
+        if len(caption.split()) < 3:
+            return Response({"error": "Write a caption of at least three words."}, status=status.HTTP_400_BAD_REQUEST)
+        if placement not in dict(ReportImage.PLACEMENT_CHOICES):
+            return Response({"error": "Choose a valid report location."}, status=status.HTTP_400_BAD_REQUEST)
+        if project.report_images.count() >= 6:
+            return Response({"error": "This report allows up to six pictures."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            processed, content_type, extension, width, height, low_resolution = _process_report_image(upload)
+        except Exception as exc:
+            return Response({"error": f"Image processing failed: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
+        image = ReportImage.objects.create(
+            project=project,
+            original_filename=upload.name,
+            caption=caption,
+            placement=placement,
+            week_number=int(week_number) if str(week_number or "").isdigit() else None,
+            order=project.report_images.count(),
+            width=width,
+            height=height,
+            low_resolution_warning=low_resolution,
+        )
+        image.original_file.save(upload.name, upload, save=False)
+        image.processed_file.save(f"{image.id}{extension}", ContentFile(processed.read(), name=f"{image.id}{extension}"), save=False)
+        image.save()
+        return Response(ReportImageSerializer(image).data, status=status.HTTP_201_CREATED)
+
+
+class ReportImageDetailView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def patch(self, request, project_id, image_id):
+        project = get_user_project(request.user, project_id)
+        image = get_object_or_404(ReportImage, project=project, pk=image_id)
+        caption = str(request.data.get("caption", image.caption)).strip()
+        if len(caption.split()) < 3:
+            return Response({"error": "Write a caption of at least three words."}, status=status.HTTP_400_BAD_REQUEST)
+        for field in ("caption", "placement"):
+            if field in request.data:
+                setattr(image, field, str(request.data[field]).strip())
+        if "week_number" in request.data:
+            image.week_number = int(request.data["week_number"]) if str(request.data["week_number"]).isdigit() else None
+        image.save()
+        return Response(ReportImageSerializer(image).data)
+
+    def delete(self, request, project_id, image_id):
+        project = get_user_project(request.user, project_id)
+        image = get_object_or_404(ReportImage, project=project, pk=image_id)
+        image.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ReportImageReorderView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def patch(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        ids = request.data.get("order")
+        if not isinstance(ids, list):
+            return Response({"error": "Provide image ids in display order."}, status=status.HTTP_400_BAD_REQUEST)
+        images = {image.id: image for image in project.report_images.all()}
+        for index, image_id in enumerate(ids):
+            if int(image_id) in images:
+                images[int(image_id)].order = index
+                images[int(image_id)].save(update_fields=["order", "updated_at"])
+        return Response(ReportImageSerializer(project.report_images.all(), many=True).data)
 
 
 @require_feature_flag('logbook_bulk_upload')
@@ -1835,4 +1944,3 @@ class PaymentOrderListCreateView(views.APIView):
         serializer.is_valid(raise_exception=True)
         order = serializer.save(user=request.user, project=project)
         return Response(PaymentOrderSerializer(order).data, status=status.HTTP_201_CREATED)
-

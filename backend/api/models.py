@@ -127,6 +127,11 @@ def source_doc_path(instance, filename):
     return f"projects/{instance.project.id}/sources/{safe_name}"
 
 
+def report_image_path(instance, filename):
+    safe_name = get_safe_upload_filename(filename)
+    return f"projects/{instance.project.id}/report-images/{safe_name}"
+
+
 class SourceDocument(models.Model):
     TYPE_CHOICES = (
         ('pdf', 'PDF Document'),
@@ -365,6 +370,42 @@ class ReportParagraph(models.Model):
     facts = models.ManyToManyField(Fact, related_name='report_paragraphs', blank=True)
 
 
+class ReportImage(models.Model):
+    PLACEMENT_CHOICES = (
+        ('organisation', 'Organisation section'),
+        ('week', 'Weekly activity'),
+        ('tools', 'Equipment and tools'),
+        ('projects', 'Projects'),
+        ('challenges', 'Challenges and solutions'),
+    )
+
+    project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='report_images')
+    original_file = models.FileField(upload_to=report_image_path)
+    processed_file = models.FileField(upload_to=report_image_path)
+    original_filename = models.CharField(max_length=255)
+    caption = models.CharField(max_length=255)
+    placement = models.CharField(max_length=32, choices=PLACEMENT_CHOICES, default='week')
+    week_number = models.PositiveIntegerField(null=True, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    width = models.PositiveIntegerField(default=0)
+    height = models.PositiveIntegerField(default=0)
+    low_resolution_warning = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['placement', 'week_number', 'order', 'id']
+
+    def delete(self, *args, **kwargs):
+        for field in (self.original_file, self.processed_file):
+            if field and field.name:
+                try:
+                    field.delete(save=False)
+                except OSError:
+                    pass
+        super().delete(*args, **kwargs)
+
+
 class ReportVersion(models.Model):
     report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name='versions')
     version_number = models.IntegerField(default=1)
@@ -547,4 +588,3 @@ class TelegramNotificationLog(models.Model):
 
     def __str__(self):
         return f"{self.order_reference} - {self.status} (attempts: {self.attempt_count})"
-

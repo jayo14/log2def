@@ -5,6 +5,7 @@ from .views import (
     PasswordResetRequestView, PasswordResetConfirmView,
     ProjectListCreateView, ProjectDetailView, ProjectCompletenessView, MissingInfoUpdateView, GuidedIntakeView, GuidelineUploadView,
     DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
+    ReportImageListView, ReportImageDetailView, ReportImageReorderView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView, FactListView, FactReviewView, ReportParagraphView,
     TemplateListView,
     ReportDetailView, ReportGenerateView, ReportPageStatusView, SectionUpdateView, SectionRegenerateView,
@@ -64,6 +65,11 @@ urlpatterns = [
     path('projects/<int:project_id>/documents/<int:doc_id>/reprocess', DocumentReprocessView.as_view()),
     path('projects/<int:project_id>/pages/<int:page_id>/', PageUpdateView.as_view(), name='page-update'),
     path('projects/<int:project_id>/pages/<int:page_id>', PageUpdateView.as_view()),
+    path('projects/<int:project_id>/report-images/', ReportImageListView.as_view(), name='report-images'),
+    path('projects/<int:project_id>/report-images', ReportImageListView.as_view()),
+    path('projects/<int:project_id>/report-images/reorder/', ReportImageReorderView.as_view(), name='report-images-reorder'),
+    path('projects/<int:project_id>/report-images/<int:image_id>/', ReportImageDetailView.as_view(), name='report-image-detail'),
+    path('projects/<int:project_id>/report-images/<int:image_id>', ReportImageDetailView.as_view()),
 
     # Logbook Entries
     path('projects/<int:project_id>/logbook-entries/', LogbookEntryListCreateView.as_view(), name='logbook-entries'),

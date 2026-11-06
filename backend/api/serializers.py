@@ -5,7 +5,7 @@ from drf_spectacular.utils import extend_schema_field
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
-    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder, Fact, ReportParagraph
+    DefenceQuestion, DefenceSession, StudentProfile, PaymentOrder, Fact, ReportParagraph, ReportImage
 )
 
 
@@ -146,6 +146,22 @@ class ReportParagraphSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReportParagraph
         fields = ("id", "section_key", "order", "text", "student_confirmed", "fact_ids", "source_pages")
+
+
+class ReportImageSerializer(serializers.ModelSerializer):
+    processed_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReportImage
+        fields = (
+            "id", "original_filename", "caption", "placement", "week_number",
+            "order", "width", "height", "low_resolution_warning", "processed_url",
+            "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "original_filename", "order", "width", "height", "low_resolution_warning", "processed_url", "created_at", "updated_at")
+
+    def get_processed_url(self, obj):
+        return obj.processed_file.url if obj.processed_file else None
 
 
 class ReportSectionSerializer(serializers.ModelSerializer):
@@ -405,4 +421,3 @@ class PaymentOrderSerializer(serializers.ModelSerializer):
                            'squad_transaction_reference', 'order_reference',
                            'status', 'fulfilment_status', 'digital_files_unlocked',
                            'download_count', 'webhook_received_at', 'paid_at']
-
