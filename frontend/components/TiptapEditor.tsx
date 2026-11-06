@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
@@ -28,10 +28,17 @@ export function TiptapEditor({ content, onChange, editable = true }: TiptapEdito
     },
   });
 
-  // Keep editor content in sync when active section changes
+  // Keep editor content in sync when the active section changes without
+  // clobbering the caret. Comparing against editor.getHTML() is unreliable
+  // because it includes the user's own typing, so setContent would overwrite
+  // unsaved edits and throw the cursor to the top on every parent re-render.
+  // Track the last content we committed and only sync when it genuinely differs.
+  const lastCommittedContent = useRef<string>('');
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content || '', { emitUpdate: false });
+    const next = content || '';
+    if (editor && next !== lastCommittedContent.current) {
+      lastCommittedContent.current = next;
+      editor.commands.setContent(next, { emitUpdate: false });
     }
   }, [content, editor]);
 

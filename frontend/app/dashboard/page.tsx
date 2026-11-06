@@ -237,9 +237,20 @@ export default function DashboardPage() {
 
   // OS-Aware PWA Installation state
   const [deviceOS, setDeviceOS] = useState<DeviceOS>('pc');
-  const [isInstalled, setIsInstalled] = useState<boolean>(true); // default true before hydration
+  // Default to "not installed" until hydration resolves; defaults to true caused
+  // the install button to flash in after the mount effect corrected the value.
+  const [isInstalled, setIsInstalled] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  // Persist "Got it" dismissal so the install sheet does not recur after the user
+  // has explicitly dismissed it (or once the app is actually installed).
+  const [installDismissed, setInstallDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('log2def_install_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     try {
@@ -285,10 +296,15 @@ export default function DashboardPage() {
   // caret, throwing the cursor to the top of the editor. Setting innerHTML here
   // (and in the section-tab handlers) keeps the caret where the user is editing.
   useEffect(() => {
-    if (editorRef.current) {
-      editorRef.current.innerHTML = getSectionHtml(currentSectionIdx);
-      editorRef.current.focus();
+    if (!editorRef.current) return;
+    const target = getSectionHtml(currentSectionIdx);
+    // Only rewrite the editor DOM when the section content actually changes.
+    // Resetting innerHTML on every switch clobbers the caret and scroll position,
+    // so skip it when the target content is already what's on screen.
+    if (editorRef.current.innerHTML !== target) {
+      editorRef.current.innerHTML = target;
     }
+    editorRef.current.focus();
   }, [currentSectionIdx]);
   const camInputRef = useRef<HTMLInputElement>(null);
 
@@ -318,8 +334,10 @@ export default function DashboardPage() {
       setIsInstalled(true);
       setDeferredPrompt(null);
       setShowInstallModal(false);
+      setInstallDismissed(true);
       try {
         localStorage.setItem('pwa_installed', 'true');
+        localStorage.setItem('log2def_install_dismissed', 'true');
       } catch {}
       showToast('Log2Def installed successfully!');
     };
@@ -334,13 +352,16 @@ export default function DashboardPage() {
   }, [showToast]);
 
   const handleInstallClick = () => {
+    if (installDismissed) return; // respect an explicit dismissal: do not re-open
     if (deviceOS === 'android' && deferredPrompt) {
       deferredPrompt.prompt();
       deferredPrompt.userChoice.then((choice: any) => {
         if (choice?.outcome === 'accepted') {
           setIsInstalled(true);
+          setInstallDismissed(true);
           try {
             localStorage.setItem('pwa_installed', 'true');
+            localStorage.setItem('log2def_install_dismissed', 'true');
           } catch {}
           showToast('Log2Def installed successfully!');
         }
@@ -577,15 +598,25 @@ export default function DashboardPage() {
     }
   }, [activeProject, userFullName]);
 
-  // Synchronize compiled report sections from PostgreSQL
+  // Synchronize compiled report sections from PostgreSQL.
+  // Seed chapter drafts from the DB, but never overwrite sections the user has
+  // already edited locally. Blindly clobbering chapterEdits on every dbReport
+  // change (which happens after each autosave + refetch) throws away unsaved
+  // edits and, on the next section switch, resets the editor to the top.
   useEffect(() => {
     if (dbReport && dbReport.sections && dbReport.sections.length > 0) {
       setGenState(2);
-      const edits: Record<number, string> = {};
-      dbReport.sections.forEach((s: any, idx: number) => {
-        edits[idx] = s.content;
+      setChapterEdits((prev) => {
+        const next: Record<number, string> = { ...prev };
+        let changed = false;
+        dbReport.sections.forEach((s: any, idx: number) => {
+          if (next[idx] === undefined) {
+            next[idx] = s.content || '';
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
       });
-      setChapterEdits(edits);
     }
   }, [dbReport]);
 
@@ -1939,7 +1970,7 @@ export default function DashboardPage() {
         <header className="top">
           <span className="sp" />
           <span className="tt">Home</span>
-          {!isInstalled ? (
+          {!isInstalled && !installDismissed ? (
             <button
               type="button"
               className="ib"
@@ -1974,7 +2005,7 @@ export default function DashboardPage() {
                 Report out.
               </h1>
             </div>
-            {!isInstalled && (
+            {!isInstalled && !installDismissed && (
               <button
                 type="button"
                 onClick={handleInstallClick}
@@ -2017,7 +2048,7 @@ export default function DashboardPage() {
         </div>
 
         {/* OS-Aware Install Button / Banner */}
-        {!isInstalled && (
+        {!isInstalled && !installDismissed && (
           <div
             className="install-card"
             style={{
@@ -5501,9 +5532,18 @@ export default function DashboardPage() {
         {/* ======================================================== */}
         {/* OS-AWARE INSTALL GUIDANCE MODAL / SHEET                  */}
         {/* ======================================================== */}
-        {showInstallModal && (
+        {showInstallModal && !installDismissed && (
           <div id="install-modal">
-            <div className="bd" onClick={() => setShowInstallModal(false)} />
+            <div
+              className="bd"
+              onClick={() => {
+                setShowInstallModal(false);
+                setInstallDismissed(true);
+                try {
+                  localStorage.setItem('log2def_install_dismissed', 'true');
+                } catch {}
+              }}
+            />
             <div
               className="sht"
               role="dialog"
@@ -5769,7 +5809,13 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className="btn w"
-                onClick={() => setShowInstallModal(false)}
+                onClick={() => {
+                  setShowInstallModal(false);
+                  setInstallDismissed(true);
+                  try {
+                    localStorage.setItem('log2def_install_dismissed', 'true');
+                  } catch {}
+                }}
               >
                 Got it
               </button>
