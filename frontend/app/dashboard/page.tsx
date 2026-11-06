@@ -579,11 +579,11 @@ export default function DashboardPage() {
   // Synchronize payment records directly from PostgreSQL
   useEffect(() => {
     if (payments && payments.length > 0) {
-      const digitalPaid = payments.find((p: any) => p.order_type === 'digital' && p.status === 'successful');
+      const digitalPaid = payments.find((p: any) => p.order_type === 'digital' && p.status === 'paid');
       if (digitalPaid) {
         setHasPaidDigital(true);
       }
-      const deliveryPaid = payments.find((p: any) => p.order_type === 'physical_delivery' && p.status === 'successful');
+      const deliveryPaid = payments.find((p: any) => p.order_type === 'delivery' && p.status === 'paid');
       if (deliveryPaid) {
         setDeliveryData((prev) => ({
           ...prev,
@@ -881,7 +881,8 @@ export default function DashboardPage() {
       const transactionRef =
         searchParams.get('transaction_ref') ||
         searchParams.get('transaction_reference') ||
-        searchParams.get('transactionRef');
+        searchParams.get('transactionRef') ||
+        searchParams.get('reference');
       const orderRef = searchParams.get('order_ref');
       const type = searchParams.get('type');
       const error = searchParams.get('error');
