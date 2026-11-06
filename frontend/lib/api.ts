@@ -308,6 +308,35 @@ export const projectsApi = {
     });
   },
 
+  getReportImages: async (projectId: number | string) => {
+    return apiRequest<any[]>(`/projects/${projectId}/report-images/`);
+  },
+
+  uploadReportImage: async (projectId: number | string, formData: FormData) => {
+    return apiRequest(`/projects/${projectId}/report-images/`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  updateReportImage: async (projectId: number | string, imageId: number | string, data: Record<string, unknown>) => {
+    return apiRequest(`/projects/${projectId}/report-images/${imageId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteReportImage: async (projectId: number | string, imageId: number | string) => {
+    return apiRequest(`/projects/${projectId}/report-images/${imageId}/`, { method: 'DELETE' });
+  },
+
+  reorderReportImages: async (projectId: number | string, order: number[]) => {
+    return apiRequest(`/projects/${projectId}/report-images/reorder/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ order }),
+    });
+  },
+
   // Report & Sections
   getReport: async (projectId: number | string) => {
     return apiRequest(`/projects/${projectId}/report/`);
