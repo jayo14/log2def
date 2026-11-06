@@ -887,7 +887,7 @@ export default function DashboardPage() {
       const error = searchParams.get('error');
 
       if (error) {
-        showToast('Payment was not completed. Please try again.', 'error');
+        showToast('Payment was not completed. Please try again.');
         window.history.replaceState({}, document.title, window.location.pathname);
         return;
       }
@@ -910,12 +910,12 @@ export default function DashboardPage() {
                 phone: deliveryData.phone,
               },
             });
-            showToast('Payment verified! Report unlocked.', 'success');
+            showToast('Payment verified! Report unlocked.');
           } else {
-            showToast('Payment not yet confirmed. Please try again.', 'error');
+            showToast('Payment not yet confirmed. Please try again.');
           }
         } catch (err: any) {
-          showToast(err.message || 'Payment verification failed', 'error');
+          showToast(err.message || 'Payment verification failed');
         } finally {
           setSquadCheckoutLoading(false);
         }
