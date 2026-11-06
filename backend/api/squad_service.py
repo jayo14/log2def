@@ -40,7 +40,22 @@ class SquadError(Exception):
 
 def _headers() -> Dict[str, str]:
     if not SQUAD_SECRET_KEY:
-        raise SquadError('SQUAD_SECRET_KEY is not configured')
+        raise SquadError('SQUAD_SECRET_KEY is not configured. Set it in your backend .env file.')
+
+    # Validate key format matches environment
+    if SQUAD_ENV == 'sandbox' and not SQUAD_SECRET_KEY.startswith('sandbox_sk_'):
+        raise SquadError(
+            f'Invalid Squad secret key for sandbox environment. '
+            f'Key must start with "sandbox_sk_", got "{SQUAD_SECRET_KEY[:20]}...". '
+            f'Get a sandbox key from https://dashboard.squadco.com'
+        )
+    if SQUAD_ENV == 'production' and not SQUAD_SECRET_KEY.startswith('live_sk_'):
+        raise SquadError(
+            f'Invalid Squad secret key for production environment. '
+            f'Key must start with "live_sk_", got "{SQUAD_SECRET_KEY[:20]}...". '
+            f'Get a live key from https://dashboard.squadco.com'
+        )
+
     return {
         'Authorization': f'Bearer {SQUAD_SECRET_KEY}',
         'Content-Type': 'application/json',
