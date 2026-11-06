@@ -1310,6 +1310,36 @@ export default function DashboardPage() {
   // Step 5 Report Generation: triggers real generation in PostgreSQL
   const startGenerating = async () => {
     setGenError(null);
+
+    // Pre-flight: if a previous generation was blocked by missing guided-intake
+    // fields, do not POST again until those fields are actually filled in. Focus
+    // the first still-empty required field so the user lands where the fix is.
+    if (lastGenerateBlock && lastGenerateBlock.missing.length > 0) {
+      const stillMissing = lastGenerateBlock.missing.filter(
+        (k) =>
+          typeof k === 'string' &&
+          k.startsWith('guided_intake:') &&
+          !((intake as any)[k.replace(/^guided_intake:/, '')] &&
+            String((intake as any)[k.replace(/^guided_intake:/, '')]).trim())
+      );
+      if (stillMissing.length > 0) {
+        const firstMissing = stillMissing.find((k) => typeof k === 'string') || null;
+        if (firstMissing) {
+          const focusKey = firstMissing.replace(/^guided_intake:/, '');
+          setIntakeFocusKey(focusKey);
+          setTimeout(() => {
+            const el = intakeRefs.current[focusKey];
+            if (el && typeof el.focus === 'function') {
+              el.focus();
+              el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          }, 0);
+        }
+        setGenState(lastGenerateBlock.canGenerate ? 0 : 0);
+        return;
+      }
+    }
+
     setGenState(1);
     setGenProgress(0);
 
