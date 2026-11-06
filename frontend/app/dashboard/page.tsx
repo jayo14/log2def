@@ -4293,6 +4293,7 @@ export default function DashboardPage() {
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <select
                       id={`a_${x.key}`}
+                      ref={(el) => { intakeRefs.current[x.key] = el; }}
                       value={answers[x.key] || ''}
                       onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
                       style={{ flex: 1, minWidth: 0 }}
@@ -4344,6 +4345,7 @@ export default function DashboardPage() {
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <select
                       id={`a_${x.key}`}
+                      ref={(el) => { intakeRefs.current[x.key] = el; }}
                       value={answers[x.key] || ''}
                       onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
                       style={{ flex: 1, minWidth: 0 }}
