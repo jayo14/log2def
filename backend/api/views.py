@@ -1110,12 +1110,14 @@ def validate_intake_answer(key, answer, required=False):
         return ""
     if key == "organogram_tree" and answer:
         lines = [line for line in str(answer).splitlines() if line.strip()]
+        if len(lines) > 25:
+            return "Use no more than 25 organogram boxes."
         previous_depth = 0
         for index, line in enumerate(lines):
             indent = len(line) - len(line.lstrip(" "))
             depth = indent // 2
-            if "\t" in line or indent % 2 or (index == 0 and depth != 0) or depth > previous_depth + 1:
-                return "Use a root line, then indent each child by two spaces under its parent."
+            if "\t" in line or indent % 2 or (index == 0 and depth != 0) or depth > 4 or depth > previous_depth + 1:
+                return "Use a root line, then indent each child by two spaces, up to five levels."
             previous_depth = depth
     if key in {"include_dedication", "thank_god", "thank_family"}:
         return "" if isinstance(answer, bool) else "Choose yes or no."
@@ -1123,6 +1125,10 @@ def validate_intake_answer(key, answer, required=False):
         return "Enter a text answer for this question."
     if answer is None or not str(answer).strip():
         return "Please enter an answer." if required else ""
+    if key == "organisation_what" and len(str(answer).split()) < 4:
+        return "Write at least one short, true sentence about the organisation's products or services."
+    if key == "organisation_objectives" and len(str(answer).split()) < 3:
+        return "Write a short, true answer about the organisation's mission, vision or objectives."
     return ""
 
 
@@ -1161,6 +1167,8 @@ def save_intake_facts(project, key, answer):
             "organogram_tree": "organisation_detail", "student_unit": "organisation_detail",
             "supervisor_title": "person", "duties": "duty", "recommendations": "recommendation",
             "industry_supervisor_name": "person",
+            "organisation_paste_text": "organisation_detail",
+            "organisation_paste_source": "organisation_detail",
         }
         if key in kinds and str(answer).strip():
             if key == "duties":

@@ -337,8 +337,8 @@
         "section": "ch2_history",
         "required": true,
         "type": "long_text",
-        "title": "What does the organisation do?",
-        "hint": "Describe its main services or work in your own words."
+        "title": "What does the organisation do? (main products or services)",
+        "hint": "Write at least one true sentence. You can use the organisation's About page, brochure, or ask your supervisor or HR."
       },
       {
         "key": "organisation_when_where",
@@ -353,8 +353,8 @@
         "section": "ch2_objectives",
         "required": true,
         "type": "long_text",
-        "title": "What are the organisation's main objectives?",
-        "hint": "Use objectives stated by the organisation, if available."
+        "title": "What is the organisation's mission, vision or main objectives?",
+        "hint": "Write a short answer or paste a confirmed snippet from its profile."
       },
       {
         "key": "organisation_structure",
@@ -443,6 +443,22 @@
         "type": "toggle",
         "title": "Do you have images you'd like to attach to the technical report?",
         "hint": "Yes / No. No continues straight on. Yes opens the image step."
+      },
+      {
+        "key": "organisation_paste_text",
+        "section": "ch2_history",
+        "required": false,
+        "type": "long_text",
+        "title": "Paste instead (optional)",
+        "hint": "Paste text from the company's website, brochure or profile. We use only this pasted text; we do not look the company up."
+      },
+      {
+        "key": "organisation_paste_source",
+        "section": "ch2_history",
+        "required": false,
+        "type": "short_text",
+        "title": "Where did the pasted text come from? (optional)",
+        "hint": "For example: company About page, brochure, or supervisor."
       }
     ]
   }
