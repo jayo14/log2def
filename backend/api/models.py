@@ -414,7 +414,7 @@ class DefenceSession(models.Model):
 
 class PaymentOrder(models.Model):
     ORDER_TYPES = [
-        ('digital', 'Digital Report Download (NGN 2,000)'),
+        ('digital', 'Digital Report Download (NGN 100)'),
         ('delivery', 'Physical Print & Spiral Binding Delivery (NGN 4,000)'),
     ]
     PAYMENT_METHODS = [
@@ -441,7 +441,7 @@ class PaymentOrder(models.Model):
     project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, related_name='payment_orders')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payment_orders')
     order_type = models.CharField(max_length=20, choices=ORDER_TYPES)
-    amount = models.DecimalField(max_digits=10, decimal_places=2, default=2000.00)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=100.00)
     amount_kobo = models.PositiveIntegerField(default=0)
     currency = models.CharField(max_length=3, default='NGN')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHODS, default='card')

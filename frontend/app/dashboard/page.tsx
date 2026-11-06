@@ -2521,7 +2521,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Dual Actions: 1. Digital Download (NGN 2000) & 2. Print Delivery (NGN 4000) */}
+        {/* Dual Actions: 1. Digital Download (NGN 100) & 2. Print Delivery (NGN 4000) */}
         <div style={{ marginTop: '22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             className="btn w"
@@ -2537,7 +2537,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               download
             </span>
-            {hasPaidDigital ? 'Download Report (Paid)' : 'Download Report (NGN 2,000)'}
+            {hasPaidDigital ? 'Download Report (Paid)' : 'Download Report (NGN 100)'}
           </button>
 
           <button
@@ -3081,7 +3081,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div className="s-label">Digital Download (PDF &amp; Word DOCX)</div>
-                <div className="s-val">NGN 2,000</div>
+                <div className="s-val">NGN 100</div>
               </div>
               {hasPaidDigital && (
                 <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)' }}>
@@ -5097,7 +5097,7 @@ export default function DashboardPage() {
         )}
 
         {/* ======================================================== */}
-        {/* CHECKOUT MODAL 1: DIGITAL REPORT (NGN 2,000)             */}
+        {/* CHECKOUT MODAL 1: DIGITAL REPORT (NGN 100)             */}
         {/* ======================================================== */}
         {checkoutModal === 'digital' && (
           <div id="checkout-digital">
@@ -5128,7 +5128,7 @@ export default function DashboardPage() {
 
                 <div className="checkout-price">
                   <span>Total Amount</span>
-                  <b>NGN 2,000</b>
+                  <b>NGN 100</b>
                 </div>
 
                 <div style={{ fontSize: '13px', color: 'var(--mut)', marginBottom: '16px' }}>
@@ -5210,7 +5210,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <span className="ms">lock</span>
-                      Pay NGN 2,000 Now
+                      Pay NGN 100 Now
                     </>
                   )}
                 </button>
@@ -5373,7 +5373,7 @@ export default function DashboardPage() {
                 </div>
                 <h2>Payment Successful!</h2>
                 <p style={{ marginTop: '6px' }}>
-                  Payment of <b>NGN 2,000</b> confirmed.
+                  Payment of <b>NGN 100</b> confirmed.
                   <br />
                   Reference: <code>{paymentSuccess.txRef}</code>
                 </p>

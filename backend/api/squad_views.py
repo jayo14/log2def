@@ -57,7 +57,7 @@ class SquadInitializeView(views.APIView):
 
         # Prices are controlled exclusively by the backend — never trust the client
         if order_type == 'digital':
-            amount = 2000.00
+            amount = 100.00
         else:
             amount = 4000.00
         amount_kobo = int(amount * 100)
