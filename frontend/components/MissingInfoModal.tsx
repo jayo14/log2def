@@ -365,11 +365,12 @@ export default function MissingInfoModal({
           <div className="flex items-center justify-end gap-3 pt-3">
             {project?.id && (
               <a
-                href={`/projects/${project.id}/intake`}
+                href="/dashboard?step=5#step-5"
+                onClick={onClose}
                 className="px-4 py-2.5 rounded-full text-xs font-bold text-center"
                 style={{ border: '1px solid var(--g, #066b4d)', color: 'var(--g, #066b4d)' }}
               >
-                Open report interview
+                Answer organisation questions
               </a>
             )}
             <button
