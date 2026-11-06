@@ -2,6 +2,11 @@
 
 ## Flow
 
+The dashboard wizard now has seven steps: Your details, Logbook, Review,
+Missing info, About your organisation, Images, and Generate. The organisation
+step opens the existing resumable guided interview; the images step is
+optional and continues directly to generation when no pictures are added.
+
 `GET /api/projects/{id}/intake/` returns the current answers, the required
 questions still missing from the active v2 template manifest, optional
 questions, the project completeness result, and a read-only duties prefill from
@@ -15,6 +20,17 @@ questions are filtered from the template manifest and saved separately with
 never populate the answer field. Optional personal pages remain opt-in. Empty
 dedication or acknowledgement data produces no page. The “thank God” and
 family acknowledgement choices default to off.
+
+Organisation profile answers include the products/services sentence, optional
+history/location, objectives, structure, organogram tree, and optional pasted
+source text plus its origin. Pasted source is stored as a student-provided fact;
+the system does not fetch or search the organisation.
+
+Images are uploaded one at a time through `/api/projects/{id}/report-images/`.
+The server applies EXIF orientation, removes metadata, bounds the long side at
+1800 pixels, stores a private original, and embeds only the processed copy.
+Captions require at least three words. Pictures are optional, capped at six,
+editable and reorderable, and render after References in `Appendix A / Pictures`.
 
 The required interview inputs cover organisation work/objectives/structure,
 an indented organogram, the student's unit, duties, paired challenges and
