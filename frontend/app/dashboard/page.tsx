@@ -209,7 +209,7 @@ export default function DashboardPage() {
 
   // Payment & Checkout State
   const [checkoutModal, setCheckoutModal] = useState<'digital' | 'delivery' | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer' | 'ussd'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'transfer'>('card');
   const [hasPaidDigital, setHasPaidDigital] = useState<boolean>(false);
 
   const [paymentSuccess, setPaymentSuccess] = useState<{
@@ -5169,24 +5169,6 @@ export default function DashboardPage() {
                     <small className="mut">Instant automated verification</small>
                   </div>
                   {paymentMethod === 'transfer' && (
-                    <span className="ms" style={{ color: 'var(--g)' }}>
-                      check_circle
-                    </span>
-                  )}
-                </div>
-
-                <div
-                  className={`pay-option ${paymentMethod === 'ussd' ? 'selected' : ''}`}
-                  onClick={() => setPaymentMethod('ussd')}
-                >
-                  <span className="ms" style={{ color: 'var(--g)' }}>
-                    dialpad
-                  </span>
-                  <div style={{ flex: 1 }}>
-                    <div>USSD Code</div>
-                    <small className="mut">*737#, *894#, *966#</small>
-                  </div>
-                  {paymentMethod === 'ussd' && (
                     <span className="ms" style={{ color: 'var(--g)' }}>
                       check_circle
                     </span>

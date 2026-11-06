@@ -273,6 +273,7 @@ class SquadCallbackView(views.APIView):
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
             return redirect(
                 f'{frontend_url}/dashboard/payment-success?order_ref={order.order_reference}'
+                f'&transaction_ref={order.squad_transaction_reference}'
                 f'&type={order.order_type}'
             )
         else:
