@@ -420,7 +420,6 @@ class PaymentOrder(models.Model):
     PAYMENT_METHODS = [
         ('card', 'Debit / Credit Card'),
         ('transfer', 'Bank Transfer'),
-        ('ussd', 'USSD'),
     ]
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -508,4 +507,30 @@ class SquadWebhookEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_id} - {self.event_type} - {'ok' if self.success else 'failed'}"
+
+
+class TelegramNotificationLog(models.Model):
+    """Tracks Telegram payment notifications for deduplication and retries.
+
+    One row per order_reference. status='sent' means a notification was
+    successfully delivered; duplicate sends for the same order are skipped.
+    """
+
+    STATUS_CHOICES = [
+        ('sent', 'Sent'),
+        ('failed', 'Failed'),
+    ]
+
+    order_reference = models.CharField(max_length=64, unique=True, db_index=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='failed')
+    attempt_count = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True, default='')
+    sent_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.order_reference} - {self.status} (attempts: {self.attempt_count})"
 

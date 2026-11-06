@@ -119,7 +119,7 @@ class SquadInitializeView(views.APIView):
                 transaction_ref=transaction_ref,
                 callback_url=callback_url,
                 customer_name=recipient_name or request.user.get_full_name() or request.user.username,
-                payment_channels=['card', 'bank', 'ussd', 'transfer'],
+                payment_channels=['card', 'bank', 'transfer'],
                 metadata=squad_metadata,
             )
         except SquadError as exc:
