@@ -105,18 +105,32 @@ class SimpleHTMLDocxParser(HTMLParser):
             abs_path = None
             project_root = Path(__file__).resolve().parent.parent.parent
             logo_cfg = self.logo_cfg or {}
-            logo_path = logo_cfg.get('path', '')
-            if src.startswith('/api/institutions/') and logo_path:
-                candidate = (project_root / logo_path).resolve()
-                if candidate.exists():
-                    abs_path = str(candidate)
+            configured_path = logo_cfg.get('path', '')
+            if src.startswith('/api/institutions/'):
+                if configured_path:
+                    candidate = (project_root / configured_path).resolve()
+                    if candidate.exists():
+                        abs_path = str(candidate)
+                if abs_path is None:
+                    inst_dir = project_root / 'assets' / 'institutions' / 'lasustech'
+                    for name in ('logo.png', 'logo.web.png', 'logo.svg'):
+                        candidate = (inst_dir / name).resolve()
+                        if candidate.exists() and candidate.suffix.lower() != '.svg':
+                            abs_path = str(candidate)
+                            break
             if abs_path is None:
                 # Fallback: treat src as a direct filesystem path (relative to project root).
                 candidate = (project_root / src.lstrip('/')).resolve()
-                if candidate.exists():
+                if candidate.exists() and candidate.suffix.lower() != '.svg':
                     abs_path = str(candidate)
             if abs_path is None:
                 # Logo missing: do not render a placeholder; log an error and skip.
+                # CI/build can enforce presence via REQUIRE_REPORT_LOGO/CI checks.
+                import os
+                if os.environ.get('CI', '').lower() in {'1', 'true', 'yes'} or os.environ.get('REQUIRE_REPORT_LOGO', '').lower() in {'1', 'true', 'yes'}:
+                    raise FileNotFoundError(
+                        "Institution logo asset is missing for DOCX cover embedding; build/export cannot continue."
+                    )
                 logger.error("Institution logo asset missing for src '%s'; DOCX cover will omit the logo.", src)
                 return
             from docx.shared import Cm
