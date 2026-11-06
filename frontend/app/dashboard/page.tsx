@@ -278,6 +278,18 @@ export default function DashboardPage() {
   const editorRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Render editor content only when the section changes. We deliberately do NOT
+  // bind innerHTML via dangerouslySetInnerHTML on every render: typing triggers
+  // setChapterEdits, which would re-render and clobber the DOM node under the
+  // caret, throwing the cursor to the top of the editor. Setting innerHTML here
+  // (and in the section-tab handlers) keeps the caret where the user is editing.
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = getSectionHtml(currentSectionIdx);
+      editorRef.current.focus();
+    }
+  }, [currentSectionIdx]);
   const camInputRef = useRef<HTMLInputElement>(null);
 
   // Show Toast helper
@@ -2388,7 +2400,6 @@ export default function DashboardPage() {
                 aria-multiline="true"
                 aria-label={editorLabels[currentSectionIdx] || 'Report section'}
                 style={{ textAlign: 'justify' }}
-                dangerouslySetInnerHTML={{ __html: getSectionHtml(currentSectionIdx) }}
                 onInput={(e) => {
                   setSaveStatusText('saving');
                   const val = e.currentTarget.innerHTML;
