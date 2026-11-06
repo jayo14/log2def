@@ -4480,43 +4480,55 @@ export default function DashboardPage() {
     );
   };
 
+  const organisationFields = [
+    { key: 'organisation_what', label: "What does the organisation do? (main products or services)", required: true, rows: 4 },
+    { key: 'organisation_when_where', label: 'When and how did it start? Where is it based?', required: false, rows: 3 },
+    { key: 'organisation_objectives', label: "What is the organisation's mission, vision or main objectives?", required: true, rows: 4 },
+    { key: 'organisation_structure', label: 'Who heads the organisation (title)? What are the main departments or units? Which one did you work in? Who did you report to?', required: true, rows: 5 },
+    { key: 'organogram_tree', label: 'Organogram: one role per line, with two spaces for each reporting level', required: true, rows: 6 },
+    { key: 'student_unit', label: 'Which unit were you attached to?', required: true, rows: 2 },
+    { key: 'duties', label: 'What were your main responsibilities there?', required: true, rows: 4 },
+    { key: 'organisation_paste_text', label: 'Paste instead (optional): text from the company profile or About page', required: false, rows: 4 },
+    { key: 'organisation_paste_source', label: 'Where did the pasted text come from? (optional)', required: false, rows: 2 },
+  ];
+
+  const saveOrganisationAnswers = async (advanceOnComplete: boolean = false): Promise<boolean> => {
+    const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (!pid) return false;
+    const currentAnswers = ((intake as any).answers || {}) as Record<string, string>;
+    const missing = organisationFields.filter((field) => field.required && !String(currentAnswers[field.key] || '').trim());
+    if (missing.length) {
+      setOrganisationError(`Please complete: ${missing.map((field) => field.label).join(', ')}`);
+      return false;
+    }
+    setSavingOrganisation(true);
+    setOrganisationError('');
+    try {
+      for (const field of organisationFields) {
+        await projectsApi.saveGuidedIntakeAnswer(pid, field.key, currentAnswers[field.key] || '');
+      }
+      const refreshed = await projectsApi.getGuidedIntake<Record<string, any>>(pid);
+      setIntake(refreshed);
+      if (advanceOnComplete && refreshed?.intake_complete) {
+        setStep(6);
+        if (scrRef.current) scrRef.current.scrollTop = 0;
+      }
+      return true;
+    } catch (error) {
+      setOrganisationError(error instanceof Error ? error.message : 'Your organisation answers could not be saved.');
+      return false;
+    } finally {
+      setSavingOrganisation(false);
+    }
+  };
+
   // ==========================================
   // WIZARD FLOW: STEP 5 (READY TO GENERATE) — ENHANCED UI
   const renderStepOrganisation = () => {
     const intakeComplete = Boolean((intake as any).intake_complete);
-    const organisationFields = [
-      { key: 'organisation_what', label: "What does the organisation do? (main products or services)", required: true, rows: 4 },
-      { key: 'organisation_when_where', label: 'When and how did it start? Where is it based?', required: false, rows: 3 },
-      { key: 'organisation_objectives', label: "What is the organisation's mission, vision or main objectives?", required: true, rows: 4 },
-      { key: 'organisation_structure', label: 'Who heads the organisation (title)? What are the main departments or units? Which one did you work in? Who did you report to?', required: true, rows: 5 },
-      { key: 'organogram_tree', label: 'Organogram: one role per line, with two spaces for each reporting level', required: true, rows: 6 },
-      { key: 'student_unit', label: 'Which unit were you attached to?', required: true, rows: 2 },
-      { key: 'duties', label: 'What were your main responsibilities there?', required: true, rows: 4 },
-      { key: 'organisation_paste_text', label: 'Paste instead (optional): text from the company profile or About page', required: false, rows: 4 },
-      { key: 'organisation_paste_source', label: 'Where did the pasted text come from? (optional)', required: false, rows: 2 },
-    ];
     const currentAnswers = ((intake as any).answers || {}) as Record<string, string>;
     const saveOrganisation = async () => {
-      const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
-      if (!pid) return;
-      const missing = organisationFields.filter((field) => field.required && !String(currentAnswers[field.key] || '').trim());
-      if (missing.length) {
-        setOrganisationError(`Please complete: ${missing.map((field) => field.label).join(', ')}`);
-        return;
-      }
-      setSavingOrganisation(true);
-      setOrganisationError('');
-      try {
-        for (const field of organisationFields) {
-          await projectsApi.saveGuidedIntakeAnswer(pid, field.key, currentAnswers[field.key] || '');
-        }
-        const refreshed = await projectsApi.getGuidedIntake<Record<string, any>>(pid);
-        setIntake(refreshed);
-      } catch (error) {
-        setOrganisationError(error instanceof Error ? error.message : 'Your organisation answers could not be saved.');
-      } finally {
-        setSavingOrganisation(false);
-      }
+      await saveOrganisationAnswers(true);
     };
     return (
       <div className="view" id="step-5">
@@ -5022,17 +5034,38 @@ export default function DashboardPage() {
       );
     }
     if (step === 5) {
+      const intakeComplete = Boolean((intake as any)?.intake_complete);
       return (
-        <button className="btn" type="button" onClick={() => {
-          if ((intake as any).intake_complete) {
-            setStep(6);
-            if (scrRef.current) scrRef.current.scrollTop = 0;
-          } else {
-            router.push(`/projects/${activeProject?.id || ''}/intake`);
-          }
-        }} style={{ flex: 1 }}>
-          {(intake as any).intake_complete ? 'Continue to images' : 'Answer organisation questions'}
-          <span className="ms" aria-hidden="true">arrow_forward</span>
+        <button
+          className="btn"
+          type="button"
+          disabled={savingOrganisation}
+          onClick={async () => {
+            if (intakeComplete) {
+              setStep(6);
+              if (scrRef.current) scrRef.current.scrollTop = 0;
+            } else {
+              await saveOrganisationAnswers(true);
+            }
+          }}
+          style={{ flex: 1 }}
+        >
+          {savingOrganisation ? (
+            <>
+              <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
+              Saving answers…
+            </>
+          ) : intakeComplete ? (
+            <>
+              Continue to images
+              <span className="ms" aria-hidden="true">arrow_forward</span>
+            </>
+          ) : (
+            <>
+              Save and continue
+              <span className="ms" aria-hidden="true">arrow_forward</span>
+            </>
+          )}
         </button>
       );
     }
