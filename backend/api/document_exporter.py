@@ -28,11 +28,12 @@ class SimpleHTMLDocxParser(HTMLParser):
     and renders them directly into a python-docx Document with proper academic formatting.
     Defaults to justified body paragraphs per LASUSTECH formatting requirements.
     """
-    def __init__(self, doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY, logo_cfg=None):
+    def __init__(self, doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY, logo_cfg=None, compact_cover=False):
         super().__init__()
         self.doc = doc
         self.default_align = default_align
         self.logo_cfg = logo_cfg or {}
+        self.compact_cover = compact_cover
         self.current_p = None
         self.bold = False
         self.italic = False
@@ -64,8 +65,9 @@ class SimpleHTMLDocxParser(HTMLParser):
 
         if tag in ['p', 'div']:
             self.current_p = self.doc.add_paragraph()
-            self.current_p.paragraph_format.line_spacing = 1.5
-            self.current_p.paragraph_format.space_after = Pt(6)
+            compact = self.compact_cover and self.default_align == WD_ALIGN_PARAGRAPH.CENTER
+            self.current_p.paragraph_format.line_spacing = 1.15 if compact else 1.5
+            self.current_p.paragraph_format.space_after = Pt(2 if compact else 6)
             if 'text-align: center' in align_str:
                 self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif 'text-align: right' in align_str:
@@ -77,17 +79,20 @@ class SimpleHTMLDocxParser(HTMLParser):
 
         elif tag in ['h1', 'h2']:
             self.current_p = self.doc.add_paragraph()
-            self.current_p.paragraph_format.line_spacing = 1.5
-            self.current_p.paragraph_format.space_before = Pt(14)
-            self.current_p.paragraph_format.space_after = Pt(6)
-            self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER if 'text-align: center' in align_str else WD_ALIGN_PARAGRAPH.LEFT
+            compact = self.compact_cover and self.default_align == WD_ALIGN_PARAGRAPH.CENTER
+            self.current_p.paragraph_format.line_spacing = 1.15 if compact else 1.5
+            self.current_p.paragraph_format.space_before = Pt(4 if compact else 14)
+            self.current_p.paragraph_format.space_after = Pt(2 if compact else 6)
+            self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER if 'text-align: center' in align_str or compact else WD_ALIGN_PARAGRAPH.LEFT
             self.bold = True
 
         elif tag in ['h3', 'h4']:
             self.current_p = self.doc.add_paragraph()
-            self.current_p.paragraph_format.line_spacing = 1.5
-            self.current_p.paragraph_format.space_before = Pt(10)
-            self.current_p.paragraph_format.space_after = Pt(4)
+            compact = self.compact_cover and self.default_align == WD_ALIGN_PARAGRAPH.CENTER
+            self.current_p.paragraph_format.line_spacing = 1.15 if compact else 1.5
+            self.current_p.paragraph_format.space_before = Pt(2 if compact else 10)
+            self.current_p.paragraph_format.space_after = Pt(2 if compact else 4)
+            self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER if compact else self.current_p.alignment
             self.bold = True
 
         elif tag in ['strong', 'b']:
@@ -499,7 +504,7 @@ def generate_docx_report(report: Report) -> str:
         add_footer_page_number(sec1, fmt="lowerRoman", start=1)
 
     if cover_sec:
-        parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER, logo_cfg=logo_cfg)
+        parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER, logo_cfg=logo_cfg, compact_cover=True)
         parser.feed(cover_sec.content or "")
 
     # --- SECTION 2: PRELIMINARY PAGES (Title Page to TOC) ---
