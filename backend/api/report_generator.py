@@ -970,7 +970,10 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.title = definition["title"]
         section.order = (position + 1) * 10
         section.is_required = definition.get("required", False)
-        base_content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
+        if key == "appendices" and report_images:
+            base_content = content_text
+        else:
+            base_content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
         if key == "title_page":
             logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
             section.content = logo_html + base_content if logo_html else base_content
