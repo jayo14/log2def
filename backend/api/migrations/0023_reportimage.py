@@ -1,5 +1,5 @@
 from django.db import migrations, models
-import backend.api.models
+import api.models
 
 
 class Migration(migrations.Migration):
@@ -12,8 +12,8 @@ class Migration(migrations.Migration):
             name="ReportImage",
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
-                ("original_file", models.FileField(upload_to=backend.api.models.report_image_path)),
-                ("processed_file", models.FileField(upload_to=backend.api.models.report_image_path)),
+                ("original_file", models.FileField(upload_to=api.models.report_image_path)),
+                ("processed_file", models.FileField(upload_to=api.models.report_image_path)),
                 ("original_filename", models.CharField(max_length=255)),
                 ("caption", models.CharField(max_length=255)),
                 ("placement", models.CharField(choices=[("organisation", "Organisation section"), ("week", "Weekly activity"), ("tools", "Equipment and tools"), ("projects", "Projects"), ("challenges", "Challenges and solutions")], default="week", max_length=32)),
