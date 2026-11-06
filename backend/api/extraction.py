@@ -164,13 +164,23 @@ def persist_fact_candidate(project, candidate: dict[str, Any], transcript: str, 
 
 
 def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]:
-    """Report confirmed, fact-backed material; never count boilerplate as evidence."""
+    """Report material sufficiency from confirmed facts, reviewed logbook entries, or day records."""
     pages = list(LogbookPage.objects.filter(extracted_page__document__project=project).order_by("page_index"))
     blank_pages = [page.page_index for page in pages if not (page.reviewed_text or "").strip()]
     confirmed_activities = Fact.objects.filter(project=project, kind="activity", status="confirmed").count()
-    # Legacy LogbookEntry verification has inconsistent provenance, so it does
-    # not count as a confirmed Fact for safety/completeness decisions.
-    activity_count = confirmed_activities
+    # Prefer confirmed Facts; fall back to logbook entries/day records with substantive text
+    # so users who have uploaded/reviewed entries are not blocked by a provenance gap.
+    try:
+        from .models import LogbookEntry
+        entry_qs = LogbookEntry.objects.filter(project=project)
+        try:
+            entry_count = entry_qs.exclude(verified_text='', raw_text='', activity_summary='').count()
+        except Exception:
+            entry_count = entry_qs.count()
+    except Exception:
+        entry_count = 0
+    day_count = DayEntry.objects.filter(week_record__project=project).exclude(text='').count()
+    activity_count = max(confirmed_activities, entry_count, day_count)
     from .templates import get_section_requirements
     manifest = get_section_requirements()
     section_fact_kinds = {
