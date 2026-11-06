@@ -49,6 +49,7 @@ urlpatterns = [
     path('projects/<int:project_id>/missing-info/', MissingInfoUpdateView.as_view(), name='project-missing-info'),
     path('projects/<int:project_id>/missing-info', MissingInfoUpdateView.as_view()),
     path('projects/<int:project_id>/intake/', GuidedIntakeView.as_view(), name='guided-intake'),
+    path('projects/<int:project_id>/intake', GuidedIntakeView.as_view()),
     path('projects/<int:project_id>/upload-guideline/', GuidelineUploadView.as_view(), name='project-upload-guideline'),
     path('projects/<int:project_id>/upload-guideline', GuidelineUploadView.as_view()),
 
