@@ -28,10 +28,11 @@ class SimpleHTMLDocxParser(HTMLParser):
     and renders them directly into a python-docx Document with proper academic formatting.
     Defaults to justified body paragraphs per LASUSTECH formatting requirements.
     """
-    def __init__(self, doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY):
+    def __init__(self, doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY, logo_cfg=None):
         super().__init__()
         self.doc = doc
         self.default_align = default_align
+        self.logo_cfg = logo_cfg or {}
         self.current_p = None
         self.bold = False
         self.italic = False
@@ -102,15 +103,13 @@ class SimpleHTMLDocxParser(HTMLParser):
                 return
             # Resolve API-backed logo URLs to local file paths for DOCX embedding.
             abs_path = None
-            if src.startswith('/api/institutions/'):
-                from .templates import get_template_spec
-                project_root = Path(__file__).resolve().parent.parent.parent
-                spec = get_template_spec(code='lasustech-standard', version='1.0.0')
-                logo_path = spec.get('institution_asset', {}).get('logo', {}).get('path', '')
-                if logo_path:
-                    candidate = (project_root / logo_path).resolve()
-                    if candidate.exists():
-                        abs_path = str(candidate)
+            project_root = Path(__file__).resolve().parent.parent.parent
+            logo_cfg = self.logo_cfg or {}
+            logo_path = logo_cfg.get('path', '')
+            if src.startswith('/api/institutions/') and logo_path:
+                candidate = (project_root / logo_path).resolve()
+                if candidate.exists():
+                    abs_path = str(candidate)
             if abs_path is None:
                 # Fallback: treat src as a direct filesystem path (relative to project root).
                 candidate = (project_root / src.lstrip('/')).resolve()
@@ -121,8 +120,6 @@ class SimpleHTMLDocxParser(HTMLParser):
                 logger.error("Institution logo asset missing for src '%s'; DOCX cover will omit the logo.", src)
                 return
             from docx.shared import Cm
-            spec = get_template_spec(code='lasustech-standard', version='1.0.0')
-            logo_cfg = spec.get('institution_asset', {}).get('logo', {})
             width_cm = float(logo_cfg.get('width_cm', 3.2))
             # Ensure a paragraph exists for the image.
             if self.current_p is None:
@@ -397,7 +394,12 @@ def document_node_to_html(node: dict) -> str:
     if node_type == "cell":
         return f"<td>{text}{children}</td>"
     if node_type == "figure":
+        src = node.get("attrs", {}).get("src", "")
         caption = escape(node.get("attrs", {}).get("caption", ""))
+        if src:
+            # Emit a real  so the DOCX parser embeds the institution logo image
+            # (centred, sized, alt text) instead of rendering only the alt text.
+            return f'<img src="{escape(src)}" alt="{escape(caption)}"/>'
         return f"<p>{caption}</p>" if caption else ""
     return text + children
 
@@ -422,6 +424,10 @@ def generate_docx_report(report: Report) -> str:
         update_fields = OxmlElement("w:updateFields")
         update_fields.set(qn("w:val"), "true")
         doc.settings.element.append(update_fields)
+
+    # Institution logo is a template-level asset (students cannot change it).
+    template_snapshot = report.template_snapshot if isinstance(report.template_snapshot, dict) else {}
+    logo_cfg = (template_snapshot.get("institution_asset", {}) or {}).get("logo", {}) or {}
 
     # Configure base Normal style
     normal_style = doc.styles['Normal']
@@ -471,7 +477,7 @@ def generate_docx_report(report: Report) -> str:
         add_footer_page_number(sec1, fmt="lowerRoman", start=1)
 
     if cover_sec:
-        parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER)
+        parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER, logo_cfg=logo_cfg)
         parser.feed(cover_sec.content or "")
 
     # --- SECTION 2: PRELIMINARY PAGES (Title Page to TOC) ---
@@ -547,7 +553,7 @@ def generate_docx_report(report: Report) -> str:
                 sub_run.font.name = 'Times New Roman'
                 sub_run.font.size = Pt(12)
 
-            b_parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY)
+            b_parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY, logo_cfg=logo_cfg)
             b_parser.feed(b_sec.content or "")
 
     # Explicitly set every run, including style and field runs, so Word does not
