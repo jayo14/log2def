@@ -891,6 +891,16 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "references": LASUSTECH_CS_V2["fixed_text"]["itf_reference"],
         "appendices": "",
     }
+    report_images = list(project.report_images.all().order_by("placement", "week_number", "order", "id"))
+    if report_images:
+        image_nodes = [
+            f'<p style="text-align: center"><img data-report-image="true" src="{escape(image.processed_file.path)}" alt="Figure A.{index}: {escape(image.caption)}"/></p>'
+            for index, image in enumerate(report_images, start=1)
+        ]
+        source_text["appendices"] = (
+            '<h2 style="text-align: center">APPENDIX A<br/>PICTURES</h2>'
+            + "".join(image_nodes)
+        )
     # Activity prose is supplied only through confirmed, normalized paragraph
     # records. Raw transcript lines are never copied into report sections.
     if project.full_name and project.matric_number and project.department and project.organization_name and duration:

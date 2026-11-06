@@ -101,6 +101,41 @@ class SimpleHTMLDocxParser(HTMLParser):
         elif tag in ['em', 'i']:
             self.italic = True
 
+        elif tag == 'img' and attrs_dict.get('data-report-image') == 'true':
+            src = attrs_dict.get('src', '')
+            caption = attrs_dict.get('alt', '')
+            abs_path = Path(src)
+            if not abs_path.exists():
+                candidate = (Path(__file__).resolve().parent.parent.parent / src.lstrip('/')).resolve()
+                abs_path = candidate
+            if not abs_path.exists():
+                logger.warning("Report image missing during export: %s", src)
+                return
+            from PIL import Image as PILImage
+            with PILImage.open(abs_path) as pil_img:
+                width, height = pil_img.size
+            scale = min(12.0 / max(width, 1), 9.0 / max(height, 1), 1.0)
+            image_p = self.doc.add_paragraph()
+            image_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            image_p.paragraph_format.space_after = Pt(0)
+            image_p.paragraph_format.keep_with_next = True
+            run = image_p.add_run()
+            run.add_picture(str(abs_path), width=Cm(width * scale))
+            drawing = run._r.find(qn('w:drawing'))
+            if drawing is not None:
+                doc_pr = drawing.find('.//' + qn('wp:docPr'))
+                if doc_pr is not None:
+                    doc_pr.set('descr', caption)
+                    doc_pr.set('title', caption)
+            caption_p = self.doc.add_paragraph()
+            caption_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            caption_p.paragraph_format.line_spacing = 1.0
+            caption_p.paragraph_format.space_after = Pt(12)
+            caption_p.paragraph_format.keep_together = True
+            caption_run = caption_p.add_run(caption)
+            caption_run.italic = True
+            caption_run.font.name = 'Times New Roman'
+            caption_run.font.size = Pt(11)
         elif tag == 'img':
             src = attrs_dict.get('src', '')
             alt = attrs_dict.get('alt', '')
@@ -419,9 +454,7 @@ def document_node_to_html(node: dict) -> str:
         src = node.get("attrs", {}).get("src", "")
         caption = escape(node.get("attrs", {}).get("caption", ""))
         if src:
-            # Emit a real  so the DOCX parser embeds the institution logo image
-            # (centred, sized, alt text) instead of rendering only the alt text.
-            return f'<img src="{escape(src)}" alt="{escape(caption)}"/>'
+            return f'<img data-report-image="true" src="{escape(src)}" alt="{escape(caption)}"/>'
         return f"<p>{caption}</p>" if caption else ""
     return text + children
 
@@ -836,4 +869,3 @@ def _build_condensed_html(section, result: "CondenseResult") -> str:
         if not clean.endswith((".", "!", "?")):
             clean = clean.rsplit(".", 1)[0] + "."
     return f"<p>{clean}</p>"
-
