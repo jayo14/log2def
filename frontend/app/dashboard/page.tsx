@@ -7,7 +7,7 @@ import {
   useProjectStore,
   useReportStore,
 } from '@/lib/store';
-import { getApiBaseUrl, getAuthToken } from '@/lib/api';
+import { getApiBaseUrl, getAuthToken, projectsApi } from '@/lib/api';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
@@ -282,6 +282,37 @@ export default function DashboardPage() {
       // fallback
     }
   }, [userFullName]);
+
+  // Fetch the guided-intake (report interview) answers once the active project is
+  // known, so Step 4 can render the required fields and Step 5 can recover from a
+  // blocked generation by focusing the first missing field.
+  useEffect(() => {
+    const pid =
+      activeProject?.id ||
+      useProjectStore.getState().activeProject?.id;
+    if (!pid) return;
+
+    let cancelled = false;
+    setIntakeLoading(true);
+    projectsApi.getGuidedIntake(pid)
+      .then((data: any) => {
+        if (!cancelled) {
+          setIntake((prev) => (Object.keys(data).length ? data : prev));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          // Keep any previously fetched answers; the interview route is the
+          // authoritative place to fix guided-intake fields.
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIntakeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject?.id]);
 
   // Bottom sheet modal state for editing details & entries
   const [activeSheet, setActiveSheet] = useState<
