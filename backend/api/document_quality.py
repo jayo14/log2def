@@ -448,9 +448,14 @@ def validate_docx_artifact(report, path):
                 p_pr = child.find(qn('w:pPr'))
                 jc = p_pr.find(qn('w:jc')) if p_pr is not None else None
                 is_centered = jc is not None and jc.get(qn('w:val')) == 'center'
-                # Alt text check
-                descr = drawing.find('.//' + qn('w:descr'))
-                alt_text = descr.text if descr is not None else ''
+                # Alt text check (wp:docPr is the standard location; keep w:descr fallback)
+                doc_pr = drawing.find('.//' + qn('wp:docPr'))
+                alt_text = ''
+                if doc_pr is not None:
+                    alt_text = doc_pr.get('descr') or doc_pr.get('title') or ''
+                if not alt_text:
+                    descr = drawing.find('.//' + qn('w:descr'))
+                    alt_text = descr.text if descr is not None else ''
                 # Size check
                 extent = drawing.find('.//' + qn('wp:extent'))
                 cx = int(extent.get(qn('cx'))) if extent is not None else 0
@@ -524,12 +529,15 @@ def validate_docx_artifact(report, path):
         result.setdefault("blockers", []).append(_logo_issue)
         issues.append(_logo_issue)
 
+    logo_issues = list(issues)
     if not report.template_version.startswith("lasustech_cs:2."):
+        if logo_issues:
+            raise QualityGateError({**result, "passed": False, "blockers": result.get("blockers", []), "summary": {**result.get("summary", {}), "blocker_count": len(result.get("blockers", []))}})
         return result
     model = report.document_model if isinstance(report.document_model, dict) else {}
     options = report.template_options if isinstance(report.template_options, dict) else {}
     document = Document(str(path))
-    issues = []
+    issues = list(logo_issues)
     for section in document.sections:
         if any(abs(value.cm - 2.54) > 0.05 for value in (
             section.top_margin, section.right_margin, section.bottom_margin, section.left_margin,

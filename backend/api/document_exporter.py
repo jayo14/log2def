@@ -467,15 +467,20 @@ def generate_docx_report(report: Report) -> str:
             from .document_model import model_from_sections
             from .templates import get_template_spec
             model = model_from_sections(report, report.template_snapshot or get_template_spec()).to_dict()
+        logo_alt = (logo_cfg.get('alt_text') if isinstance(logo_cfg, dict) else '') or 'Institution logo'
+        logo_img = f'<img src="/api/institutions/lasustech/logo/" alt="{logo_alt}"/>'
         all_sections = []
         for section in model.get("sections", []):
             rendered = [document_node_to_html(node) for node in section.get("nodes", [])]
+            content = "".join(rendered)
+            if section.get('key') == 'title_page' and '/api/institutions/' not in content:
+                content = logo_img + content
             all_sections.append(SimpleNamespace(
                 section_key=section.get("key", ""),
                 chapter_number=section.get("chapter", 0),
                 title=section.get("title", ""),
                 chapter_title=section.get("chapter_title", ""),
-                content="".join(rendered),
+                content=content,
             ))
     cover_key = "title_page" if is_v2 else "cover"
     cover_sec = next((s for s in all_sections if s.section_key == cover_key), None)
