@@ -314,6 +314,20 @@ export default function DashboardPage() {
     };
   }, [activeProject?.id]);
 
+  // Clear the focus key after it has been applied, so a re-render (for example after
+  // the user saves the focused field) does not re-focus the same field.
+  useEffect(() => {
+    if (!intakeFocusKey) return;
+    const el = intakeRefs.current[intakeFocusKey];
+    if (!el || typeof el.focus !== 'function') return;
+    el.focus();
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // Clear immediately after focusing; the setTimeout in startGenerating's catch
+    // block is what triggers the mount-and-focus path, and this effect covers the
+    // case where the key is already set when Step 4 renders.
+    setIntakeFocusKey(null);
+  }, [intakeFocusKey]);
+
   // Bottom sheet modal state for editing details & entries
   const [activeSheet, setActiveSheet] = useState<
     | { type: 'editWeek'; index: number }
