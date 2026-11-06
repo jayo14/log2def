@@ -86,51 +86,80 @@ export async function apiRequest<T = any>(
 
   const baseUrl = getApiBaseUrl();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const response = await fetch(`${baseUrl}${cleanEndpoint}`, {
-    ...options,
-    headers,
-  });
 
-  if (!response.ok) {
-    let errorDetail = `Request failed with status ${response.status}`;
-    let errJson: any = null;
+  let lastError: any = null;
+  const isIdempotentOrSafe = !options.method || ['GET', 'HEAD', 'PATCH', 'PUT'].includes(options.method.toUpperCase());
+  const maxRetries = isIdempotentOrSafe ? 2 : 1;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      errJson = await response.json();
-      if (errJson.error) {
-        errorDetail = errJson.error;
-      } else if (errJson.detail) {
-        errorDetail = errJson.detail;
-      } else if (typeof errJson === 'object' && errJson !== null) {
-        const messages: string[] = [];
-        for (const [key, val] of Object.entries(errJson)) {
-          const text = Array.isArray(val) ? val.join(' ') : String(val);
-          if (key === 'non_field_errors') {
-            messages.push(text);
-          } else {
-            messages.push(`${key}: ${text}`);
+      const response = await fetch(`${baseUrl}${cleanEndpoint}`, {
+        ...options,
+        headers,
+      });
+
+      if (!response.ok) {
+        // If transient server error (502, 503, 504) and we have retries left, backoff and retry
+        if ([502, 503, 504].includes(response.status) && attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+
+        let errorDetail = `Request failed with status ${response.status}`;
+        let errJson: any = null;
+        try {
+          errJson = await response.json();
+          if (errJson.error) {
+            errorDetail = errJson.error;
+          } else if (errJson.detail) {
+            errorDetail = errJson.detail;
+          } else if (typeof errJson === 'object' && errJson !== null) {
+            const messages: string[] = [];
+            for (const [key, val] of Object.entries(errJson)) {
+              const text = Array.isArray(val) ? val.join(' ') : String(val);
+              if (key === 'non_field_errors') {
+                messages.push(text);
+              } else {
+                messages.push(`${key}: ${text}`);
+              }
+            }
+            if (messages.length > 0) {
+              errorDetail = messages.join('. ');
+            } else {
+              errorDetail = JSON.stringify(errJson);
+            }
           }
+        } catch {
+          // fallback to status text
+          errorDetail = response.statusText || errorDetail;
         }
-        if (messages.length > 0) {
-          errorDetail = messages.join('. ');
-        } else {
-          errorDetail = JSON.stringify(errJson);
-        }
+        const errObj: any = new Error(errorDetail);
+        errObj.status = response.status;
+        errObj.data = errJson;
+        throw errObj;
       }
-    } catch {
-      // fallback to status text
-      errorDetail = response.statusText || errorDetail;
+
+      if (response.status === 204) {
+        return {} as T;
+      }
+
+      return response.json();
+    } catch (err: any) {
+      lastError = err;
+      // If it's a client error (e.g. 400 Bad Request, 401 Unauthorized, 404), do not retry
+      if (err?.status && err.status < 500) {
+        throw err;
+      }
+      // If network failure / connection timed out / SSL glitch and we have retries left, wait and retry
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        continue;
+      }
+      throw err;
     }
-    const errObj: any = new Error(errorDetail);
-    errObj.status = response.status;
-    errObj.data = errJson;
-    throw errObj;
   }
 
-  if (response.status === 204) {
-    return {} as T;
-  }
-
-  return response.json();
+  throw lastError;
 }
 
 // Auth API
