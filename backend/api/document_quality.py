@@ -415,120 +415,114 @@ def require_report_quality(report):
 
 def validate_docx_artifact(report, path):
     result = require_report_quality(report)
+    issues = []
 
     # --- LOGO QUALITY GATE (all templates) ---
     # Cover must contain exactly one centred inline logo image with alt text,
     # within the configured size range. Logo must not appear on any other page.
-    try:
-        spec = get_template_spec(
-            code="lasustech-standard", version="1.0.0"
+    spec = get_template_spec(code="lasustech-standard", version="1.0.0")
+    logo_cfg = spec.get("institution_asset", {}).get("logo", {})
+    expected_alt = logo_cfg.get("alt_text", "")
+    width_cm = float(logo_cfg.get("width_cm", 3.2))
+    width_cm_min = width_cm * 0.95
+    width_cm_max = width_cm * 1.05
+    # 1 cm = 360000 EMU
+    width_emu_min = width_cm_min * 360000
+    width_emu_max = width_cm_max * 360000
+
+    document = Document(str(path))
+    body = document.element.body
+
+    cover_images = []
+    other_images = []
+    section_index = 0  # section 0 = cover
+
+    for child in body.iterchildren():
+        tag = child.tag
+        if tag == qn('w:p'):
+            for drawing in child.iter(qn('w:drawing')):
+                blip = drawing.find('.//' + qn('a:blip'))
+                if blip is None:
+                    continue
+                # Centering check
+                p_pr = child.find(qn('w:pPr'))
+                jc = p_pr.find(qn('w:jc')) if p_pr is not None else None
+                is_centered = jc is not None and jc.get(qn('w:val')) == 'center'
+                # Alt text check
+                descr = drawing.find('.//' + qn('w:descr'))
+                alt_text = descr.text if descr is not None else ''
+                # Size check
+                extent = drawing.find('.//' + qn('wp:extent'))
+                cx = int(extent.get(qn('cx'))) if extent is not None else 0
+                cy = int(extent.get(qn('cy'))) if extent is not None else 0
+                aspect_ok = (cx > 0 and cy > 0 and abs(cx - cy) < cx * 0.02)
+                size_ok = width_emu_min <= cx <= width_emu_max
+                image_info = {
+                    'centered': is_centered,
+                    'alt_text': alt_text,
+                    'width_cm': round(cx / 360000, 2) if cx else 0,
+                    'height_cm': round(cy / 360000, 2) if cy else 0,
+                    'aspect_ok': aspect_ok,
+                    'size_ok': size_ok,
+                }
+                if section_index == 0:
+                    cover_images.append(image_info)
+                else:
+                    other_images.append(image_info)
+        elif tag == qn('w:sectPr'):
+            section_index += 1
+
+    if len(cover_images) != 1:
+        _logo_issue = _issue(
+            "cover_logo_missing_or_multiple",
+            f"Cover must contain exactly one logo image, found {len(cover_images)}.",
+            "title_page",
         )
-        logo_cfg = spec.get("institution_asset", {}).get("logo", {})
-        expected_alt = logo_cfg.get("alt_text", "")
-        width_cm = float(logo_cfg.get("width_cm", 3.2))
-        width_cm_min = width_cm * 0.95
-        width_cm_max = width_cm * 1.05
-        # 1 cm = 360000 EMU
-        width_emu_min = width_cm_min * 360000
-        width_emu_max = width_cm_max * 360000
-
-        document = Document(str(path))
-        body = document.element.body
-
-        cover_images = []
-        other_images = []
-        section_index = 0  # section 0 = cover
-
-        for child in body.iterchildren():
-            tag = child.tag
-            if tag == qn('w:p'):
-                for drawing in child.iter(qn('w:drawing')):
-                    blip = drawing.find('.//' + qn('a:blip'))
-                    if blip is None:
-                        continue
-                    # Centering check
-                    p_pr = child.find(qn('w:pPr'))
-                    jc = p_pr.find(qn('w:jc')) if p_pr is not None else None
-                    is_centered = jc is not None and jc.get(qn('w:val')) == 'center'
-                    # Alt text check
-                    descr = drawing.find('.//' + qn('w:descr'))
-                    alt_text = descr.text if descr is not None else ''
-                    # Size check
-                    extent = drawing.find('.//' + qn('wp:extent'))
-                    cx = int(extent.get(qn('cx'))) if extent is not None else 0
-                    cy = int(extent.get(qn('cy'))) if extent is not None else 0
-                    aspect_ok = (cx > 0 and cy > 0 and abs(cx - cy) < cx * 0.02)
-                    size_ok = width_emu_min <= cx <= width_emu_max
-                    image_info = {
-                        'centered': is_centered,
-                        'alt_text': alt_text,
-                        'width_cm': round(cx / 360000, 2) if cx else 0,
-                        'height_cm': round(cy / 360000, 2) if cy else 0,
-                        'aspect_ok': aspect_ok,
-                        'size_ok': size_ok,
-                    }
-                    if section_index == 0:
-                        cover_images.append(image_info)
-                    else:
-                        other_images.append(image_info)
-            elif tag == qn('w:sectPr'):
-                section_index += 1
-
-        if len(cover_images) != 1:
+        result.setdefault("blockers", []).append(_logo_issue)
+        issues.append(_logo_issue)
+    else:
+        img = cover_images[0]
+        if not img['centered']:
             _logo_issue = _issue(
-                "cover_logo_missing_or_multiple",
-                f"Cover must contain exactly one logo image, found {len(cover_images)}.",
+                "cover_logo_not_centered",
+                "Cover logo image is not horizontally centred.",
                 "title_page",
             )
             result.setdefault("blockers", []).append(_logo_issue)
             issues.append(_logo_issue)
-        else:
-            img = cover_images[0]
-            if not img['centered']:
-                _logo_issue = _issue(
-                    "cover_logo_not_centered",
-                    "Cover logo image is not horizontally centred.",
-                    "title_page",
-                )
-                result.setdefault("blockers", []).append(_logo_issue)
-                issues.append(_logo_issue)
-            if not img['size_ok']:
-                _logo_issue = _issue(
-                    "cover_logo_wrong_size",
-                    f"Cover logo width is {img['width_cm']} cm; expected about {width_cm} cm.",
-                    "title_page",
-                )
-                result.setdefault("blockers", []).append(_logo_issue)
-                issues.append(_logo_issue)
-            if not img['aspect_ok']:
-                _logo_issue = _issue(
-                    "cover_logo_aspect_ratio",
-                    "Cover logo image aspect ratio is distorted (width != height).",
-                    "title_page",
-                )
-                result.setdefault("blockers", []).append(_logo_issue)
-                issues.append(_logo_issue)
-            if expected_alt and img['alt_text'] != expected_alt:
-                _logo_issue = _issue(
-                    "cover_logo_alt_text",
-                    f"Cover logo alt text mismatch: expected “{expected_alt}”, got “{img['alt_text']}”.",
-                    "title_page",
-                )
-                result.setdefault("blockers", []).append(_logo_issue)
-                issues.append(_logo_issue)
-
-        if other_images:
+        if not img['size_ok']:
             _logo_issue = _issue(
-                "logo_on_non_cover_pages",
-                f"Logo image found on {len(other_images)} non-cover page(s); logo must appear only on the cover.",
-                None,
+                "cover_logo_wrong_size",
+                f"Cover logo width is {img['width_cm']} cm; expected about {width_cm} cm.",
+                "title_page",
+            )
+            result.setdefault("blockers", []).append(_logo_issue)
+            issues.append(_logo_issue)
+        if not img['aspect_ok']:
+            _logo_issue = _issue(
+                "cover_logo_aspect_ratio",
+                "Cover logo image aspect ratio is distorted (width != height).",
+                "title_page",
+            )
+            result.setdefault("blockers", []).append(_logo_issue)
+            issues.append(_logo_issue)
+        if expected_alt and img['alt_text'] != expected_alt:
+            _logo_issue = _issue(
+                "cover_logo_alt_text",
+                f"Cover logo alt text mismatch: expected “{expected_alt}”, got “{img['alt_text']}”.",
+                "title_page",
             )
             result.setdefault("blockers", []).append(_logo_issue)
             issues.append(_logo_issue)
 
-    except Exception as exc:  # pragma: no cover - defensive
-        import logging
-        logging.getLogger(__name__).warning(f"Logo quality gate check failed: {exc}")
+    if other_images:
+        _logo_issue = _issue(
+            "logo_on_non_cover_pages",
+            f"Logo image found on {len(other_images)} non-cover page(s); logo must appear only on the cover.",
+            None,
+        )
+        result.setdefault("blockers", []).append(_logo_issue)
+        issues.append(_logo_issue)
 
     if not report.template_version.startswith("lasustech_cs:2."):
         return result
