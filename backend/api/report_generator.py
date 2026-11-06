@@ -27,25 +27,42 @@ def strip_html_tags(text: str) -> str:
     return re.sub(clean, ' ', text or '').strip()
 
 
+def _require_logo_in_ci(project_root: Path, logo_path: Path | None) -> None:
+    """Fail build/CI when the configured logo asset is missing.
+
+    In production runtime, callers omit the image and log an error instead of
+    showing a placeholder.
+    """
+    import os
+    if logo_path is not None:
+        return
+    if os.environ.get("CI", "").lower() in {"1", "true", "yes"} or os.environ.get("REQUIRE_REPORT_LOGO", "").lower() in {"1", "true", "yes"}:
+        raise FileNotFoundError(
+            "Institution logo asset is missing (assets/institutions/*/logo.png). "
+            "The cover logo is required; provide the asset before build/export."
+        )
+
+
 def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasustech") -> str:
     """Return a centred paragraph containing the institution logo for a report cover.
 
-    The logo asset is resolved from the template's ``institution_asset.logo``
-    configuration (path, alt text, width, spacing) so another institution's logo
-    can be added without code changes and students cannot replace or remove it.
-
-    The ``src`` points at the public :class:`InstitutionLogoView` endpoint so the
-    preview, DOCX and PDF all render the same asset. Returns ``""`` when no logo
-    is configured or the asset is missing on disk (an error is logged).
+    The logo asset is resolved from template ``institution_asset.logo`` config so
+    another institution's logo can be added without code changes. Students cannot
+    replace or remove it. The image ``src`` uses the public InstitutionLogoView so
+    preview, DOCX and PDF render the same asset. Returns ``""`` when the asset is
+    missing (logs an error; CI/build checks fail separately).
     """
+    from .templates import resolve_institution_logo_path
+
     logo = (spec.get("institution_asset", {}) or {}).get("logo", {}) or {}
-    path = logo.get("path")
-    if not path:
-        return ""
     project_root = Path(__file__).resolve().parent.parent.parent
-    logo_path = (project_root / path).resolve()
-    if not logo_path.exists():
-        logger.error("Institution logo asset missing at %s; cover will omit the logo.", path)
+    logo_path = resolve_institution_logo_path(spec, project_root)
+    _require_logo_in_ci(project_root, logo_path)
+    if logo_path is None:
+        logger.error(
+            "Institution logo asset missing for config path %r; cover will omit the logo.",
+            logo.get("path"),
+        )
         return ""
     alt = logo.get("alt_text", "Institution logo")
     width_cm = float(logo.get("width_cm", 3.2))

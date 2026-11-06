@@ -25,7 +25,7 @@ LASUSTECH_STANDARD_V1: Dict[str, Any] = {
     },
     "institution_asset": {
         "logo": {
-            "path": "assets/institutions/lasustech/logo.web.png",
+            "path": "assets/institutions/lasustech/logo.png",
             "alt_text": "Lagos State University of Science and Technology logo",
             "width_cm": 3.2,
             "position": "top_center",
@@ -383,6 +383,32 @@ def get_section_requirements(code: str = "lasustech_cs", version: str = "2.0.0")
         ],
         "guided_intake": spec.get("guided_intake", {"steps": []}),
     }
+
+
+
+
+def resolve_institution_logo_path(spec: Dict[str, Any], project_root: Path) -> Path | None:
+    """Resolve configured logo path, falling back to common asset names.
+
+    Returns an absolute path to an existing PNG/SVG asset, or None if missing.
+    Does not modify assets. Students cannot replace the template-configured logo.
+    """
+    logo = (spec.get("institution_asset", {}) or {}).get("logo", {}) or {}
+    configured = logo.get("path")
+    candidates: list[Path] = []
+    if configured:
+        candidates.append((project_root / configured).resolve())
+    # Canonical/fallback names under the same institution directory.
+    inst_dir = project_root / "assets" / "institutions" / "lasustech"
+    for name in ("logo.png", "logo.web.png", "logo.svg"):
+        candidates.append((inst_dir / name).resolve())
+    for cand in candidates:
+        try:
+            if cand.exists() and cand.is_file() and str(cand).startswith(str(project_root)):
+                return cand
+        except OSError:
+            continue
+    return None
 
 
 def get_template_spec(code: str = "lasustech-standard", version: str = "1.0.0") -> Dict[str, Any]:
