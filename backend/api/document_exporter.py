@@ -133,11 +133,14 @@ class SimpleHTMLDocxParser(HTMLParser):
             self.current_p.paragraph_format.space_after = Pt(spacing_pt)
             run = self.current_p.add_run()
             run.add_picture(abs_path, width=Cm(width_cm))
-            # Add alt text via the run's XML.
-            r = run._r
-            desc = OxmlElement('w:descr')
-            desc.text = alt
-            r.append(desc)
+            # Add alt text on the drawing's docPr (Word/OOXML-compatible).
+            drawing = run._r.find(qn('w:drawing'))
+            if drawing is not None:
+                doc_pr = drawing.find('.//' + qn('wp:docPr'))
+                if doc_pr is not None:
+                    doc_pr.set('descr', alt)
+                    if not doc_pr.get('title'):
+                        doc_pr.set('title', alt)
 
         elif tag == 'ul':
             self.list_type = 'List Bullet'
