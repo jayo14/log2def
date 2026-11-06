@@ -1036,7 +1036,8 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
     student_pages = round(student_words / 350, 1)
     front_pages = report.sections.filter(chapter_number=0).count()
     body_pages = max(1, int((fixed_words + student_words + 349) / 350)) + 4
-    report.estimated_pages = front_pages + body_pages
+    appendix_pages = (len(report_images) + 1) // 2 if report_images else 0
+    report.estimated_pages = front_pages + body_pages + appendix_pages
     report.page_estimate_breakdown = {
         "estimated_pages": report.estimated_pages,
         "informational_only": True,
@@ -1046,6 +1047,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "student_derived_page_equivalent": student_pages,
         "front_matter_pages": front_pages,
         "body_pages": body_pages,
+        "appendix_pages": appendix_pages,
     }
     report.readiness_feedback = ["Page count is informational; review required student inputs and source coverage."]
     report.version += 1
