@@ -23,6 +23,15 @@ LASUSTECH_STANDARD_V1: Dict[str, Any] = {
         "max": 15,
         "words_per_page_estimate": 350,
     },
+    "institution_asset": {
+        "logo": {
+            "path": "assets/institutions/lasustech/logo.web.png",
+            "alt_text": "Lagos State University of Science and Technology logo",
+            "width_cm": 3.2,
+            "position": "top_center",
+            "spacing_after_pt": 18,
+        }
+    },
     "formatting_spec": {
         "font_family": "Times New Roman",
         "font_size_pt": 12,

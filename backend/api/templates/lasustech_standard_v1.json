@@ -4,6 +4,15 @@
   "name": "LASUSTECH Standard SIWES Technical Report Template",
   "institution": "Lagos State University of Science and Technology (LASUSTECH)",
   "description": "Official technical report template for LASUSTECH SIWES attachment, complying with university guidelines, standard front-matter formatting, and ITF 5-chapter reporting structure.",
+  "institution_asset": {
+    "logo": {
+      "path": "assets/institutions/lasustech/logo.web.png",
+      "alt_text": "Lagos State University of Science and Technology logo",
+      "width_cm": 3.2,
+      "position": "top_center",
+      "spacing_after_pt": 18
+    }
+  },
   "target_page_count": {
     "min": 12,
     "max": 15,
