@@ -4560,10 +4560,49 @@ export default function DashboardPage() {
                 <div key={image.id} className="tk" style={{ alignItems: 'flex-start', gap: '10px' }}>
                   {image.processed_url && <img src={image.processed_url} alt={image.caption} style={{ width: '76px', height: '58px', objectFit: 'cover', borderRadius: '8px' }} />}
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <b>{index + 1}. {image.caption}</b>
-                    <small>{image.placement}{image.week_number ? ` · Week ${image.week_number}` : ''}</small>
+                    <input
+                      value={image.caption}
+                      aria-label={`Caption for image ${index + 1}`}
+                      onChange={(event) => setReportImages((current) => current.map((item) => item.id === image.id ? { ...item, caption: event.target.value } : item))}
+                      onBlur={() => {
+                        if (validReportImageCaption(image.caption)) {
+                          projectsApi.updateReportImage(pid!, image.id, { caption: image.caption }).catch(() => {});
+                        }
+                      }}
+                      style={{ width: '100%', border: 0, borderBottom: '1px solid var(--line)', background: 'transparent', fontWeight: 700 }}
+                    />
+                    <select
+                      value={image.placement}
+                      aria-label={`Location for image ${index + 1}`}
+                      onChange={(event) => {
+                        const placement = event.target.value;
+                        setReportImages((current) => current.map((item) => item.id === image.id ? { ...item, placement } : item));
+                        projectsApi.updateReportImage(pid!, image.id, { placement }).catch(() => {});
+                      }}
+                      style={{ marginTop: '5px', fontSize: '12px' }}
+                    >
+                      <option value="organisation">Organisation</option>
+                      <option value="week">Weekly activity</option>
+                      <option value="tools">Equipment/tools</option>
+                      <option value="projects">Projects</option>
+                      <option value="challenges">Challenges</option>
+                    </select>
                     {image.low_resolution_warning && <small style={{ color: '#b45309' }}>May look blurry when printed.</small>}
                   </span>
+                  <button className="tx" type="button" disabled={index === 0} onClick={async () => {
+                    if (index === 0) return;
+                    const reordered = [...reportImages];
+                    [reordered[index - 1], reordered[index]] = [reordered[index], reordered[index - 1]];
+                    setReportImages(reordered);
+                    await projectsApi.reorderReportImages(pid!, reordered.map((item) => item.id));
+                  }}>↑</button>
+                  <button className="tx" type="button" disabled={index === reportImages.length - 1} onClick={async () => {
+                    if (index === reportImages.length - 1) return;
+                    const reordered = [...reportImages];
+                    [reordered[index], reordered[index + 1]] = [reordered[index + 1], reordered[index]];
+                    setReportImages(reordered);
+                    await projectsApi.reorderReportImages(pid!, reordered.map((item) => item.id));
+                  }}>↓</button>
                   <button className="tx" type="button" onClick={async () => {
                     await projectsApi.deleteReportImage(pid!, image.id);
                     setReportImages((current) => current.filter((item) => item.id !== image.id));
