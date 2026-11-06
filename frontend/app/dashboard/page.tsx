@@ -2862,23 +2862,25 @@ export default function DashboardPage() {
                   className="btn o w s"
                   type="button"
                   style={{ flex: 1 }}
+                  disabled={downloadLoading}
                   onClick={() => executeRealFileDownload('PDF')}
                 >
-                  <span className="ms" aria-hidden="true">
+                  <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
                     picture_as_pdf
                   </span>
-                  PDF
+                  {downloadLoading ? 'Preparing…' : 'PDF'}
                 </button>
                 <button
                   className="btn o w s"
                   type="button"
                   style={{ flex: 1 }}
+                  disabled={downloadLoading}
                   onClick={() => executeRealFileDownload('Word')}
                 >
-                  <span className="ms" aria-hidden="true">
+                  <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
                     description
                   </span>
-                  Word (DOCX)
+                  {downloadLoading ? 'Preparing…' : 'Word (DOCX)'}
                 </button>
               </div>
             </div>
@@ -5361,24 +5363,26 @@ export default function DashboardPage() {
                 <button
                   className="btn w"
                   type="button"
+                  disabled={downloadLoading}
                   onClick={() => executeRealFileDownload('PDF')}
                   style={{ marginBottom: '10px' }}
                 >
-                  <span className="ms" aria-hidden="true">
+                  <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
                     picture_as_pdf
                   </span>
-                  Download PDF (Print Ready)
+                  {downloadLoading ? 'Preparing PDF…' : 'Download PDF (Print Ready)'}
                 </button>
 
                 <button
                   className="btn o w"
                   type="button"
+                  disabled={downloadLoading}
                   onClick={() => executeRealFileDownload('Word')}
                 >
-                  <span className="ms" aria-hidden="true">
+                  <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
                     description
                   </span>
-                  Download Word DOCX (Editable)
+                  {downloadLoading ? 'Preparing Word…' : 'Download Word DOCX (Editable)'}
                 </button>
               </div>
 
