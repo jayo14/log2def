@@ -129,25 +129,26 @@ def build_rule_based_section_content(
     <h2>{univ.upper()}</h2>
     <h3>{faculty.upper()}</h3>
     <h4>DEPARTMENT OF {dept.upper()}</h4>
-    <br/><br/>
+    <br/>
     <h3>A TECHNICAL REPORT ON THE STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</h3>
     <p><strong>UNDERTAKEN AT:</strong><br/>{company.upper()}<br/>{address}</p>
-    <br/>
     <p><strong>PERIOD OF TRAINING:</strong> {start_str} TO {end_str}</p>
-    <br/><br/>
+    <br/>
     <p><strong>BY:</strong><br/>
     <strong>{student_name.upper()}</strong><br/>
     MATRIC NO: {matric}<br/>
     LEVEL: {level} LEVEL</p>
-    <br/><br/>
+    <br/>
     <p>SUBMITTED TO THE DEPARTMENT OF {dept.upper()}, {univ.upper()}, IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF THE DEGREE OF BACHELOR OF SCIENCE (B.SC) / BACHELOR OF TECHNOLOGY (B.TECH) IN {prog.upper()}.</p>
     <br/>
     <p><strong>{year_str}</strong></p>
 </div>
 """
     elif section_key == "title_page":
+        _logo_html = institution_logo_block(LASUSTECH_STANDARD_V1, institution_code="lasustech")
         content = f"""
 <div style="text-align: center;">
+{_logo_html}
     <h2>REPORT ON STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</h2>
     <p>BEING A COMPREHENSIVE RECORD OF INDUSTRIAL ATTACHMENT</p>
     <p>HELD AT</p>
