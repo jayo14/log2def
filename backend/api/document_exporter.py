@@ -1,5 +1,6 @@
 import os
 import re
+import logging
 from html import escape
 from types import SimpleNamespace
 import shutil
@@ -8,6 +9,8 @@ from pathlib import Path
 from html.parser import HTMLParser
 import docx
 from docx import Document
+
+logger = logging.getLogger(__name__)
 from docx.shared import Inches, Pt, RGBColor, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
@@ -91,6 +94,53 @@ class SimpleHTMLDocxParser(HTMLParser):
 
         elif tag in ['em', 'i']:
             self.italic = True
+
+        elif tag == 'img':
+            src = attrs_dict.get('src', '')
+            alt = attrs_dict.get('alt', '')
+            if not src:
+                return
+            # Resolve API-backed logo URLs to local file paths for DOCX embedding.
+            abs_path = None
+            if src.startswith('/api/institutions/'):
+                from .templates import get_template_spec
+                project_root = Path(__file__).resolve().parent.parent.parent
+                spec = get_template_spec(code='lasustech-standard', version='1.0.0')
+                logo_path = spec.get('institution_asset', {}).get('logo', {}).get('path', '')
+                if logo_path:
+                    candidate = (project_root / logo_path).resolve()
+                    if candidate.exists():
+                        abs_path = str(candidate)
+            if abs_path is None:
+                # Fallback: treat src as a direct filesystem path (relative to project root).
+                candidate = (project_root / src.lstrip('/')).resolve()
+                if candidate.exists():
+                    abs_path = str(candidate)
+            if abs_path is None:
+                # Logo missing: do not render a placeholder; log an error and skip.
+                logger.error("Institution logo asset missing for src '%s'; DOCX cover will omit the logo.", src)
+                return
+            from docx.shared import Cm
+            spec = get_template_spec(code='lasustech-standard', version='1.0.0')
+            logo_cfg = spec.get('institution_asset', {}).get('logo', {})
+            width_cm = float(logo_cfg.get('width_cm', 3.2))
+            # Ensure a paragraph exists for the image.
+            if self.current_p is None:
+                self.current_p = self.doc.add_paragraph()
+                self.current_p.paragraph_format.line_spacing = 1.5
+                self.current_p.paragraph_format.space_after = Pt(6)
+                self.current_p.alignment = self.default_align
+            # Centre the image in its own paragraph.
+            self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            spacing_pt = float(logo_cfg.get('spacing_after_pt', 18))
+            self.current_p.paragraph_format.space_after = Pt(spacing_pt)
+            run = self.current_p.add_run()
+            run.add_picture(abs_path, width=Cm(width_cm))
+            # Add alt text via the run's XML.
+            r = run._r
+            desc = OxmlElement('w:descr')
+            desc.text = alt
+            r.append(desc)
 
         elif tag == 'ul':
             self.list_type = 'List Bullet'

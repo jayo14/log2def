@@ -800,6 +800,35 @@ class TemplateListView(views.APIView):
         return Response(ReportTemplateSerializer(templates, many=True).data)
 
 
+class InstitutionLogoView(views.APIView):
+    """
+    Serves the institution-level logo asset for report covers.
+
+    The logo path is resolved from the active template's `institution_asset.logo`
+    configuration so another institution's logo can be added without code changes.
+    Students cannot replace or remove it.
+    """
+    permission_classes = (AllowAny,)
+
+    def get(self, request, institution_code="lasustech"):
+        from .templates import get_template_spec
+        spec = get_template_spec(code=institution_code, version="1.0.0")
+        asset = spec.get("institution_asset", {})
+        logo = asset.get("logo", {})
+        logo_path = logo.get("path")
+        if not logo_path:
+            raise Http404("No logo configured for this institution.")
+
+        # Resolve path relative to the project root (parent of backend/)
+        project_root = Path(settings.BASE_DIR).parent
+        abs_path = (project_root / logo_path).resolve()
+        # Safety: ensure the resolved path stays inside the project root
+        if not str(abs_path).startswith(str(project_root)) or not abs_path.exists():
+            raise Http404("Logo asset not found on disk.")
+
+        return FileResponse(abs_path.open("rb"), content_type="image/png")
+
+
 # --- Report & Sections Views ---
 
 class ReportDetailView(views.APIView):

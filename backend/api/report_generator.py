@@ -71,8 +71,20 @@ def build_rule_based_section_content(
 
     # Front matter
     if section_key == "cover":
+        from pathlib import Path as _Path
+        _logo_path = _Path(__file__).resolve().parent.parent.parent / "assets" / "institutions" / "lasustech" / "logo.web.png"
+        _logo_html = ""
+        if _logo_path.exists():
+            _logo_html = (
+                f'<img src="/api/institutions/lasustech/logo/" '
+                f'alt="{escape("Lagos State University of Science and Technology logo")}" '
+                f'style="display:block; margin:0 auto; width:3.2cm; height:auto;" />'
+            )
+        else:
+            logger.error("Institution logo asset missing at %s; cover will omit the logo.", _logo_path)
         content = f"""
 <div style="text-align: center;">
+{_logo_html}
     <h2>{univ.upper()}</h2>
     <h3>{faculty.upper()}</h3>
     <h4>DEPARTMENT OF {dept.upper()}</h4>
@@ -902,7 +914,22 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.title = definition["title"]
         section.order = (position + 1) * 10
         section.is_required = definition.get("required", False)
-        section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
+        base_content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
+        if key == "title_page":
+            from pathlib import Path as _Path
+            _logo_path = _Path(__file__).resolve().parent.parent.parent / "assets" / "institutions" / "lasustech" / "logo.web.png"
+            if _logo_path.exists():
+                logo_html = (
+                    f'<img src="/api/institutions/lasustech/logo/" '
+                    f'alt="{escape("Lagos State University of Science and Technology logo")}" '
+                    f'style="display:block; margin:0 auto; width:3.2cm; height:auto;" />'
+                )
+                section.content = logo_html + base_content
+            else:
+                logger.error("Institution logo asset missing at %s; title page will omit the logo.", _logo_path)
+                section.content = base_content
+        else:
+            section.content = base_content
         section.warnings = (
             [f"Fact-grounded writing was rejected ({writer_error}); review the confirmed facts and retry."]
             if writer_error else
