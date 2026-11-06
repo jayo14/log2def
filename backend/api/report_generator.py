@@ -3,6 +3,7 @@ import logging
 import re
 from html import escape
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from django.utils import timezone
 from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion, ReportTemplate, Fact, ReportParagraph
@@ -24,6 +25,39 @@ def strip_html_tags(text: str) -> str:
     """Removes HTML tags from string to calculate accurate word counts."""
     clean = re.compile(r'<.*?>')
     return re.sub(clean, ' ', text or '').strip()
+
+
+def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasustech") -> str:
+    """Return a centred paragraph containing the institution logo for a report cover.
+
+    The logo asset is resolved from the template's ``institution_asset.logo``
+    configuration (path, alt text, width, spacing) so another institution's logo
+    can be added without code changes and students cannot replace or remove it.
+
+    The ``src`` points at the public :class:`InstitutionLogoView` endpoint so the
+    preview, DOCX and PDF all render the same asset. Returns ``""`` when no logo
+    is configured or the asset is missing on disk (an error is logged).
+    """
+    logo = (spec.get("institution_asset", {}) or {}).get("logo", {}) or {}
+    path = logo.get("path")
+    if not path:
+        return ""
+    project_root = Path(__file__).resolve().parent.parent.parent
+    logo_path = (project_root / path).resolve()
+    if not logo_path.exists():
+        logger.error("Institution logo asset missing at %s; cover will omit the logo.", path)
+        return ""
+    alt = logo.get("alt_text", "Institution logo")
+    width_cm = float(logo.get("width_cm", 3.2))
+    spacing_pt = float(logo.get("spacing_after_pt", 18))
+    spacing_str = str(int(spacing_pt)) if spacing_pt.is_integer() else f"{spacing_pt}"
+    img = (
+        f'<img src="/api/institutions/{institution_code}/logo/" '
+        f'alt="{escape(alt)}" '
+        f'style="display:block; margin:0 auto; width:{width_cm}cm; height:auto;" />'
+    )
+    # Paragraph spacing (margin-bottom) below the logo — no blank paragraphs.
+    return f'<p style="text-align:center; margin:0 0 {spacing_str}pt 0;">{img}</p>'
 
 
 def build_rule_based_section_content(
@@ -71,17 +105,7 @@ def build_rule_based_section_content(
 
     # Front matter
     if section_key == "cover":
-        from pathlib import Path as _Path
-        _logo_path = _Path(__file__).resolve().parent.parent.parent / "assets" / "institutions" / "lasustech" / "logo.web.png"
-        _logo_html = ""
-        if _logo_path.exists():
-            _logo_html = (
-                f'<img src="/api/institutions/lasustech/logo/" '
-                f'alt="{escape("Lagos State University of Science and Technology logo")}" '
-                f'style="display:block; margin:0 auto; width:3.2cm; height:auto;" />'
-            )
-        else:
-            logger.error("Institution logo asset missing at %s; cover will omit the logo.", _logo_path)
+        _logo_html = institution_logo_block(LASUSTECH_STANDARD_V1, institution_code="lasustech")
         content = f"""
 <div style="text-align: center;">
 {_logo_html}
@@ -916,18 +940,10 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.is_required = definition.get("required", False)
         base_content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
         if key == "title_page":
-            from pathlib import Path as _Path
-            _logo_path = _Path(__file__).resolve().parent.parent.parent / "assets" / "institutions" / "lasustech" / "logo.web.png"
-            if _logo_path.exists():
-                logo_html = (
-                    f'<img src="/api/institutions/lasustech/logo/" '
-                    f'alt="{escape("Lagos State University of Science and Technology logo")}" '
-                    f'style="display:block; margin:0 auto; width:3.2cm; height:auto;" />'
-                )
-                section.content = logo_html + base_content
-            else:
-                logger.error("Institution logo asset missing at %s; title page will omit the logo.", _logo_path)
-                section.content = base_content
+            logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
+            section.content = logo_html + base_content if logo_html else base_content
+            if not logo_html:
+                logger.error("Institution logo asset missing; title page will omit the logo.")
         else:
             section.content = base_content
         section.warnings = (
