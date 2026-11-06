@@ -31,11 +31,9 @@ def _load(name: str, path: Path):
 
 
 def _mock_django_for_exporter():
-    # Minimal mocks so document_exporter can be imported without configured Django.
     django = types.ModuleType("django")
     conf = types.ModuleType("django.conf")
-    settings = types.SimpleNamespace(MEDIA_ROOT="/tmp")
-    conf.settings = settings
+    conf.settings = types.SimpleNamespace(MEDIA_ROOT="/tmp")
     utils = types.ModuleType("django.utils")
     timezone = types.ModuleType("django.utils.timezone")
     timezone.now = lambda: None
@@ -44,7 +42,6 @@ def _mock_django_for_exporter():
     sys.modules.setdefault("django.conf", conf)
     sys.modules.setdefault("django.utils", utils)
     sys.modules.setdefault("django.utils.timezone", timezone)
-    # Mock api.models and api.document_quality used by exporter at import.
     models_mod = types.ModuleType("api.models")
     for n in ["Report", "ReportSection", "Fact", "LogbookEntry", "ReportParagraph"]:
         setattr(models_mod, n, type(n, (), {}))
@@ -54,7 +51,6 @@ def _mock_django_for_exporter():
     q_mod.require_report_quality = lambda *a, **k: None
     q_mod.validate_docx_artifact = lambda *a, **k: None
     sys.modules.setdefault("api.document_quality", q_mod)
-    # Ensure `api` package exists as module namespace for relative-ish imports.
     if "api" not in sys.modules:
         pkg = types.ModuleType("api")
         pkg.__path__ = [str(API)]
@@ -68,7 +64,6 @@ def _make_logo(path: Path, size=(400, 400)) -> Path:
 
 
 def test_resolver_finds_configured_logo(tmp_path: Path):
-    # templates.py is pure enough to load directly if api.models not imported by it.
     templates = _load("api.templates_testcover", API / "templates.py")
     logo = _make_logo(tmp_path / "assets/institutions/lasustech/logo.png")
     spec = {"institution_asset": {"logo": {"path": "assets/institutions/lasustech/logo.png"}}}
@@ -87,17 +82,20 @@ def test_resolver_falls_back_to_canonical_name(tmp_path: Path):
 def test_parser_embeds_centered_inline_logo_with_alt_and_spacing(tmp_path: Path):
     _mock_django_for_exporter()
     exporter = _load("api.document_exporter_testcover", API / "document_exporter.py")
-    SimpleHTMLDocxParser = exporter.SimpleHTMLDocxParser
+    # Make exporter's project_root resolve under tmp_path (backend/api/document_exporter.py -> parents[2]=project root)
+    fake_backend_api = tmp_path / "backend" / "api"
+    fake_backend_api.mkdir(parents=True)
+    exporter.__file__ = str(fake_backend_api / "document_exporter.py")
 
-    logo = _make_logo(tmp_path / "logo.png", size=(700, 700))
+    _make_logo(tmp_path / "assets/institutions/lasustech/logo.png", size=(700, 700))
     doc = Document()
     logo_cfg = {"path": "assets/institutions/lasustech/logo.png", "width_cm": 3.2, "spacing_after_pt": 18}
     html = (
-        f'<p style="text-align:center; margin:0 0 18pt 0;">'
-        f'<img src="{logo}" alt="LASUSTECH logo"/></p>'
+        '<p style="text-align:center; margin:0 0 18pt 0;">'
+        '<img src="/api/institutions/lasustech/logo/" alt="LASUSTECH logo"/></p>'
         '<p style="text-align:center">A TECHNICAL REPORT ON</p>'
     )
-    parser = SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER, logo_cfg=logo_cfg)
+    parser = exporter.SimpleHTMLDocxParser(doc, default_align=WD_ALIGN_PARAGRAPH.CENTER, logo_cfg=logo_cfg)
     parser.feed(html)
 
     drawings = list(doc.element.body.iter(qn("w:drawing")))
