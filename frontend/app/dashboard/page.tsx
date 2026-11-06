@@ -9,6 +9,7 @@ import {
 } from '@/lib/store';
 import { getApiBaseUrl, getAuthToken, projectsApi } from '@/lib/api';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
+import { validReportImageCaption } from '@/lib/report-images';
 import '@/app/dashboard.css';
 
 // Approved Design Constants: seven-phase wizard flow
@@ -4516,7 +4517,11 @@ export default function DashboardPage() {
       try {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('caption', file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
+        const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+        if (!validReportImageCaption(caption)) {
+          throw new Error('Each image needs a caption of at least three words. Rename the file or edit it after upload.');
+        }
+        formData.append('caption', caption);
         formData.append('placement', 'week');
         const saved = await projectsApi.uploadReportImage(pid, formData);
         setReportImages((current) => [...current, saved]);
