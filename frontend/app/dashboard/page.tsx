@@ -11,12 +11,14 @@ import { getApiBaseUrl, getAuthToken, projectsApi } from '@/lib/api';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
-// Approved Design Constants: 5-Phase Wizard Flow
+// Approved Design Constants: seven-phase wizard flow
 const SN = [
   'Your details',
   'Logbook',
   'Review',
   'Missing info',
+  'Organisation',
+  'Images',
   'Generate',
 ];
 
@@ -107,6 +109,15 @@ interface LogEntry {
   ok?: number;
 }
 
+interface ReportImage {
+  id: number;
+  caption: string;
+  placement: string;
+  week_number?: number | null;
+  processed_url?: string | null;
+  low_resolution_warning?: boolean;
+}
+
 export default function DashboardPage() {
   const { user, logout, isLoading: isAuthLoading } = useAuth();
   const router = useRouter();
@@ -163,7 +174,7 @@ export default function DashboardPage() {
   // Logbook screen sub-view: 'pages' | 'report'
   const [logbookView, setLogbookView] = useState<'pages' | 'report'>('pages');
 
-  // Wizard Flow step: 1 to 5
+  // Wizard Flow step: 1 to 7
   const [step, setStep] = useState<number>(1);
   const [method, setMethod] = useState<'manual' | 'photos'>('manual');
 
@@ -198,7 +209,7 @@ export default function DashboardPage() {
 
   const [entries, setEntries] = useState<LogEntry[]>([]);
 
-  // Step 5 report generation state: 0: not started, 1: generating, 2: ready
+  // Step 7 report generation state: 0: not started, 1: generating, 2: ready
   const [genState, setGenState] = useState<0 | 1 | 2>(0);
   const [genProgress, setGenProgress] = useState<number>(0);
   const [genError, setGenError] = useState<string | null>(null);
@@ -217,6 +228,9 @@ export default function DashboardPage() {
     labels: string[];
     canGenerate: boolean;
   } | null>(null);
+  const [reportImages, setReportImages] = useState<ReportImage[]>([]);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState('');
 
   // Report editor / preview state (Housed in Logbook screen)
   const [editorTab, setEditorTab] = useState<'edit' | 'prev'>('edit');
@@ -312,6 +326,14 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
+  }, [activeProject?.id]);
+
+  useEffect(() => {
+    const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (!pid) return;
+    projectsApi.getReportImages(pid)
+      .then((items) => setReportImages(items || []))
+      .catch(() => setReportImages([]));
   }, [activeProject?.id]);
 
   // Clear the focus key after it has been applied, so a re-render (for example after
@@ -857,7 +879,7 @@ export default function DashboardPage() {
       params.set('status', 'delivery-confirmed');
       hash = '#delivery-success';
     } else if (inFlow) {
-      if (step === 5 && genState === 2) {
+      if (step === 7 && genState === 2) {
         params.set('step', '5');
         params.set('status', 'ready');
         hash = '#step-success';
@@ -1078,7 +1100,7 @@ export default function DashboardPage() {
   // Update document title based on view
   useEffect(() => {
     let t = 'Home';
-    if (inFlow) t = `Step ${step} of 5 · ${SN[step - 1]}`;
+    if (inFlow) t = `Step ${step} of 7 · ${SN[step - 1]}`;
     else if (currentTab === 'logbooks') t = logbookView === 'report' ? 'Technical Report' : 'Logbooks';
     else if (currentTab === 'reports') t = 'Reports';
     else if (currentTab === 'settings') t = 'Settings';
@@ -2304,7 +2326,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               {stepIcons[s - 1]}
             </span>
-            {hasStarted ? `Step ${s} of 5` : '5 steps'}
+            {hasStarted ? `Step ${s} of 7` : '7 steps'}
           </span>
           <h2>{hasStarted ? stepNames[s - 1] : 'New report'}</h2>
           <p>{hasStarted ? stepSubtitles[s - 1] : 'Photos to PDF or Word'}</p>
@@ -4457,6 +4479,99 @@ export default function DashboardPage() {
 
   // ==========================================
   // WIZARD FLOW: STEP 5 (READY TO GENERATE) — ENHANCED UI
+  const renderStepOrganisation = () => {
+    const intakeComplete = Boolean((intake as any).intake_complete);
+    return (
+      <div className="view" id="step-5">
+        <h1 className="wt" id="wh" tabIndex={-1}>About your organisation</h1>
+        <p className="wd">Answer only what your logbook and profile do not already provide. Your progress is saved as you go.</p>
+        <div className="card" style={{ padding: '18px 16px' }}>
+          <div className="row" style={{ alignItems: 'flex-start', gap: '12px' }}>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '24px' }}>business</span>
+            <div>
+              <b>One or two questions per screen</b>
+              <p style={{ margin: '6px 0 0', color: 'var(--mut)', fontSize: '13px', lineHeight: 1.5 }}>
+                We never look up your company or fill gaps. Use the report interview to confirm facts, paste profile text, and build the organogram.
+              </p>
+            </div>
+          </div>
+          <button className="btn w" type="button" style={{ marginTop: '18px' }} onClick={() => router.push(`/projects/${activeProject?.id || ''}/intake`)}>
+            {intakeComplete ? 'Review organisation answers' : 'Open organisation questions'}
+            <span className="ms">arrow_forward</span>
+          </button>
+          <p style={{ margin: '12px 0 0', color: 'var(--mut)', fontSize: '12px' }}>
+            {intakeComplete ? 'Required organisation answers are complete.' : 'Generation stays blocked until required answers are saved.'}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStepImages = () => {
+    const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    const uploadImage = async (file: File) => {
+      if (!pid) return;
+      setImageUploading(true);
+      setImageError('');
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('caption', file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
+        formData.append('placement', 'week');
+        const saved = await projectsApi.uploadReportImage(pid, formData);
+        setReportImages((current) => [...current, saved]);
+      } catch (error) {
+        setImageError(error instanceof Error ? error.message : 'The image could not be uploaded.');
+      } finally {
+        setImageUploading(false);
+      }
+    };
+    return (
+      <div className="view" id="step-6">
+        <h1 className="wt" id="wh" tabIndex={-1}>Images</h1>
+        <p className="wd">Do you have images you’d like to attach to the technical report?</p>
+        <div className="card" style={{ padding: '18px 16px' }}>
+          <p style={{ marginTop: 0, color: 'var(--mut)', fontSize: '13px', lineHeight: 1.5 }}>
+            Add photos of your own work or workplace. Don’t include confidential company material without permission.
+          </p>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic"
+            multiple
+            disabled={imageUploading || reportImages.length >= 6}
+            onChange={async (event) => {
+              const files = Array.from(event.target.files || []);
+              for (const file of files) await uploadImage(file);
+              event.currentTarget.value = '';
+            }}
+          />
+          {imageUploading && <p className="wd" role="status">Processing image…</p>}
+          {imageError && <p className="err" role="alert">{imageError}</p>}
+          {reportImages.length === 0 ? (
+            <p style={{ color: 'var(--mut)', fontSize: '13px' }}>No images added. This step is optional.</p>
+          ) : (
+            <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
+              {reportImages.map((image, index) => (
+                <div key={image.id} className="tk" style={{ alignItems: 'flex-start', gap: '10px' }}>
+                  {image.processed_url && <img src={image.processed_url} alt={image.caption} style={{ width: '76px', height: '58px', objectFit: 'cover', borderRadius: '8px' }} />}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <b>{index + 1}. {image.caption}</b>
+                    <small>{image.placement}{image.week_number ? ` · Week ${image.week_number}` : ''}</small>
+                    {image.low_resolution_warning && <small style={{ color: '#b45309' }}>May look blurry when printed.</small>}
+                  </span>
+                  <button className="tx" type="button" onClick={async () => {
+                    await projectsApi.deleteReportImage(pid!, image.id);
+                    setReportImages((current) => current.filter((item) => item.id !== image.id));
+                  }}>Delete</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ==========================================
   const renderStep5 = () => {
     const n = pages.length;
@@ -4676,6 +4791,8 @@ export default function DashboardPage() {
     );
   };
 
+  const renderStep7 = renderStep5;
+
   // Primary CTA Button for wizard bottom navigation
   const renderPrimaryCta = () => {
     if (step === 1) {
@@ -4812,7 +4929,33 @@ export default function DashboardPage() {
         </button>
       );
     }
-    // step === 5
+    if (step === 5) {
+      return (
+        <button className="btn" type="button" onClick={() => {
+          if ((intake as any).intake_complete) {
+            setStep(6);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
+          } else {
+            router.push(`/projects/${activeProject?.id || ''}/intake`);
+          }
+        }} style={{ flex: 1 }}>
+          {(intake as any).intake_complete ? 'Continue to images' : 'Answer organisation questions'}
+          <span className="ms" aria-hidden="true">arrow_forward</span>
+        </button>
+      );
+    }
+    if (step === 6) {
+      return (
+        <button className="btn" type="button" onClick={() => {
+          setStep(7);
+          if (scrRef.current) scrRef.current.scrollTop = 0;
+        }} style={{ flex: 1 }}>
+          Continue to generate
+          <span className="ms" aria-hidden="true">arrow_forward</span>
+        </button>
+      );
+    }
+    // step === 7
     if (genState === 0) {
       return (
         <button
@@ -5139,7 +5282,7 @@ export default function DashboardPage() {
                     </span>
                   </button>
                   <b style={{ fontSize: '14px' }}>
-                    Step {step} of 5 · {SN[step - 1]}
+                    Step {step} of 7 · {SN[step - 1]}
                   </b>
                   <span className="sp" />
                 </div>
@@ -5147,7 +5290,7 @@ export default function DashboardPage() {
                   className="wp"
                   role="progressbar"
                   aria-valuemin={1}
-                  aria-valuemax={5}
+                  aria-valuemax={7}
                   aria-valuenow={step}
                   aria-label="Report progress"
                 >
@@ -5162,7 +5305,9 @@ export default function DashboardPage() {
               {step === 2 && renderStep2()}
               {step === 3 && renderStep3()}
               {step === 4 && renderStep4()}
-              {step === 5 && renderStep5()}
+              {step === 5 && renderStepOrganisation()}
+              {step === 6 && renderStepImages()}
+              {step === 7 && renderStep7()}
             </>
           ) : (
             <>
@@ -5230,7 +5375,7 @@ export default function DashboardPage() {
                 className="btn o"
                 type="button"
                 style={{ flex: '0 0 42%' }}
-                disabled={step === 1 || reading || (step === 5 && genState === 1)}
+                disabled={step === 1 || reading || (step === 7 && genState === 1)}
                 onClick={() => {
                   setStep((prev) => Math.max(1, prev - 1));
                   if (scrRef.current) scrRef.current.scrollTop = 0;
