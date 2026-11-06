@@ -1367,9 +1367,71 @@ export default function DashboardPage() {
       showToast('Institutional report compiled!');
     } catch (err: any) {
       clearInterval(iv);
-      setGenError(err.message || 'Report generation failed. Please try again.');
       setGenState(0);
-      showToast(err.message || 'Report generation error');
+
+      // Surface a human-friendly message; keep the raw payload for routing.
+      const raw = (err && (err as any).data) || null;
+      const missingFields: string[] = raw
+        ? (raw.missing_required_fields || (raw.completeness && (raw.completeness as any).missing_required_fields) || [])
+        : [];
+      const missingLabels: string[] = raw ? (raw.missing_labels || []) : [];
+      const canGenerate: boolean = raw
+        ? !!(raw.completeness && (raw.completeness as any).can_generate !== false)
+        : false;
+
+      if (missingFields.length > 0) {
+        // Stash the blocked-generation payload so Step 4 / Step 5 can render the
+        // right list and focus the first missing field on retry.
+        setLastGenerateBlock({ missing: missingFields, labels: missingLabels, canGenerate });
+
+        const hasGuidedIntake = missingFields.some(
+          (k) => typeof k === 'string' && k.startsWith('guided_intake:')
+        );
+
+        // Build a friendly message from the backend's labels when available.
+        const labelLine =
+          missingLabels.length > 0
+            ? missingLabels
+                .map((l: string) => (l && l.trim() ? l.trim() : l))
+                .filter(Boolean)
+                .join(', ')
+            : null;
+        let msg: string;
+        if (labelLine) {
+          msg = `We couldn’t generate the report yet — these are still needed: ${labelLine}.`;
+        } else {
+          msg = 'We couldn’t generate the report yet — some required information is still missing.';
+        }
+        // Guided-intake fields are filled on the separate report-interview route,
+        // so point the user there explicitly when they are part of the block.
+        if (hasGuidedIntake) {
+          msg +=
+            ' Some of these are answered in the report interview — open it from the Missing info step.';
+        }
+        setGenError(msg);
+
+        // Route to the missing-info step. For FLD detail fields (rendered inline in
+        // Step 4), focus the first missing one; guided-intake fields live on the
+        // /intake route, so we don't attempt an inline focus for those.
+        setStep(4);
+        const firstDetailMissing = missingFields.find(
+          (k) => typeof k === 'string' && !k.startsWith('guided_intake:')
+        ) || null;
+        if (firstDetailMissing) {
+          setIntakeFocusKey(firstDetailMissing as string);
+          setTimeout(() => {
+            const el = intakeRefs.current[firstDetailMissing as string];
+            if (el && typeof el.focus === 'function') {
+              el.focus();
+              el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          }, 0);
+        }
+        showToast('Report generation blocked — missing required information.');
+      } else {
+        setGenError(err.message || 'Report generation failed. Please try again.');
+        showToast(err.message || 'Report generation error');
+      }
     }
   };
 
