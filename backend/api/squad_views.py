@@ -59,7 +59,7 @@ class SquadInitializeView(views.APIView):
         if order_type == 'digital':
             amount = 100.00
         else:
-            amount = 4000.00
+            amount = 100.00
         amount_kobo = int(amount * 100)
         currency = 'NGN'
 

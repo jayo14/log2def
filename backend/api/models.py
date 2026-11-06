@@ -415,7 +415,7 @@ class DefenceSession(models.Model):
 class PaymentOrder(models.Model):
     ORDER_TYPES = [
         ('digital', 'Digital Report Download (NGN 100)'),
-        ('delivery', 'Physical Print & Spiral Binding Delivery (NGN 4,000)'),
+        ('delivery', 'Physical Print & Spiral Binding Delivery (NGN 100)'),
     ]
     PAYMENT_METHODS = [
         ('card', 'Debit / Credit Card'),

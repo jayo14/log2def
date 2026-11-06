@@ -2521,7 +2521,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Dual Actions: 1. Digital Download (NGN 100) & 2. Print Delivery (NGN 4000) */}
+        {/* Dual Actions: 1. Digital Download (NGN 100) & 2. Print Delivery (NGN 100) */}
         <div style={{ marginTop: '22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             className="btn w"
@@ -2548,7 +2548,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               local_shipping
             </span>
-            Print & Spiral Binding Delivery (NGN 4,000)
+            Print & Spiral Binding Delivery (NGN 100)
           </button>
         </div>
       </div>
@@ -3098,7 +3098,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Printed &amp; Spiral Binding Delivery</div>
-                <div className="s-val">NGN 4,000 (LASUSTECH Campus drop-off)</div>
+                <div className="s-val">NGN 100 (LASUSTECH Campus drop-off)</div>
               </div>
             </div>
           </div>
@@ -5202,7 +5202,7 @@ export default function DashboardPage() {
         )}
 
         {/* ======================================================== */}
-        {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 4000) */}
+        {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 100) */}
         {/* ======================================================== */}
         {checkoutModal === 'delivery' && (
           <div id="checkout-delivery">
@@ -5223,7 +5223,7 @@ export default function DashboardPage() {
               <div className="checkout-card">
                 <div className="checkout-price" style={{ margin: '0 0 16px' }}>
                   <span>Print, Binding & Delivery</span>
-                  <b>NGN 4,000</b>
+                  <b>NGN 100</b>
                 </div>
 
                 {/* Delivery Form */}
@@ -5306,7 +5306,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <span className="ms">check_circle</span>
-                      Pay NGN 4,000 & Confirm Delivery
+                      Pay NGN 100 & Confirm Delivery
                     </>
                   )}
                 </button>
@@ -5406,7 +5406,7 @@ export default function DashboardPage() {
                 </div>
                 <h2>Delivery Order Confirmed!</h2>
                 <p style={{ marginTop: '6px' }}>
-                  Payment of <b>NGN 4,000</b> confirmed.
+                  Payment of <b>NGN 100</b> confirmed.
                   <br />
                   Tracking Ref: <code>{paymentSuccess.txRef}</code>
                 </p>
@@ -5440,7 +5440,7 @@ export default function DashboardPage() {
               {/* Direct WhatsApp Follow-up Button */}
               {(() => {
                 const det = paymentSuccess.deliveryDetails;
-                const waMessage = `Hello Log2Def, I just paid NGN 4,000 for the printed and spiral-bound SIWES technical report delivery.%0A%0AOrder Ref: ${paymentSuccess.txRef}%0AName: ${encodeURIComponent(det?.recipient || '')}%0AMatric: ${encodeURIComponent(details.matric || '')}%0ALocation: ${encodeURIComponent((det?.location || '') + (det?.customAddress ? ' - ' + det.customAddress : ''))}%0ADelivery Date: ${encodeURIComponent(det?.date || '')}%0APhone: ${encodeURIComponent(det?.phone || '')}`;
+                const waMessage = `Hello Log2Def, I just paid NGN 100 for the printed and spiral-bound SIWES technical report delivery.%0A%0AOrder Ref: ${paymentSuccess.txRef}%0AName: ${encodeURIComponent(det?.recipient || '')}%0AMatric: ${encodeURIComponent(details.matric || '')}%0ALocation: ${encodeURIComponent((det?.location || '') + (det?.customAddress ? ' - ' + det.customAddress : ''))}%0ADelivery Date: ${encodeURIComponent(det?.date || '')}%0APhone: ${encodeURIComponent(det?.phone || '')}`;
                 const waUrl = `https://wa.me/2348096044860?text=${waMessage}`;
 
                 return (
