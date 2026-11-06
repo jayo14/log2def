@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 /**
@@ -10,7 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
  * Forwards the error to /dashboard where `handleSquadCallback` shows the
  * "payment not completed" toast.
  */
-export default function PaymentFailedPage() {
+function PaymentFailedContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -26,4 +26,12 @@ export default function PaymentFailedPage() {
   }, [router, searchParams]);
 
   return null;
+}
+
+export default function PaymentFailedPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaymentFailedContent />
+    </Suspense>
+  );
 }

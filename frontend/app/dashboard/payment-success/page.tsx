@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 /**
@@ -10,7 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
  * Forwards the verification params to /dashboard where `handleSquadCallback`
  * verifies the transaction and unlocks the report.
  */
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -39,4 +39,12 @@ export default function PaymentSuccessPage() {
   }, [router, searchParams]);
 
   return null;
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={null}>
+      <PaymentSuccessContent />
+    </Suspense>
+  );
 }
