@@ -7,7 +7,7 @@ import {
   useProjectStore,
   useReportStore,
 } from '@/lib/store';
-import { getApiBaseUrl, getAuthToken, projectsApi } from '@/lib/api';
+import { getApiBaseUrl, getAuthToken } from '@/lib/api';
 import { detectDeviceOS, isStandaloneApp, DeviceOS } from '@/lib/device';
 import '@/app/dashboard.css';
 
@@ -190,12 +190,6 @@ export default function DashboardPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isSavingStep4, setIsSavingStep4] = useState(false);
   const [step4SaveError, setStep4SaveError] = useState<string | null>(null);
-  const [intake, setIntake] = useState<any>(null);
-  const [intakeLoading, setIntakeLoading] = useState(false);
-  const [intakeSavingKey, setIntakeSavingKey] = useState<string | null>(null);
-  const [intakeError, setIntakeError] = useState<string | null>(null);
-  const [intakeFocusKey, setIntakeFocusKey] = useState<string | null>(null);
-  const intakeRefs = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | null>>({});
 
   const [pages, setPages] = useState<LogPage[]>([]);
   const [reading, setReading] = useState<boolean>(false);
@@ -1101,12 +1095,7 @@ export default function DashboardPage() {
         if (key === 'end') payload.training_end_date = val;
         if (key === 'matric') payload.matric_number = val;
         if (key === 'dept') payload.department = val;
-        if (key === 'degree') payload.degree = val;
-        if (key === 'fac') {
-          const facVal = val === 'Other' ? (details.customFac || val) : val;
-          payload.faculty_school = facVal;
-          payload.college = facVal;
-        }
+        if (key === 'fac') payload.faculty_school = val;
         if (key === 'inst') payload.university_name = val;
         if (key === 'sup') payload.industry_supervisor_name = val;
         if (key === 'isup') payload.institution_supervisor_name = val;
@@ -1288,71 +1277,13 @@ export default function DashboardPage() {
       showToast('Institutional report compiled!');
     } catch (err: any) {
       clearInterval(iv);
-      const data = err?.data || {};
-      const labels: string[] = Array.isArray(data.missing_labels) ? data.missing_labels : [];
-      const keys: string[] = Array.isArray(data.missing_required_fields) ? data.missing_required_fields : [];
-      const structured = labels.length || keys.length
-        ? `Missing required information: ${labels.length ? labels.join('; ') : keys.join('; ')}`
-        : (err?.message || 'Report generation failed. Please try again.');
-      setGenError(structured);
-      if (data.completeness || data.missing_required_fields) {
-        setIntake((prev: any) => ({ ...(prev || {}), lastGenerateBlock: data }));
-      }
+      setGenError(err.message || 'Report generation failed. Please try again.');
       setGenState(0);
-      showToast(err?.message || 'Report generation error');
+      showToast(err.message || 'Report generation error');
     }
   };
 
-  // Guided intake (organisation/experience questions) - required before generation
-  const fetchGuidedIntake = useCallback(async (projectId?: number | string | null) => {
-    const pid = projectId || activeProject?.id || useProjectStore.getState().activeProject?.id;
-    if (!pid) return null;
-    setIntakeLoading(true);
-    try {
-      const data = await projectsApi.getGuidedIntake(pid);
-      setIntake(data);
-      return data;
-    } catch (e: any) {
-      // non-fatal; keep any existing intake
-      return null;
-    } finally {
-      setIntakeLoading(false);
-    }
-  }, [activeProject?.id]);
-
-  const saveIntakeAnswer = async (key: string, answer: any) => {
-    const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
-    if (!pid) throw new Error('No active project found.');
-    setIntakeSavingKey(key);
-    setIntakeError(null);
-    try {
-      const data = await projectsApi.saveGuidedIntakeAnswer(pid, key, answer);
-      setIntake((prev: any) => ({ ...(prev || {}), answers: data?.answers || prev?.answers, completeness: data?.completeness || prev?.completeness }));
-      await fetchGuidedIntake(pid);
-      showToast('Saved');
-      return data;
-    } catch (e: any) {
-      const msg = e?.message || 'Could not save this answer. Please check it and try again.';
-      setIntakeError(msg);
-      showToast(msg);
-      throw e;
-    } finally {
-      setIntakeSavingKey(null);
-    }
-  };
-
-  useEffect(() => {
-    if (inFlow && (step === 4 || step === 5)) fetchGuidedIntake();
-  }, [inFlow, step, fetchGuidedIntake]);
-
-  useEffect(() => {
-    if (!intakeFocusKey) return;
-    const el = intakeRefs.current[intakeFocusKey];
-    if (el) {
-      el.focus();
-      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-    }
-  }, [intakeFocusKey, intake]);
+  const getSectionHtml = (i: number): string => {
     if (chapterEdits[i] !== undefined) return chapterEdits[i];
     if (dbReport && dbReport.sections && dbReport.sections.length > 0) {
       if (dbReport.template_version === 'lasustech_cs:2.0.0') {
@@ -1960,24 +1891,20 @@ export default function DashboardPage() {
       return;
     }
 
-    const required = ['name', 'matric', 'dept', 'fac', 'degree', 'inst', 'co', 'addr', 'start', 'end'];
+    const required = ['name', 'matric', 'dept', 'fac', 'inst', 'co'];
     let firstBadField: string | null = null;
 
     for (const k of required) {
       const val = details[k] ? details[k].trim() : '';
-      if (!val || (k === 'inst' && val === 'Other') || (k === 'fac' && val === 'Other' && !details.customFac?.trim())) {
-        firstBadField = k === 'fac' && val === 'Other' ? 'fac' : k;
+      if (!val) {
+        firstBadField = k;
         break;
       }
-    }
-    if (!firstBadField && details.start && details.end && details.end <= details.start) {
-      firstBadField = 'end';
     }
 
     if (firstBadField) {
       const el = document.getElementById(firstBadField);
       if (el) el.focus();
-      showToast('Please complete required details, including training dates.');
       return;
     }
 
@@ -1993,9 +1920,9 @@ export default function DashboardPage() {
         full_name: details.name || undefined,
         matric_number: details.matric,
         department: details.dept,
-        college: details.fac === 'Other' ? (details.customFac || details.fac) : details.fac,
-        faculty_school: details.fac === 'Other' ? (details.customFac || details.fac) : details.fac,
-        degree: details.degree || undefined,
+        college: details.fac,
+        faculty_school: details.fac,
+        degree: details.degree,
         university_name: details.inst,
         organization_name: details.co,
         organization_address: details.addr,
@@ -3473,24 +3400,6 @@ export default function DashboardPage() {
                 </p>
               </div>
 
-              <div className="f" data-f="degree">
-                <label htmlFor="degree">
-                  Degree / programme <em aria-hidden="true">*</em>
-                </label>
-                <input
-                  id="degree"
-                  name="degree"
-                  type="text"
-                  placeholder="e.g. B.Sc. Computer Science"
-                  value={details.degree || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, degree: e.target.value }))}
-                  required
-                />
-                <p className="err" id="degree-e" hidden={Boolean(details.degree?.trim())}>
-                  Please fill this in.
-                </p>
-              </div>
-
               <div className="f" data-f="inst">
                 <label htmlFor="inst">
                   Institution <em aria-hidden="true">*</em>
@@ -3554,7 +3463,7 @@ export default function DashboardPage() {
 
               <div className="f" data-f="addr">
                 <label htmlFor="addr">
-                  Company address <em aria-hidden="true">*</em>
+                  Company address <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
                 </label>
                 <input
                   id="addr"
@@ -3562,11 +3471,7 @@ export default function DashboardPage() {
                   type="text"
                   value={details.addr || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, addr: e.target.value }))}
-                  required
                 />
-                <p className="err" id="addr-e" hidden={Boolean(details.addr?.trim())}>
-                  Please fill this in.
-                </p>
               </div>
 
               <div className="f" data-f="unit">
@@ -3584,7 +3489,7 @@ export default function DashboardPage() {
 
               <div className="f" data-f="start">
                 <label htmlFor="start">
-                  Training start date <em aria-hidden="true">*</em>
+                  Training start date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
                 </label>
                 <input
                   id="start"
@@ -3592,16 +3497,12 @@ export default function DashboardPage() {
                   type="date"
                   value={details.start || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, start: e.target.value }))}
-                  required
                 />
-                <p className="err" id="start-e" hidden={Boolean(details.start?.trim())}>
-                  Please select a start date.
-                </p>
               </div>
 
               <div className="f" data-f="end">
                 <label htmlFor="end">
-                  Training end date <em aria-hidden="true">*</em>
+                  Training end date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
                 </label>
                 <input
                   id="end"
@@ -3609,11 +3510,7 @@ export default function DashboardPage() {
                   type="date"
                   value={details.end || ''}
                   onChange={(e) => setDetails((prev) => ({ ...prev, end: e.target.value }))}
-                  required
                 />
-                <p className="err" id="end-e" hidden={Boolean(details.end?.trim() && (!details.start || details.end > details.start))}>
-                  {details.end && details.start && details.end <= details.start ? 'End date must be after start date.' : 'Please select an end date.'}
-                </p>
               </div>
 
               <p className="gt">SUPERVISORS</p>
@@ -4504,29 +4401,15 @@ export default function DashboardPage() {
           <div className="card" style={{ border: '1px solid #ef4444', background: '#fef2f2', marginBottom: '14px' }}>
             <div className="row" style={{ color: '#b91c1c' }}>
               <span className="ms">error</span>
-              <b>Complete required details to generate</b>
+              <b>Generation Note</b>
             </div>
-            <p style={{ margin: '8px 0 10px', fontSize: '13.5px', color: '#7f1d1d' }}>{genError}</p>
-            {Array.isArray((intake as any)?.lastGenerateBlock?.missing_labels) && (intake as any).lastGenerateBlock.missing_labels.length > 0 && (
-              <ul style={{ margin: '0 0 12px 18px', color: '#7f1d1d', fontSize: '13.5px' }}>
-                {(intake as any).lastGenerateBlock.missing_labels.map((m: string, i: number) => <li key={i}>{m}</li>)}
-              </ul>
-            )}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button className="btn" type="button" onClick={async () => {
-                const data = await fetchGuidedIntake();
-                const firstKey = data?.required_steps?.[0]?.key || (intake as any)?.required_steps?.[0]?.key || (intake as any)?.lastGenerateBlock?.missing_required_fields?.find((k:string)=>String(k).startsWith('guided_intake:'))?.replace('guided_intake:','') || null;
-                if (firstKey) setIntakeFocusKey(firstKey);
-                setStep(4); if (scrRef.current) scrRef.current.scrollTop = 0;
-              }}>
-                <span className="ms">edit</span>
-                Complete missing details
-              </button>
-              <button className="btn o" type="button" onClick={() => startGenerating()}>
-                <span className="ms">refresh</span>
-                Retry
-              </button>
-            </div>
+            <p style={{ margin: '8px 0 14px', fontSize: '13.5px', color: '#7f1d1d' }}>
+              {genError}
+            </p>
+            <button className="btn w" type="button" onClick={() => startGenerating()}>
+              <span className="ms">refresh</span>
+              Retry Generating Report
+            </button>
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
@@ -5870,102 +5753,6 @@ export default function DashboardPage() {
                         style={{
                           width: '28px',
                           height: '28px',
-                          borderRadius: '50%',
-                          background: 'var(--g)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          fontWeight: 800,
-                          fontSize: '12px',
-                          flexShrink: 0,
-                        }}
-                      >
-                        2
-                      </span>
-                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
-                        Select <b>Install app</b> or <b>Add to Home screen</b>.
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '12px 14px',
-                        background: 'var(--card)',
-                        borderRadius: '14px',
-                        border: '1px solid var(--line)',
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '50%',
-                          background: 'var(--g)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          fontWeight: 800,
-                          fontSize: '12px',
-                          flexShrink: 0,
-                        }}
-                      >
-                        3
-                      </span>
-                      <div style={{ fontSize: '13px', lineHeight: 1.4 }}>
-                        Tap <b>Install</b> to confirm and launch from your app drawer!
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div
-                    style={{
-                      padding: '14px',
-                      background: 'var(--card)',
-                      borderRadius: '14px',
-                      border: '1px solid var(--line)',
-                      fontSize: '13px',
-                      lineHeight: 1.5,
-                    }}
-                  >
-                    Click the <b>Install</b> icon in your browser’s address bar (or browser menu &rarr; <b>Install Log2Def</b>) to install as a desktop app.
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                className="btn w"
-                onClick={() => {
-                  setShowInstallModal(false);
-                  setInstallDismissed(true);
-                  try {
-                    localStorage.setItem('log2def_install_dismissed', 'true');
-                  } catch {}
-                }}
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Global Toast (#toast) */}
-        <div
-          id="toast"
-          role="status"
-          aria-live="polite"
-          className={toastMessage ? 'on' : ''}
-        >
-          {toastMessage}
-        </div>
-      </div>
-    </div>
-  );
-}
-   height: '28px',
                           borderRadius: '50%',
                           background: 'var(--g)',
                           color: '#fff',
