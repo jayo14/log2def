@@ -203,6 +203,21 @@ export default function DashboardPage() {
   const [genProgress, setGenProgress] = useState<number>(0);
   const [genError, setGenError] = useState<string | null>(null);
 
+  // Guided-intake state used by Step 4 missing-info routing and Step 5 blocked-
+  // generation recovery. Kept in local state so the wizard can focus the first
+  // missing field without re-fetching on every render.
+  const [intake, setIntake] = useState<Record<string, any>>({});
+  const [intakeLoading, setIntakeLoading] = useState<boolean>(false);
+  const [intakeFocusKey, setIntakeFocusKey] = useState<string | null>(null);
+  const intakeRefs = useRef<
+    Record<string, HTMLTextAreaElement | HTMLInputElement | HTMLSelectElement | null>
+  >({});
+  const [lastGenerateBlock, setLastGenerateBlock] = useState<{
+    missing: string[];
+    labels: string[];
+    canGenerate: boolean;
+  } | null>(null);
+
   // Report editor / preview state (Housed in Logbook screen)
   const [editorTab, setEditorTab] = useState<'edit' | 'prev'>('edit');
   const [currentSectionIdx, setCurrentSectionIdx] = useState<number>(0);
