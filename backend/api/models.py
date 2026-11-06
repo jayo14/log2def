@@ -302,6 +302,11 @@ class Report(models.Model):
     document_model = models.JSONField(default=dict, blank=True)
     estimated_pages = models.IntegerField(default=1)
     page_estimate_breakdown = models.JSONField(default=dict, blank=True)
+    actual_page_count = models.IntegerField(null=True, blank=True)
+    page_range_status = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text='within_range / over_limit / under_limit / not_rendered',
+    )
     readiness_feedback = models.JSONField(default=list, blank=True)
     title = models.CharField(max_length=255, default='SIWES Technical Report')
     version = models.IntegerField(default=1)

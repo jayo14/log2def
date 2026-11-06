@@ -25,6 +25,37 @@ GENERIC_FILLER = (
     re.compile(r"\bcolleagues in the Engineering\s*/\s*IT Unit\b", re.I),
     re.compile(r"\bMika Labs Internal Documentation\b", re.I),
 )
+# Banned phrases from the coordinator spec — never acceptable in the final report
+BANNED_PHRASES = (
+    re.compile(r"\bstrict compliance\b", re.I),
+    re.compile(r"\bcomprehensive technical duties\b", re.I),
+    re.compile(r"\bindustry-standard tools\b", re.I),
+    re.compile(r"\bhardware/software deployments\b", re.I),
+    re.compile(r"\bspecialized technical projects\b", re.I),
+    re.compile(r"\breputable organization\b", re.I),
+    re.compile(r"\bcommendable\b", re.I),
+    re.compile(r"\bpersonal protective equipment\b", re.I),
+    re.compile(r"\bSignificantly, this\b", re.I),
+)
+# Instructions addressed to the student — must never appear in the report body
+INSTRUCTION_TO_STUDENT = (
+    re.compile(r"\b(?:click|tap|press|enter|fill in|fill out|type|select|choose|upload|paste|replace)\b", re.I),
+    re.compile(r"\b(?:your answer|your response|your input|your details|you may|you should|you can|you must|you need to)\b", re.I),
+)
+# Text that talks about the document / generation system itself — must never appear
+DOCUMENT_ITSELF = (
+    re.compile(r"\bgenerated automatically\b", re.I),
+    re.compile(r"\bduring export\b", re.I),
+    re.compile(r"\btable of contents is generated\b", re.I),
+    re.compile(r"\bformal table of contents\b", re.I),
+    re.compile(r"\bleaked system\b", re.I),
+)
+# Scheme name must be written identically everywhere
+SCHEME_NAME_VARIANTS = (
+    re.compile(r"\bs\.?i\.?w\.?e\.?s\b", re.I),
+    re.compile(r"\bsiwes\b", re.I),
+)
+
 SECOND_PERSON = re.compile(r"\b(?:you|your|you're|you've|yourself)\b", re.I)
 UNSUPPORTED_CLAIM = re.compile(r"\b(?:verified|successfully achieved|objectives were successfully|skills were significantly enhanced)\b", re.I)
 US_SPELLING = re.compile(r"\b(?:organization|organizations|organize|organized|organizing|analyze|analyzed|center|centers|color|colors|labor|laboring|catalog|catalogs|traveling|canceled)\b", re.I)
@@ -162,6 +193,7 @@ def evaluate_report_quality(report, model=None):
     found_dates = {}
     date_styles = set()
     expected_titles = {item["key"]: item["title"] for item in definitions}
+    scheme_seen = {}
     for key, section in by_key.items():
         if key not in expected_titles:
             add(blockers, "unknown_section", "This section is not part of the selected template.", key)
@@ -184,6 +216,19 @@ def evaluate_report_quality(report, model=None):
             match = pattern.search(text)
             if match and not Fact.objects.filter(project=report.project, status="confirmed", text__icontains=match.group(0)).exists():
                 add(blockers, "unsupported_generic_filler", "Remove generic workplace details unless they appear in a confirmed Fact.", key)
+        for pattern in BANNED_PHRASES:
+            if pattern.search(text):
+                add(blockers, "banned_phrase", "Remove this banned phrase from the report.", key)
+        for pattern in INSTRUCTION_TO_STUDENT:
+            if pattern.search(text):
+                add(blockers, "instruction_to_student", "Remove instructions addressed to the student.", key)
+        for pattern in DOCUMENT_ITSELF:
+            if pattern.search(text):
+                add(blockers, "document_itself", "Remove text that describes the document or export system.", key)
+        # Scheme name consistency: track SIWES spelling variants used in this section
+        scheme_variants_found = [p.pattern for p in SCHEME_NAME_VARIANTS if p.search(text)]
+        if scheme_variants_found:
+            scheme_seen.setdefault(key, []).extend(scheme_variants_found)
         if SECOND_PERSON.search(text):
             add(blockers, "second_person", "Rewrite instructions that address the reader as “you”.", key)
         for found_date in DATE_RE.findall(text):
@@ -263,6 +308,15 @@ def evaluate_report_quality(report, model=None):
     actual_positions = [item.get("key") for item in ordered]
     if actual_positions != expected_positions:
         add(blockers, "section_order", "Sections are not in the order required by the selected template.", None)
+
+    # Scheme name consistency: SIWES must be spelled identically everywhere
+    scheme_variants_by_section = {}
+    for section_key, variants in scheme_seen.items():
+        for v in variants:
+            normalized = re.sub(r"[\s./]+", "", v).casefold()
+            scheme_variants_by_section.setdefault(normalized, []).append(section_key)
+    if len(scheme_variants_by_section) > 1:
+        add(blockers, "scheme_name_inconsistent", "The scheme name is spelled inconsistently across sections; use one spelling everywhere.", None)
 
     project = report.project
     start, end = project.training_start_date, project.training_end_date

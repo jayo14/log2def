@@ -1,0 +1,91 @@
+TITLE PAGE
+A TECHNICAL REPORT ON
+SIWES (Students Industrial Work Experience Scheme)
+UNDERTAKEN AT
+Mika Labs Limited
+12 Computer Village, Ikeja, Lagos
+BY
+John Samuel
+MATRIC NO: 240303010036
+DEPARTMENT: Computer Science
+COLLEGE: College of Basic Science
+Lagos State University of Science and Technology
+IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF B.Sc IN Computer Science
+DURATION: January 2026 - March 2026
+(2 WEEKS / 1 MONTH)
+LEVEL: 400 LEVEL
+
+DECLARATION
+I, John Samuel, hereby declare that this report is my original work and has not been submitted for any other award.
+
+CERTIFICATION
+This is to certify that John Samuel with Matriculation Number 240303010036 of the Department of Computer Science has successfully completed the SIWES (SIWES) at Mika Labs Limited for a period of 2 weeks.
+
+ABSTRACT
+This report covers the student industrial work experience scheme at Mika Labs Limited.
+
+ACKNOWLEDGEMENT
+I thank Almighty God for health, protection, and guidance. I commend the executive management and team at Mika Labs Limited. I acknowledge [Industry Supervisor Name] and colleagues in the Engineering / IT Unit for selfless mentorship. I express gratitude to my parents and siblings for moral encouragement and prayers.
+
+TABLE OF CONTENTS
+The formal Table of Contents is generated automatically during document export.
+Introduction .................................................................... 1
+Chapter 2 ........................................................................ 3
+
+CHAPTER ONE: INTRODUCTION
+1.1 Background of SIWES
+SIWES was established to address the shortage of practical skills among Nigerian graduates and is a tripartite arrangement between students, institutions and industry.
+1.2 Objectives of SIWES
+i. To provide students with industrial skills
+ii. To bridge the gap between theory and practice
+1.3 Importance of SIWES
+The scheme is important because it gives students practical exposure.
+
+[INPUT NEEDED] Scope of the training goes here.
+[Industry Supervisor Name] supervised me during the training.
+Click here to enter your duties.
+
+CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE
+2.1 Brief History of the Organisation
+Mika Labs was founded in 2010 and is a reputable organization in the tech space.
+2.2 Objectives of the Organisation
+To provide quality services.
+2.3 Organisational Structure
+The organisation has departments.
+2.4 Organogram of the Organisation
+CEO -> Manager -> Staff
+
+CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES
+3.1 Duties and Responsibilities
+I installed software and configured routers.
+3.2 Activities Performed
+WEEK 1-2: Component identification and hardware/software deployments.
+I used industry-standard tools for the job.
+3.3 Skills Acquired
+I learned networking.
+3.4 Equipment/Tools Used
+Laptop, multimeter, crimping tool.
+3.5 Challenges Encountered
+1. Power outages.
+3.6 Solutions to the Challenges
+1. I used a generator.
+
+CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS
+4.1 Summary
+I completed my training successfully.
+4.2 Conclusion
+The objectives were successfully achieved.
+4.3 Recommendations
+1. ITF should provide more funding.
+
+REFERENCES
+Industrial Training Fund (ITF). SIWES Handbook. 2026. Lagos: ITF Press.
+
+APPENDICES
+Placement letter attached.
+
+The formal Table of Contents is generated automatically during document export.
+Strict compliance with the institution's academic calendar was maintained.
+Significantly, this experiential engagement bridged the gap between theory and practice.
+
+1 verified logbook milestones were recorded.

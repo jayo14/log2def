@@ -1,0 +1,114 @@
+TITLE PAGE
+A TECHNICAL REPORT ON
+SIWES (STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME)
+UNDERTAKEN AT
+ICT Centre, Lagos State University of Science and Technology
+University Campus, Ikorodu, Lagos
+BY
+Adaobi Nkem
+MATRIC NO: 240303010042
+DEPARTMENT: Computer Science
+COLLEGE: College of Basic Sciences
+LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY
+IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF B.SC IN COMPUTER SCIENCE
+DURATION: 2 March 2026 - 22 May 2026
+(12 WEEKS / 3 MONTHS)
+
+CERTIFICATION
+This is to certify that Adaobi Nkem with Matriculation Number 240303010042 of the Department of Computer Science has successfully completed the SIWES (SIWES) at ICT Centre, Lagos State University of Science and Technology for a period of 12 weeks.
+
+INDUSTRIAL-BASED SUPERVISOR
+Signature: ____________________
+Date: ____________________
+
+SIWES COORDINATOR - COMPUTER SCIENCE
+Signature: ____________________
+Date: ____________________
+
+HOD, COMPUTER SCIENCE
+Signature: ____________________
+Date: ____________________
+
+DEDICATION
+To my mentors who believed in my potential.
+
+ACKNOWLEDGEMENT
+I thank my supervisor at the ICT Centre for guidance and support during the training.
+
+TABLE OF CONTENTS
+CHAPTER ONE: INTRODUCTION ........................................ 1
+CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE .... 3
+CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES ....... 5
+CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS ....... 8
+REFERENCES ........................................................ 10
+
+CHAPTER ONE: INTRODUCTION
+1.1 Background of SIWES
+SIWES was established by the Industrial Training Fund (ITF) in 1973 to address the shortage of practical skills among Nigerian graduates. It is a tripartite arrangement between students, institutions and industry.
+1.2 Objectives of SIWES
+i. To expose students to industrial work experience
+ii. To bridge the gap between theory and practice
+iii. To prepare students for the work environment after graduation
+iv. To make the transition from school to the world of work easier
+v. To enhance students contacts with potential employers
+vi. To provide an avenue for students to acquire industrial skills
+1.3 Importance of SIWES
+SIWES helps students apply classroom knowledge to real-world situations.
+1.4 Scope of the Training
+Training took place at the ICT Centre, Lagos State University of Science and Technology, University Campus, Ikorodu, Lagos. I was posted to the hardware maintenance unit where I worked on computer assembly and network troubleshooting.
+1.5 Duration of the Training
+The training lasted from 2 March 2026 to 22 May 2026.
+
+CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE
+2.1 Brief History of the Organisation
+The ICT Centre was established to support ICT training and services for the university community.
+2.2 Objectives of the Organisation
+To provide ICT infrastructure and training support to students and staff.
+2.3 Organisational Structure
+The Centre is led by a Director who oversees technical and administrative units.
+2.4 Organogram of the Organisation
+Director
+  Technical Unit
+    Hardware Maintenance
+    Network Administration
+  Administrative Unit
+    Finance
+    Records
+
+CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES
+3.1 Duties and Responsibilities
+I identified computer components and assisted with hardware assembly.
+3.2 Activities Performed
+WEEK 1-2: Component Identification
+I identified motherboard, CPU, RAM, and storage components. I learned to distinguish between different form factors and specifications.
+WEEK 3-5: Assembly and RAM Installation
+I assembled desktop computers and installed RAM modules. I verified each installation by booting the system and checking BIOS detection.
+WEEK 6-8: Troubleshooting and OS Installation
+I diagnosed faulty computers and installed operating systems. I used bootable USB drives to deploy Windows and Linux.
+WEEK 9-12: Cyber Security
+I configured firewalls and performed vulnerability scans. I documented security findings for the Centre's records.
+3.3 Skills Acquired
+Hardware assembly, operating system installation, network troubleshooting.
+3.4 Equipment/Tools Used
+Screwdriver set, multimeter, crimping tool, bootable USB drive.
+3.5 Challenges Encountered
+1. Some computers had corrupted BIOS settings.
+3.6 Solutions to the Challenges
+1. I reset the BIOS to factory defaults and reconfigured boot priority.
+
+CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS
+4.1 Summary
+During twelve weeks at the ICT Centre, I assembled computers, installed operating systems, and performed network troubleshooting.
+4.2 Conclusion
+The training gave me practical experience in hardware maintenance and cyber security fundamentals.
+4.3 Recommendations
+1. ITF should increase stipend funding for trainees.
+2. NUC should require all universities to maintain functional ICT centres.
+3. The university should extend the SIWES duration to six months.
+
+REFERENCES
+Industrial Training Fund (ITF). SIWES Handbook.
+Lagos State University of Science and Technology. University website.
+
+APPENDICES
+Placement letter.

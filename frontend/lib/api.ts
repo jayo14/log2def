@@ -313,6 +313,10 @@ export const projectsApi = {
     return apiRequest(`/projects/${projectId}/report/`);
   },
 
+  getReportPageStatus: async (projectId: number | string) => {
+    return apiRequest(`/projects/${projectId}/report/page-status/`);
+  },
+
   generateReport: async (projectId: number | string, forceAll: boolean = false) => {
     return apiRequest(`/projects/${projectId}/report/generate/`, {
       method: 'POST',

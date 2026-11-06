@@ -43,6 +43,10 @@ export interface ProjectState {
   initiateSquadPayment: (projectId: number | string, data: any) => Promise<any>;
   verifySquadPayment: (projectId: number | string, transactionRef: string) => Promise<any>;
 
+  // Page range status
+  pageStatus: any | null;
+  fetchPageStatus: (projectId: number | string) => Promise<any>;
+
   clearActiveProject: () => void;
   setError: (error: string | null) => void;
 }
@@ -56,6 +60,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   isLoadingActiveProject: false,
   isLoadingCompleteness: false,
   aiStatus: null,
+  pageStatus: null,
   error: null,
 
   clearActiveProject: () => set({ activeProject: null, completeness: null, error: null }),
@@ -172,6 +177,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return statusData;
     } catch {
       set({ aiStatus: null });
+      return null;
+    }
+  },
+
+  fetchPageStatus: async (projectId: number | string) => {
+    try {
+      const statusData = await projectsApi.getReportPageStatus(projectId);
+      set({ pageStatus: statusData });
+      return statusData;
+    } catch {
+      set({ pageStatus: null });
       return null;
     }
   },

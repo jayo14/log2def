@@ -7,7 +7,7 @@ from .views import (
     DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView, FactListView, FactReviewView, ReportParagraphView,
     TemplateListView,
-    ReportDetailView, ReportGenerateView, SectionUpdateView, SectionRegenerateView,
+    ReportDetailView, ReportGenerateView, ReportPageStatusView, SectionUpdateView, SectionRegenerateView,
     ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
@@ -82,6 +82,8 @@ urlpatterns = [
     path('templates', TemplateListView.as_view()),
 
     # Report & Sections
+    path('projects/<int:project_id>/report/page-status/', ReportPageStatusView.as_view(), name='report-page-status'),
+    path('projects/<int:project_id>/report/page-status', ReportPageStatusView.as_view()),
     path('projects/<int:project_id>/report/', ReportDetailView.as_view(), name='report-detail'),
     path('projects/<int:project_id>/report', ReportDetailView.as_view()),
     path('projects/<int:project_id>/report/generate/', ReportGenerateView.as_view(), name='report-generate'),

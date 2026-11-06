@@ -16,6 +16,7 @@ from docx.oxml.ns import nsdecls, qn
 from django.conf import settings
 from django.utils import timezone
 from .models import Report, ReportSection
+from .document_quality import QualityGateError
 
 
 class SimpleHTMLDocxParser(HTMLParser):
@@ -593,10 +594,85 @@ def convert_docx_to_pdf(docx_path: str) -> str:
 def export_report_documents(report: Report) -> dict:
     """
     Executes both DOCX generation and PDF conversion with full validation.
-    Returns dict with file paths and metadata.
+    Enforces strict 12-15 page range via the Page Budget Controller.
+    Returns dict with file paths, metadata, and page count info.
     """
+    from .page_controller import (
+        validate_page_range,
+        count_docx_pages,
+        get_page_settings,
+        compute_section_budgets,
+        condense_section_content,
+        rank_facts_by_importance,
+        REQUIRED_SECTION_ORDER,
+    )
+    from .models import ReportSection, Fact
+
+    settings_ = get_page_settings(report)
+    max_pages = settings_["max_pages"]
+    min_pages = settings_["min_pages"]
+
+    max_passes = 3
+    pass_count = 0
+
+    while pass_count < max_passes:
+        pass_count += 1
+
+        # Generate DOCX
+        docx_path = generate_docx_report(report)
+
+        # Convert to PDF and count actual pages
+        pdf_path = convert_docx_to_pdf(docx_path)
+        actual_pages = count_pdf_pages(pdf_path)
+
+        # Validate page range
+        page_result = validate_page_range(actual_pages, min_pages=min_pages, max_pages=max_pages)
+
+        if page_result.within_range:
+            # Pages within range - save and export
+            _save_page_metadata(report, actual_pages, "within_range", pass_count)
+            break
+
+        if page_result.over_limit and pass_count < max_passes:
+            # Over limit: condense sections and regenerate
+            _condense_report_sections(report, max_pages)
+            continue
+
+        # Either over limit after max passes, or under limit
+        break
+
+    # Re-render final version
     docx_path = generate_docx_report(report)
     pdf_path = convert_docx_to_pdf(docx_path)
+    actual_pages = count_pdf_pages(pdf_path)
+    page_result = validate_page_range(actual_pages, min_pages=min_pages, max_pages=max_pages)
+
+    if page_result.over_limit:
+        _save_page_metadata(report, actual_pages, "over_limit", pass_count)
+        # Clean up the oversized file
+        if os.path.exists(docx_path):
+            os.unlink(docx_path)
+        if os.path.exists(pdf_path):
+            os.unlink(pdf_path)
+        raise QualityGateError({
+            "passed": False,
+            "blockers": [{
+                "code": "page_limit_exceeded",
+                "message": f"Report is {actual_pages} pages. Maximum allowed is {max_pages} pages. Condense sections and retry.",
+                "section_key": None,
+            }],
+            "warnings": [],
+            "summary": {
+                "total_pages": actual_pages,
+                "blocker_count": 1,
+                "page_range_status": "over_limit",
+            },
+        })
+
+    if page_result.under_limit:
+        _save_page_metadata(report, actual_pages, "under_limit", pass_count)
+    else:
+        _save_page_metadata(report, actual_pages, "within_range", pass_count)
 
     pdf_filename = os.path.basename(pdf_path)
     rel_pdf_path = f"projects/{report.project.id}/exports/{pdf_filename}"
@@ -613,5 +689,68 @@ def export_report_documents(report: Report) -> dict:
         "docx_filename": os.path.basename(docx_path),
         "pdf_filename": pdf_filename,
         "size_bytes": os.path.getsize(pdf_path),
-        "exported_at": report.last_exported_at.isoformat() if report.last_exported_at else None
+        "exported_at": report.last_exported_at.isoformat() if report.last_exported_at else None,
+        "page_count": actual_pages,
+        "page_range_status": page_result.__dict__.get("page_range_status", "within_range")
+        if hasattr(page_result, "__dict__")
+        else ("within_range" if page_result.within_range else "over_limit" if page_result.over_limit else "under_limit"),
     }
+
+
+def _save_page_metadata(report: Report, actual_pages: int, status: str, pass_count: int):
+    """Save page count and range status to the report model."""
+    report.actual_page_count = actual_pages
+    report.page_range_status = status
+    report.save(update_fields=["actual_page_count", "page_range_status"])
+
+
+def _condense_report_sections(report: Report, max_pages: int):
+    """Condense report sections to reduce page count."""
+    from .page_controller import (
+        compute_section_budgets,
+        condense_section_content,
+        rank_facts_by_importance,
+        count_section_words,
+    )
+    from .models import ReportSection, Fact
+
+    budgets = compute_section_budgets()
+    facts = list(Fact.objects.filter(project=report.project, status="confirmed"))
+    ranked_facts = rank_facts_by_importance(facts)
+
+    sections = report.sections.all()
+    for section in sections:
+        budget = budgets.get(section.section_key)
+        if not budget:
+            continue
+
+        current_words = count_section_words(section.content)
+        if current_words <= budget.max_words:
+            continue
+
+        # Condense this section
+        result = condense_section_content(
+            section.section_key,
+            section.content,
+            ranked_facts,
+            budget,
+        )
+
+        if result.condensed_word_count < current_words:
+            # Rebuild condensed HTML
+            section.content = _build_condensed_html(section, result)
+            section.save(update_fields=["content"])
+
+
+def _build_condensed_html(section, result: "CondenseResult") -> str:
+    """Build condensed HTML from a CondenseResult."""
+    from django.utils.html import strip_tags
+    clean = strip_tags(section.content or "")
+    words = clean.split()
+    target_words = result.condensed_word_count
+    if len(words) > target_words:
+        clean = " ".join(words[:target_words])
+        if not clean.endswith((".", "!", "?")):
+            clean = clean.rsplit(".", 1)[0] + "."
+    return f"<p>{clean}</p>"
+

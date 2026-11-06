@@ -817,6 +817,30 @@ class ReportDetailView(views.APIView):
         return Response(ReportSerializer(project.report).data)
 
 
+@extend_schema(
+    tags=['Report & Sections'],
+    summary='Get page range status and count for report',
+    responses={200: OpenApiTypes.OBJECT}
+)
+class ReportPageStatusView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        if not hasattr(project, 'report'):
+            return Response({"detail": "Report not yet generated."}, status=status.HTTP_404_NOT_FOUND)
+        report = project.report
+        return Response({
+            "actual_page_count": report.actual_page_count,
+            "page_range_status": report.page_range_status,
+            "estimated_pages": report.estimated_pages,
+            "page_estimate_breakdown": report.page_estimate_breakdown,
+            "min_pages": 12,
+            "max_pages": 15,
+            "target_pages": 13,
+        })
+
+
 @require_feature_flag('report_generation')
 class ReportGenerateView(views.APIView):
     permission_classes = (IsAuthenticated,)
