@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useFeatureFlags } from '@/lib/feature-flags';
 import './landing.css';
@@ -104,9 +105,18 @@ const DEFENCE_QUESTIONS = [
 ];
 
 export default function LandingPage() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
   const { isEnabled: isFeatureEnabled, fetchFlags: fetchFeatureFlags } = useFeatureFlags();
   const isDefenceEnabled = isFeatureEnabled('defence_preparation');
+
+  // Auto-redirect logged-in users straight to the dashboard.
+  // Unauthenticated users stay on the landing page to navigate freely.
+  useEffect(() => {
+    if (!isLoading && user) {
+      router.replace('/dashboard');
+    }
+  }, [router, isLoading, user]);
 
   useEffect(() => {
     fetchFeatureFlags();
