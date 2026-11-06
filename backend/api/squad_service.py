@@ -41,21 +41,6 @@ class SquadError(Exception):
 def _headers() -> Dict[str, str]:
     if not SQUAD_SECRET_KEY:
         raise SquadError('SQUAD_SECRET_KEY is not configured. Set it in your backend .env file.')
-
-    # Validate key format matches environment
-    if SQUAD_ENV == 'sandbox' and not SQUAD_SECRET_KEY.startswith('sandbox_sk_'):
-        raise SquadError(
-            f'Invalid Squad secret key for sandbox environment. '
-            f'Key must start with "sandbox_sk_", got "{SQUAD_SECRET_KEY[:20]}...". '
-            f'Get a sandbox key from https://dashboard.squadco.com'
-        )
-    if SQUAD_ENV == 'production' and not SQUAD_SECRET_KEY.startswith('live_sk_'):
-        raise SquadError(
-            f'Invalid Squad secret key for production environment. '
-            f'Key must start with "live_sk_", got "{SQUAD_SECRET_KEY[:20]}...". '
-            f'Get a live key from https://dashboard.squadco.com'
-        )
-
     return {
         'Authorization': f'Bearer {SQUAD_SECRET_KEY}',
         'Content-Type': 'application/json',
@@ -163,9 +148,9 @@ def verify_transaction(transaction_reference: str) -> Dict[str, Any]:
         raise SquadError(f'Network error contacting Squad: {exc}') from exc
 
     if resp.status_code == 401:
-        raise SquadError('Invalid Squad API key')
+        raise SquadError('Invalid Squad API key — check your SQUAD_SECRET_KEY in .env')
     if resp.status_code == 403:
-        raise SquadError('Invalid Squad API key')
+        raise SquadError('Forbidden — Squad rejected the API key or request')
     if resp.status_code == 400:
         raise SquadError('Invalid transaction reference')
     if resp.status_code >= 500:
