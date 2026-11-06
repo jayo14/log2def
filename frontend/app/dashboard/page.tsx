@@ -221,6 +221,8 @@ export default function DashboardPage() {
   const [intake, setIntake] = useState<Record<string, any>>({});
   const [intakeLoading, setIntakeLoading] = useState<boolean>(false);
   const [intakeFocusKey, setIntakeFocusKey] = useState<string | null>(null);
+  const [savingOrganisation, setSavingOrganisation] = useState(false);
+  const [organisationError, setOrganisationError] = useState('');
   const intakeRefs = useRef<
     Record<string, HTMLTextAreaElement | HTMLInputElement | HTMLSelectElement | null>
   >({});
@@ -4482,27 +4484,73 @@ export default function DashboardPage() {
   // WIZARD FLOW: STEP 5 (READY TO GENERATE) — ENHANCED UI
   const renderStepOrganisation = () => {
     const intakeComplete = Boolean((intake as any).intake_complete);
+    const organisationFields = [
+      { key: 'organisation_what', label: "What does the organisation do? (main products or services)", required: true, rows: 4 },
+      { key: 'organisation_when_where', label: 'When and how did it start? Where is it based?', required: false, rows: 3 },
+      { key: 'organisation_objectives', label: "What is the organisation's mission, vision or main objectives?", required: true, rows: 4 },
+      { key: 'organisation_structure', label: 'Who heads the organisation (title)? What are the main departments or units? Which one did you work in? Who did you report to?', required: true, rows: 5 },
+      { key: 'organogram_tree', label: 'Organogram: one role per line, with two spaces for each reporting level', required: true, rows: 6 },
+      { key: 'student_unit', label: 'Which unit were you attached to?', required: true, rows: 2 },
+      { key: 'duties', label: 'What were your main responsibilities there?', required: true, rows: 4 },
+      { key: 'organisation_paste_text', label: 'Paste instead (optional): text from the company profile or About page', required: false, rows: 4 },
+      { key: 'organisation_paste_source', label: 'Where did the pasted text come from? (optional)', required: false, rows: 2 },
+    ];
+    const currentAnswers = ((intake as any).answers || {}) as Record<string, string>;
+    const saveOrganisation = async () => {
+      const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
+      if (!pid) return;
+      const missing = organisationFields.filter((field) => field.required && !String(currentAnswers[field.key] || '').trim());
+      if (missing.length) {
+        setOrganisationError(`Please complete: ${missing.map((field) => field.label).join(', ')}`);
+        return;
+      }
+      setSavingOrganisation(true);
+      setOrganisationError('');
+      try {
+        for (const field of organisationFields) {
+          await projectsApi.saveGuidedIntakeAnswer(pid, field.key, currentAnswers[field.key] || '');
+        }
+        const refreshed = await projectsApi.getGuidedIntake<Record<string, any>>(pid);
+        setIntake(refreshed);
+      } catch (error) {
+        setOrganisationError(error instanceof Error ? error.message : 'Your organisation answers could not be saved.');
+      } finally {
+        setSavingOrganisation(false);
+      }
+    };
     return (
       <div className="view" id="step-5">
         <h1 className="wt" id="wh" tabIndex={-1}>About your organisation</h1>
         <p className="wd">Answer only what your logbook and profile do not already provide. Your progress is saved as you go.</p>
         <div className="card" style={{ padding: '18px 16px' }}>
-          <div className="row" style={{ alignItems: 'flex-start', gap: '12px' }}>
-            <span className="ms" style={{ color: 'var(--g)', fontSize: '24px' }}>business</span>
-            <div>
-              <b>One or two questions per screen</b>
-              <p style={{ margin: '6px 0 0', color: 'var(--mut)', fontSize: '13px', lineHeight: 1.5 }}>
-                We never look up your company or fill gaps. Use the report interview to confirm facts, paste profile text, and build the organogram.
-              </p>
+          <p style={{ marginTop: 0, color: 'var(--mut)', fontSize: '13px', lineHeight: 1.5 }}>
+            We never look up your company or fill gaps. Use a true sentence, paste confirmed profile text, or leave optional items blank.
+          </p>
+          {organisationFields.map((field) => (
+            <div className="f" key={field.key} style={{ marginTop: '16px' }}>
+              <label htmlFor={`organisation-${field.key}`}>
+                {field.label} {field.required && <em aria-hidden="true">*</em>}
+              </label>
+              <textarea
+                id={`organisation-${field.key}`}
+                rows={field.rows}
+                value={currentAnswers[field.key] || ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setIntake((previous) => ({
+                    ...previous,
+                    answers: { ...((previous as any).answers || {}), [field.key]: value },
+                  }));
+                }}
+                placeholder={field.key === 'organogram_tree' ? 'Managing Director\n  Operations Manager\n    Your Unit' : ''}
+              />
             </div>
-          </div>
-          <button className="btn w" type="button" style={{ marginTop: '18px' }} onClick={() => router.push(`/projects/${activeProject?.id || ''}/intake`)}>
-            {intakeComplete ? 'Review organisation answers' : 'Open organisation questions'}
+          ))}
+          {organisationError && <p className="err" role="alert">{organisationError}</p>}
+          <button className="btn w" type="button" disabled={savingOrganisation} style={{ marginTop: '18px' }} onClick={saveOrganisation}>
+            {savingOrganisation ? 'Saving organisation answers…' : intakeComplete ? 'Save and continue to images' : 'Save organisation answers'}
             <span className="ms">arrow_forward</span>
           </button>
-          <p style={{ margin: '12px 0 0', color: 'var(--mut)', fontSize: '12px' }}>
-            {intakeComplete ? 'Required organisation answers are complete.' : 'Generation stays blocked until required answers are saved.'}
-          </p>
         </div>
       </div>
     );
