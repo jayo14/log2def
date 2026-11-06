@@ -1779,10 +1779,6 @@ export default function DashboardPage() {
       showToast('Please enter recipient name');
       return;
     }
-    if (!deliveryData.customAddress.trim()) {
-      showToast('Please enter delivery address');
-      return;
-    }
     if (!activeProject?.id) {
       showToast('No active project found');
       return;
@@ -5272,7 +5268,7 @@ export default function DashboardPage() {
 
                 <div className="f" style={{ marginBottom: '12px' }}>
                   <label htmlFor="del_location">
-                    Delivery Location <em aria-hidden="true">*</em>
+                    Delivery Location
                   </label>
                   <input
                     id="del_location"
@@ -5282,7 +5278,6 @@ export default function DashboardPage() {
                     onChange={(e) =>
                       setDeliveryData((prev) => ({ ...prev, campusLocation: e.target.value }))
                     }
-                    required
                   />
                 </div>
 

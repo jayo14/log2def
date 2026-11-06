@@ -83,11 +83,6 @@ class SquadInitializeView(views.APIView):
                     {'error': 'Recipient name is required for delivery orders.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if not custom_address:
-                return Response(
-                    {'error': 'Delivery address is required for delivery orders.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
 
         # Build callback URL for Squad redirect after payment
         callback_url = request.data.get('callback_url') or ''
