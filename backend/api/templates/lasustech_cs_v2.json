@@ -341,11 +341,11 @@
         "hint": "Describe its main services or work in your own words."
       },
       {
-        "key": "organisation_history",
+        "key": "organisation_when_where",
         "section": "ch2_history",
         "required": false,
         "type": "long_text",
-        "title": "What do you know about its location and history?",
+        "title": "When and how did it start? Where is it based?",
         "hint": "Location and when or how it started, if you know. Leave blank if you cannot confirm this."
       },
       {
@@ -353,7 +353,7 @@
         "section": "ch2_objectives",
         "required": true,
         "type": "long_text",
-        "title": "What are the organisation’s main objectives?",
+        "title": "What are the organisation's main objectives?",
         "hint": "Use objectives stated by the organisation, if available."
       },
       {
@@ -361,7 +361,7 @@
         "section": "ch2_structure",
         "required": true,
         "type": "long_text",
-        "title": "How is the organisation structured, and who heads it?",
+        "title": "Who heads the organisation (title)? What are the main departments or units? Which one did you work in? Who did you report to?",
         "hint": "Name roles or units and who reports to whom."
       },
       {
@@ -386,7 +386,7 @@
         "required": false,
         "type": "short_text",
         "title": "Supervisor job title (optional)",
-        "hint": "Enter the title only. The supervisor’s name is optional."
+        "hint": "Enter the title only. The supervisor's name is optional."
       },
       {
         "key": "duties",
@@ -402,7 +402,7 @@
         "required": true,
         "type": "challenge_pairs",
         "title": "What challenges did you encounter and how were they addressed?",
-        "hint": "Add two or three real challenge and solution pairs, or select “I had none”."
+        "hint": "Add two or three real challenge and solution pairs, or select 'I had none'."
       },
       {
         "key": "recommendations",
@@ -435,6 +435,14 @@
         "type": "short_text",
         "title": "Industrial supervisor name (optional)",
         "hint": "The certification signature line stays blank regardless."
+      },
+      {
+        "key": "images_enabled",
+        "section": "images",
+        "required": false,
+        "type": "toggle",
+        "title": "Do you have images you'd like to attach to the technical report?",
+        "hint": "Yes / No. No continues straight on. Yes opens the image step."
       }
     ]
   }

@@ -65,6 +65,15 @@ class ReportProject(models.Model):
     training_end_date = models.DateField(null=True, blank=True)
     organization_activities = models.TextField(blank=True)
 
+    # About your organisation (Part A) — student-provided details
+    organisation_what = models.TextField(blank=True, help_text="What does the organisation do? (main products or services)")
+    organisation_when_where = models.TextField(blank=True, help_text="When and how did it start? Where is it based?")
+    organisation_objectives = models.TextField(blank=True, help_text="What is the organisation's mission, vision or main objectives?")
+    organisation_structure = models.TextField(blank=True, help_text="Who heads the organisation (title)? What are the main departments or units? Which one did you work in? Who did you report to?")
+    organisation_organogram = models.JSONField(default=dict, blank=True, help_text="Organogram tree or image reference")
+    organisation_paste_source = models.CharField(max_length=255, blank=True, help_text="URL or path to pasted organisation text")
+    organisation_paste_text = models.TextField(blank=True, help_text="Pasted text from the company's website or profile")
+
     # Technical Experience & Notes
     tools_used = models.TextField(blank=True)
     projects_undertaken = models.TextField(blank=True)
