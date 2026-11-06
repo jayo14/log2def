@@ -2526,7 +2526,7 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Dual Actions: 1. Digital Download (NGN 100) & 2. Print Delivery (NGN 100) */}
+        {/* Dual Actions: 1. Digital Download (NGN 2,000) & 2. Print Delivery (NGN 4,000) */}
         <div style={{ marginTop: '22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             className="btn w"
@@ -2547,7 +2547,7 @@ export default function DashboardPage() {
               ? 'Preparing download…'
               : hasPaidDigital
                 ? 'Download Report (Paid)'
-                : 'Download Report (NGN 100)'}
+                : 'Download Report (NGN 2,000)'}
           </button>
 
           <button
@@ -2558,7 +2558,7 @@ export default function DashboardPage() {
             <span className="ms" aria-hidden="true">
               local_shipping
             </span>
-            Print & Spiral Binding Delivery (NGN 100)
+            Print & Spiral Binding Delivery (NGN 4,000)
           </button>
         </div>
       </div>
@@ -3093,7 +3093,7 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div className="s-label">Digital Download (PDF &amp; Word DOCX)</div>
-                <div className="s-val">NGN 100</div>
+                <div className="s-val">NGN 2,000</div>
               </div>
               {hasPaidDigital && (
                 <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)' }}>
@@ -3110,7 +3110,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <div className="s-label">Printed &amp; Spiral Binding Delivery</div>
-                <div className="s-val">NGN 100 (LASUSTECH Campus drop-off)</div>
+                <div className="s-val">NGN 4,000 (LASUSTECH Campus drop-off)</div>
               </div>
             </div>
           </div>
@@ -5109,7 +5109,7 @@ export default function DashboardPage() {
         )}
 
         {/* ======================================================== */}
-        {/* CHECKOUT MODAL 1: DIGITAL REPORT (NGN 100)             */}
+        {/* CHECKOUT MODAL 1: DIGITAL REPORT (NGN 2,000)             */}
         {/* ======================================================== */}
         {checkoutModal === 'digital' && (
           <div id="checkout-digital">
@@ -5140,7 +5140,7 @@ export default function DashboardPage() {
 
                 <div className="checkout-price">
                   <span>Total Amount</span>
-                  <b>NGN 100</b>
+                  <b>NGN 2,000</b>
                 </div>
 
                 <div style={{ fontSize: '13px', color: 'var(--mut)', marginBottom: '16px' }}>
@@ -5204,7 +5204,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <span className="ms">lock</span>
-                      Pay NGN 100 Now
+                      Pay NGN 2,000 Now
                     </>
                   )}
                 </button>
@@ -5214,7 +5214,7 @@ export default function DashboardPage() {
         )}
 
         {/* ======================================================== */}
-        {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 100) */}
+        {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 4,000) */}
         {/* ======================================================== */}
         {checkoutModal === 'delivery' && (
           <div id="checkout-delivery">
@@ -5235,7 +5235,7 @@ export default function DashboardPage() {
               <div className="checkout-card">
                 <div className="checkout-price" style={{ margin: '0 0 16px' }}>
                   <span>Print, Binding & Delivery</span>
-                  <b>NGN 100</b>
+                  <b>NGN 4,000</b>
                 </div>
 
                 {/* Delivery Form */}
@@ -5318,7 +5318,7 @@ export default function DashboardPage() {
                   ) : (
                     <>
                       <span className="ms">check_circle</span>
-                      Pay NGN 100 & Confirm Delivery
+                      Pay NGN 4,000 & Confirm Delivery
                     </>
                   )}
                 </button>
@@ -5349,7 +5349,7 @@ export default function DashboardPage() {
                 </div>
                 <h2>Payment Successful!</h2>
                 <p style={{ marginTop: '6px' }}>
-                  Payment of <b>NGN 100</b> confirmed.
+                  Payment of <b>NGN 2,000</b> confirmed.
                   <br />
                   Reference: <code>{paymentSuccess.txRef}</code>
                 </p>
@@ -5420,7 +5420,7 @@ export default function DashboardPage() {
                 </div>
                 <h2>Delivery Order Confirmed!</h2>
                 <p style={{ marginTop: '6px' }}>
-                  Payment of <b>NGN 100</b> confirmed.
+                  Payment of <b>NGN 4,000</b> confirmed.
                   <br />
                   Tracking Ref: <code>{paymentSuccess.txRef}</code>
                 </p>
@@ -5454,7 +5454,7 @@ export default function DashboardPage() {
               {/* Direct WhatsApp Follow-up Button */}
               {(() => {
                 const det = paymentSuccess.deliveryDetails;
-                const waMessage = `Hello Log2Def, I just paid NGN 100 for the printed and spiral-bound SIWES technical report delivery.%0A%0AOrder Ref: ${paymentSuccess.txRef}%0AName: ${encodeURIComponent(det?.recipient || '')}%0AMatric: ${encodeURIComponent(details.matric || '')}%0ALocation: ${encodeURIComponent((det?.location || '') + (det?.customAddress ? ' - ' + det.customAddress : ''))}%0ADelivery Date: ${encodeURIComponent(det?.date || '')}%0APhone: ${encodeURIComponent(det?.phone || '')}`;
+                const waMessage = `Hello Log2Def, I just paid NGN 4,000 for the printed and spiral-bound SIWES technical report delivery.%0A%0AOrder Ref: ${paymentSuccess.txRef}%0AName: ${encodeURIComponent(det?.recipient || '')}%0AMatric: ${encodeURIComponent(details.matric || '')}%0ALocation: ${encodeURIComponent((det?.location || '') + (det?.customAddress ? ' - ' + det.customAddress : ''))}%0ADelivery Date: ${encodeURIComponent(det?.date || '')}%0APhone: ${encodeURIComponent(det?.phone || '')}`;
                 const waUrl = `https://wa.me/2348096044860?text=${waMessage}`;
 
                 return (

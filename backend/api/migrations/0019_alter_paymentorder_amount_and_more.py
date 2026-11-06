@@ -13,11 +13,11 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='paymentorder',
             name='amount',
-            field=models.DecimalField(decimal_places=2, default=100.0, max_digits=10),
+            field=models.DecimalField(decimal_places=2, default=2000.0, max_digits=10),
         ),
         migrations.AlterField(
             model_name='paymentorder',
             name='order_type',
-            field=models.CharField(choices=[('digital', 'Digital Report Download (NGN 100)'), ('delivery', 'Physical Print & Spiral Binding Delivery (NGN 4,000)')], max_length=20),
+            field=models.CharField(choices=[('digital', 'Digital Report Download (NGN 2,000)'), ('delivery', 'Physical Print & Spiral Binding Delivery (NGN 4,000)')], max_length=20),
         ),
     ]
