@@ -5278,35 +5278,17 @@ export default function DashboardPage() {
 
                 <div className="f" style={{ marginBottom: '12px' }}>
                   <label htmlFor="del_location">
-                    Campus Delivery Location <em aria-hidden="true">*</em>
+                    Delivery Location <em aria-hidden="true">*</em>
                   </label>
-                  <select
+                  <input
                     id="del_location"
+                    type="text"
+                    placeholder="e.g. Hostel Name, Department, Street, City"
                     value={deliveryData.campusLocation}
                     onChange={(e) =>
                       setDeliveryData((prev) => ({ ...prev, campusLocation: e.target.value }))
                     }
-                  >
-                    {CAMPUS_LOCATIONS.map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="f" style={{ marginBottom: '12px' }}>
-                  <label htmlFor="del_custom">
-                    Specific Landmark / Department / Hostel
-                  </label>
-                  <input
-                    id="del_custom"
-                    type="text"
-                    placeholder="e.g. Near Cafeteria, Room 14, Opposite Gate..."
-                    value={deliveryData.customAddress}
-                    onChange={(e) =>
-                      setDeliveryData((prev) => ({ ...prev, customAddress: e.target.value }))
-                    }
+                    required
                   />
                 </div>
 
