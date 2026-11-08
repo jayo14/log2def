@@ -227,9 +227,11 @@ def evaluate_report_quality(report, model=None):
             if pattern.search(text):
                 add(blockers, "document_itself", "Remove text that describes the document or export system.", key)
         # Scheme name consistency: track SIWES spelling variants used in this section
-        scheme_variants_found = [p.pattern for p in SCHEME_NAME_VARIANTS if p.search(text)]
-        if scheme_variants_found:
-            scheme_seen.setdefault(key, []).extend(scheme_variants_found)
+        # Task 9: Exclude references section from scheme-name consistency check
+        if key != "references":
+            scheme_variants_found = [p.pattern for p in SCHEME_NAME_VARIANTS if p.search(text)]
+            if scheme_variants_found:
+                scheme_seen.setdefault(key, []).extend(scheme_variants_found)
         if SECOND_PERSON.search(text):
             add(blockers, "second_person", "Rewrite instructions that address the reader as “you”.", key)
         for found_date in DATE_RE.findall(text):
