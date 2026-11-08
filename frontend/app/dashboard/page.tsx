@@ -2417,9 +2417,13 @@ export default function DashboardPage() {
   const renderReportViewer = () => {
     const layout = computeLayout();
     const modelSections = dbReport?.document_model?.sections;
+    let romanIndex = 0;
+    const romanNumerals = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii'];
+    let arabicPageNumber = 1;
+
     const modelRows = dbReport?.template_version === 'lasustech_cs:2.0.0' && Array.isArray(modelSections)
       ? modelSections.map((section: any, index: number) => {
-          const escapeHtml = (value: string) => value.replace(/[&<>\"']/g, (char) => ({
+          const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
           }[char] as string));
           const renderNode = (node: any): string => {
@@ -2438,13 +2442,39 @@ export default function DashboardPage() {
             return '';
           };
           const priorChapter = index > 0 ? modelSections[index - 1]?.chapter : undefined;
-          const chapterHeading = section.chapter_title && section.chapter !== priorChapter
+          const isSameChapter = section.chapter_title && section.chapter === priorChapter;
+          const chapterHeading = section.chapter_title && !isSameChapter
             ? `<h2>${escapeHtml(section.chapter_title).replace(/\n/g, '<br/>')}</h2>` : '';
+
+          // Avoid duplicate REFERENCES or single-heading section titles
+          const isReferencesOrSame = section.key === 'references' ||
+            section.title?.toUpperCase() === 'REFERENCES' ||
+            (section.chapter_title && section.title &&
+             section.chapter_title.trim().toUpperCase() === section.title.trim().toUpperCase());
+          const subHeading = isReferencesOrSame ? '' : `<h3>${escapeHtml(section.title || '')}</h3>`;
+
+          const nodeHtml = (section.nodes || []).map(renderNode).join('');
+          const renderedContent = `${chapterHeading}${subHeading}${nodeHtml}`;
+
+          // Word count & page estimation
+          const plainText = renderedContent.replace(/<[^>]+>/g, ' ').trim();
+          const wordCount = plainText ? plainText.split(/\s+/).filter(Boolean).length : 0;
+          const pageSpan = Math.max(1, Math.ceil(wordCount / 240));
+
+          let pageLabel = '';
+          if (section.chapter === 0) {
+            pageLabel = romanNumerals[romanIndex] || `${romanIndex + 1}`;
+            romanIndex++;
+          } else {
+            pageLabel = String(arabicPageNumber);
+            arabicPageNumber += pageSpan;
+          }
+
           return {
             t: section.title,
-            h: `${chapterHeading}<h3>${escapeHtml(section.title || '')}</h3>${(section.nodes || []).map(renderNode).join('')}`,
-            p: 1,
-            l: null,
+            h: renderedContent,
+            p: pageSpan,
+            l: pageLabel,
           };
         })
       : null;
@@ -2829,8 +2859,8 @@ export default function DashboardPage() {
                   <p className="pl2">
                     {q.t} ·{' '}
                     {q.l
-                      ? `page ${q.l}${q.p > 1 ? ` (continues to ${+q.l + q.p - 1})` : ''}`
-                      : 'no page number'}
+                      ? `page ${q.l}${q.p > 1 && !isNaN(Number(q.l)) ? ` (continues to ${+q.l + q.p - 1})` : ''}`
+                      : `page ${idx + 1}`}
                     {isSectionEmpty && (
                       <span className="chip" style={{ background: '#fee2e2', color: '#b91c1c', marginLeft: '8px', fontSize: '11px', padding: '2px 8px' }}>
                         Not generated yet
