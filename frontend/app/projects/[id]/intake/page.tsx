@@ -7,18 +7,20 @@ import { useProjectStore } from '@/lib/store';
 function GuidedIntakeRedirect() {
   const params = useParams();
   const router = useRouter();
-  const projectId = String(params?.id || '');
+  const projectId = params?.id ? Number(params.id) : null;
+  const { fetchActiveProject } = useProjectStore();
 
   useEffect(() => {
     if (projectId) {
-      try {
-        useProjectStore.getState().setActiveProject({ id: projectId } as any);
-      } catch {
-        // ignore
-      }
+      fetchActiveProject(projectId)
+        .catch(() => null)
+        .finally(() => {
+          router.replace('/dashboard?step=5#step-5');
+        });
+    } else {
+      router.replace('/dashboard?step=5#step-5');
     }
-    router.replace('/dashboard?step=5#step-5');
-  }, [projectId, router]);
+  }, [projectId, router, fetchActiveProject]);
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
