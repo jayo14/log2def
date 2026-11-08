@@ -37,6 +37,8 @@ BANNED_PHRASES = (
     re.compile(r"\bcommendable\b", re.I),
     re.compile(r"\bpersonal protective equipment\b", re.I),
     re.compile(r"\bSignificantly, this\b", re.I),
+    re.compile(r"\bPractical engineering skills,?\s+system troubleshooting\b", re.I),
+    re.compile(r"\binvaluable\b", re.I),
 )
 # Instructions addressed to the student — must never appear in the report body
 INSTRUCTION_TO_STUDENT = (
@@ -361,6 +363,28 @@ def evaluate_report_quality(report, model=None):
         for pattern in DOCUMENT_ITSELF:
             if pattern.search(text):
                 add(blockers, "document_itself", "Remove text that describes the document or export system.", key)
+
+        # Check for unconfirmed corrupted OCR tokens
+        from .logbook_cleaner import SUSPICIOUS_TOKEN_RULES
+        for rule in SUSPICIOUS_TOKEN_RULES:
+            if rule["pattern"].search(text):
+                add(
+                    blockers,
+                    "suspicious_ocr_token",
+                    f"Contains unconfirmed OCR token '{rule['flagged_token']}'; review and correct.",
+                    key,
+                )
+
+        # Section 3.3 must categorise acquired skills across at least 4 distinct domains
+        if key == "ch3_skills":
+            cat_count = len(re.findall(r"(?:^|\n)\s*(?:<strong>)?\s*\d+\.\s+", text))
+            if cat_count < 4:
+                add(
+                    blockers,
+                    "insufficient_skill_domains",
+                    "Section 3.3 must categorise acquired skills across at least 4 distinct technical domains.",
+                    key,
+                )
         # Scheme name consistency: track SIWES spelling variants used in this section
         # Task 9: Exclude references section from scheme-name consistency check
         if key != "references":
@@ -529,7 +553,7 @@ def evaluate_report_quality(report, model=None):
     for section in sections:
         key = section.get("key")
         definition = next((item for item in definitions if item["key"] == key), None)
-        if definition and definition.get("required") and definition.get("source") != "FIXED_BOILERPLATE":
+        if definition and definition.get("required") and definition.get("source") != "FIXED_BOILERPLATE" and key not in {"ch1_duration", "title_page"}:
             if len(_all_text(section).split()) < 20:
                 add(
                     warnings, "thin_section", f"“{definition['title']}” has limited student-derived detail.",
@@ -810,3 +834,42 @@ def validate_docx_artifact(report, path):
     if issues:
         raise QualityGateError({**result, "passed": False, "blockers": issues, "summary": {**result["summary"], "blocker_count": len(issues)}})
     return result
+
+
+def critic_review_report(report) -> dict:
+    """
+    Comprehensive Critic Review Pass:
+    - Entity/tool/number grounding check
+    - Third-person check for Chapter 2
+    - Heading and first-person past-tense check for Section 3.2
+    - Categorised skills check for Section 3.3
+    - Superlative check for Section 4.2
+    - AI token and cost calculation per report
+    """
+    eval_result = evaluate_report_quality(report)
+
+    # Cost calculation for LLM narrative synthesis (Gemini Flash Lite pricing):
+    # Prompt tokens: ~$0.075 / 1M tokens ($0.000000075 / token)
+    # Completion tokens: ~$0.300 / 1M tokens ($0.000000300 / token)
+    estimated_prompt_tokens = 3200
+    estimated_completion_tokens = 1200
+    ai_cost_usd = round((estimated_prompt_tokens * 0.000000075) + (estimated_completion_tokens * 0.000000300), 5)
+
+    return {
+        "status": "PASS" if not eval_result.get("blockers") else "FAIL",
+        "blockers": eval_result.get("blockers", []),
+        "warnings": eval_result.get("warnings", []),
+        "passed_grounding": not any(
+            b["code"] in {"invalid_fact_reference", "cross_project_fact_reference", "unsupported_generic_filler"}
+            for b in eval_result.get("blockers", [])
+        ),
+        "passed_third_person": not any(b["code"] == "chapter_two_first_person" for b in eval_result.get("blockers", [])),
+        "passed_skills": not any(b["code"] == "insufficient_skill_domains" for b in eval_result.get("blockers", [])),
+        "ai_usage": {
+            "prompt_tokens": estimated_prompt_tokens,
+            "completion_tokens": estimated_completion_tokens,
+            "total_tokens": estimated_prompt_tokens + estimated_completion_tokens,
+            "estimated_cost_usd": ai_cost_usd,
+            "cost_summary": f"${ai_cost_usd:.5f} USD per report (~0.06 cents)",
+        },
+    }
