@@ -358,7 +358,8 @@ class ReportSection(models.Model):
                 raise ValidationError("ReportSection cannot cite facts from another project.")
 
     def save(self, *args, **kwargs):
-        if self.source_links and self.report and hasattr(self.report, "project_id"):
+        update_fields = kwargs.get("update_fields")
+        if (update_fields is None or "source_links" in update_fields) and self.source_links and self.report and hasattr(self.report, "project_id"):
             proj_id = self.report.project_id
             other_facts = Fact.objects.filter(id__in=self.source_links).exclude(project_id=proj_id)
             if other_facts.exists():

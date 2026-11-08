@@ -41,6 +41,8 @@ class ReportDocument:
 def section_source(section_key: str, chapter: int) -> SourceType:
     if chapter == 1 and section_key in {"ch1_background", "ch1_objectives", "ch1_importance"}:
         return "FIXED_BOILERPLATE"
+    if section_key == "table_of_contents":
+        return "GENERATED_FROM_MODEL"
     if section_key.startswith("ch3_"):
         return "LOGBOOK"
     return "STUDENT_PROVIDED"
@@ -95,7 +97,7 @@ def model_from_sections(report, spec: dict[str, Any]) -> ReportDocument:
         extractor = TextExtractor()
         extractor.feed(item.content or "")
         source_type = definition.get("source")
-        if source_type not in {"FIXED_BOILERPLATE", "LOGBOOK", "INFERRED", "STUDENT_PROVIDED"}:
+        if source_type not in {"FIXED_BOILERPLATE", "LOGBOOK", "INFERRED", "STUDENT_PROVIDED", "GENERATED_FROM_MODEL"}:
             source_type = section_source(item.section_key, item.chapter_number)
         nodes = extractor.nodes
         def set_provenance(node):
