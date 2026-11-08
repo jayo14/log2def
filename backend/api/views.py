@@ -2007,3 +2007,49 @@ class PaymentOrderListCreateView(views.APIView):
         serializer.is_valid(raise_exception=True)
         order = serializer.save(user=request.user, project=project)
         return Response(PaymentOrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class AnalyticsEventView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Analytics'],
+        summary='Track wizard step completion and drop-off events'
+    )
+    def post(self, request, project_id=None):
+        project = None
+        if project_id:
+            project = get_user_project(request.user, project_id)
+        step_name = request.data.get("step_name", "unknown")
+        screen_id = request.data.get("screen_id", "")
+        event_type = request.data.get("event_type", "view")
+        metadata = request.data.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {"raw": metadata}
+
+        from .models import UserAnalyticsEvent
+        event = UserAnalyticsEvent.objects.create(
+            project=project,
+            user=request.user,
+            step_name=step_name,
+            screen_id=screen_id,
+            event_type=event_type,
+            metadata=metadata
+        )
+        return Response({
+            "status": "success",
+            "event_id": event.id,
+            "step_name": event.step_name,
+            "screen_id": event.screen_id,
+            "event_type": event.event_type,
+        }, status=status.HTTP_201_CREATED)
+
+    def get(self, request, project_id=None):
+        from .models import UserAnalyticsEvent
+        qs = UserAnalyticsEvent.objects.filter(user=request.user)
+        if project_id:
+            qs = qs.filter(project_id=project_id)
+        events = list(qs.order_by("-created_at")[:50].values(
+            "id", "step_name", "screen_id", "event_type", "metadata", "created_at"
+        ))
+        return Response({"events": events})

@@ -588,3 +588,20 @@ class TelegramNotificationLog(models.Model):
 
     def __str__(self):
         return f"{self.order_reference} - {self.status} (attempts: {self.attempt_count})"
+
+
+class UserAnalyticsEvent(models.Model):
+    """Tracks wizard step completion, screen views, and drop-offs."""
+    project = models.ForeignKey(ReportProject, on_delete=models.CASCADE, null=True, blank=True, related_name='analytics_events')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='analytics_events')
+    step_name = models.CharField(max_length=64, db_index=True)
+    screen_id = models.CharField(max_length=64, blank=True, default='')
+    event_type = models.CharField(max_length=64, db_index=True)  # e.g. screen_viewed, step_completed, step_skipped, drop_off
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.step_name}:{self.screen_id} - {self.event_type} ({self.created_at})"

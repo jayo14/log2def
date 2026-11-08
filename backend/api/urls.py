@@ -13,7 +13,8 @@ from .views import (
     ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
     InstitutionLogoView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
-    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView
+    DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView,
+    AnalyticsEventView
 )
 from .squad_views import (
     SquadInitializeView, SquadCallbackView, SquadWebhookView, SquadVerifyView,
@@ -50,6 +51,10 @@ urlpatterns = [
     path('projects/<int:project_id>/missing-info', MissingInfoUpdateView.as_view()),
     path('projects/<int:project_id>/intake/', GuidedIntakeView.as_view(), name='guided-intake'),
     path('projects/<int:project_id>/intake', GuidedIntakeView.as_view()),
+    path('projects/<int:project_id>/events/', AnalyticsEventView.as_view(), name='project-events'),
+    path('projects/<int:project_id>/events', AnalyticsEventView.as_view()),
+    path('events/', AnalyticsEventView.as_view(), name='global-events'),
+    path('events', AnalyticsEventView.as_view()),
     path('projects/<int:project_id>/upload-guideline/', GuidelineUploadView.as_view(), name='project-upload-guideline'),
     path('projects/<int:project_id>/upload-guideline', GuidelineUploadView.as_view()),
 
