@@ -497,6 +497,9 @@ export default function DashboardPage() {
   }, [currentSectionIdx]);
   const camInputRef = useRef<HTMLInputElement>(null);
   const lastSavedDetailsRef = useRef<string>('');
+  const lastSavedStep4Ref = useRef<string>('');
+  const lastSavedStep5Ref = useRef<string>('');
+  const lastSavedStep6Ref = useRef<string>('');
 
   // Show Toast helper
   const showToast = useCallback((msg: string) => {
@@ -1304,6 +1307,11 @@ export default function DashboardPage() {
   const saveStep2Data = useCallback(async () => {
     const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
     if (!projId) return;
+
+    const currentSerialized = JSON.stringify(details);
+    if (currentSerialized === lastSavedDetailsRef.current) return;
+    lastSavedDetailsRef.current = currentSerialized;
+
     setAutoSaveStatus('saving');
     try {
       await updateActiveProject(projId, {
@@ -1355,6 +1363,10 @@ export default function DashboardPage() {
         ...(structureNarrative ? { organisation_structure: structureNarrative } : {}),
         ...(overrides || {}),
       };
+
+      const serialized = JSON.stringify(payload);
+      if (!overrides && serialized === lastSavedStep4Ref.current) return;
+      lastSavedStep4Ref.current = serialized;
 
       setAutoSaveStatus('saving');
       try {
@@ -1427,6 +1439,10 @@ export default function DashboardPage() {
         ...(overrides || {}),
       };
 
+      const serialized = JSON.stringify({ payload, tools: experienceTools });
+      if (!overrides && serialized === lastSavedStep5Ref.current) return;
+      lastSavedStep5Ref.current = serialized;
+
       setAutoSaveStatus('saving');
       try {
         await projectsApi.saveGuidedIntakeAnswers(projId, payload);
@@ -1466,6 +1482,10 @@ export default function DashboardPage() {
       ...(acknowledgementText.trim() ? { acknowledgement: acknowledgementText.trim() } : {}),
     };
     if (Object.keys(payload).length === 0) return;
+
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastSavedStep6Ref.current) return;
+    lastSavedStep6Ref.current = serialized;
 
     setAutoSaveStatus('saving');
     try {
