@@ -337,6 +337,13 @@ export const projectsApi = {
     });
   },
 
+  saveGuidedIntakeAnswers: async <T = unknown>(projectId: number | string, answers: Record<string, unknown>) => {
+    return apiRequest<T>(`/projects/${projectId}/intake/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ answers }),
+    });
+  },
+
   getReportImages: async (projectId: number | string) => {
     return apiRequest<any[]>(`/projects/${projectId}/report-images/`);
   },

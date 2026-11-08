@@ -167,7 +167,8 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
     """Report material sufficiency from confirmed facts, reviewed logbook entries, or day records."""
     pages = list(LogbookPage.objects.filter(extracted_page__document__project=project).order_by("page_index"))
     blank_pages = [page.page_index for page in pages if not (page.reviewed_text or "").strip()]
-    confirmed_activities = Fact.objects.filter(project=project, kind="activity", status="confirmed").count()
+    confirmed_facts = list(Fact.objects.filter(project=project, status="confirmed").values("kind", "source_field"))
+    confirmed_activities = sum(1 for f in confirmed_facts if f["kind"] == "activity")
     # Prefer confirmed Facts; fall back to logbook entries/day records with substantive text
     # so users who have uploaded/reviewed entries are not blocked by a provenance gap.
     try:
@@ -208,11 +209,13 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
     by_section = {}
     for section in manifest["sections"]:
         key = section["key"]
-        kinds = section_fact_kinds.get(key, [])
-        fact_query = Fact.objects.filter(project=project, kind__in=kinds, status="confirmed") if kinds else Fact.objects.none()
-        if key == "ch3_challenges":
-            fact_query = fact_query.exclude(source_field="challenge_pairs:no_challenges")
-        count = fact_query.count()
+        kinds = set(section_fact_kinds.get(key, []))
+        if not kinds:
+            count = 0
+        elif key == "ch3_challenges":
+            count = sum(1 for f in confirmed_facts if f["kind"] in kinds and f["source_field"] != "challenge_pairs:no_challenges")
+        else:
+            count = sum(1 for f in confirmed_facts if f["kind"] in kinds)
         status_value = "fixed_text" if section["source"] == "FIXED_BOILERPLATE" else (
             "confirmed_material" if count else ("insufficient_material" if section["source"] in {"LOGBOOK", "INFERRED", "CONFIRMED_CONTENT"} else "needs_student_input")
         )

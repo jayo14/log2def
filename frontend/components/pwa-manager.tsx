@@ -38,29 +38,45 @@ export function PWAManager() {
       window.dispatchEvent(new CustomEvent('pwa-installable'));
     }
 
-    // 2. Register Service Worker in production / client
+    // 2. Register Service Worker in production only; unregister & purge caches in dev
     if ('serviceWorker' in navigator && typeof window !== 'undefined') {
-      window.addEventListener('load', async () => {
-        try {
-          const registration = await navigator.serviceWorker.register('/sw.js', {
-            scope: '/',
-          });
-
-          // Check for service worker updates periodically
-          registration.addEventListener('updatefound', () => {
-            const installingWorker = registration.installing;
-            if (installingWorker) {
-              installingWorker.addEventListener('statechange', () => {
-                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  showToast('Log2Def has been updated. Refresh to apply latest version.', 'info');
-                }
-              });
+      const isDev = process.env.NODE_ENV !== 'production' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isDev) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister();
+          }
+        });
+        if ('caches' in window) {
+          caches.keys().then((keys) => {
+            for (const key of keys) {
+              caches.delete(key);
             }
           });
-        } catch (error) {
-          console.warn('Service Worker registration skipped or unavailable:', error);
         }
-      });
+      } else {
+        window.addEventListener('load', async () => {
+          try {
+            const registration = await navigator.serviceWorker.register('/sw.js', {
+              scope: '/',
+            });
+
+            // Check for service worker updates periodically
+            registration.addEventListener('updatefound', () => {
+              const installingWorker = registration.installing;
+              if (installingWorker) {
+                installingWorker.addEventListener('statechange', () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    showToast('Log2Def has been updated. Refresh to apply latest version.', 'info');
+                  }
+                });
+              }
+            });
+          } catch (error) {
+            console.warn('Service Worker registration skipped or unavailable:', error);
+          }
+        });
+      }
     }
 
     // 3. Online/Offline Network Status Listeners

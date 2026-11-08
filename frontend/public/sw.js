@@ -1,6 +1,6 @@
 // Log2Def Progressive Web App Service Worker
-// Version: 1.0.0
-const CACHE_VERSION = 'v1.0.0';
+// Version: 1.0.1
+const CACHE_VERSION = 'v1.0.1';
 const STATIC_CACHE_NAME = `log2def-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE_NAME = `log2def-runtime-${CACHE_VERSION}`;
 const IMAGE_CACHE_NAME = `log2def-images-${CACHE_VERSION}`;
@@ -60,6 +60,18 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Bypass service worker caching completely in development / localhost / HMR
+  if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
+    url.port === '3000' ||
+    url.pathname.includes('/_next/webpack-hmr') ||
+    url.pathname.includes('/__nextjs') ||
+    url.pathname.includes('/_next/development/')
+  ) {
+    return;
+  }
 
   // Ignore cross-origin non-GET requests or browser extension requests
   if (request.method !== 'GET') {

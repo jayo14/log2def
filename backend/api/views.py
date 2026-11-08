@@ -986,6 +986,24 @@ class ReportGenerateView(views.APIView):
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
         
+        # Auto-heal defaultable guided intake fields if missing
+        guided = dict(project.guided_intake or {})
+        updated_guided = False
+        if not guided.get("challenge_pairs"):
+            guided["challenge_pairs"] = {"none": True, "pairs": []}
+            updated_guided = True
+        if not str(guided.get("recommendations", "")).strip():
+            guided["recommendations"] = (
+                "The organisation should continue to provide students with hands-on exposure to practical technical projects. "
+                "The university should organize pre-internship workshops to prepare students with relevant industrial tools."
+            )
+            updated_guided = True
+        if updated_guided:
+            project.guided_intake = guided
+            project.save(update_fields=["guided_intake", "updated_at"])
+            save_intake_facts(project, "challenge_pairs", guided["challenge_pairs"])
+            save_intake_facts(project, "recommendations", guided["recommendations"])
+
         # Block generation while essential required information is missing or dates invalid
         from .completeness import check_project_completeness
         completeness = check_project_completeness(project)
@@ -1065,11 +1083,39 @@ class GuidedIntakeView(views.APIView):
     @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT)
     def patch(self, request, project_id):
         project = get_user_project(request.user, project_id)
-        if set(request.data) != {"key", "answer"}:
-            return Response({"error": "Provide only the interview key and its answer."}, status=status.HTTP_400_BAD_REQUEST)
-        key, answer = request.data.get("key"), request.data.get("answer")
         from .templates import get_section_requirements
         steps = {step["key"]: step for step in get_section_requirements()["guided_intake"]["steps"]}
+
+        # Support batch update: {"answers": { "key1": "val1", ... }}
+        if "answers" in request.data and isinstance(request.data["answers"], dict):
+            batch_answers = request.data["answers"]
+            for k, ans in batch_answers.items():
+                if k not in steps:
+                    return Response({"error": f"Interview question '{k}' is not in the active template."}, status=status.HTTP_400_BAD_REQUEST)
+                step = steps[k]
+                error = validate_intake_answer(k, ans, required=step.get("required", False))
+                if error:
+                    return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+
+            answers = dict(project.guided_intake or {})
+            answers.update(batch_answers)
+            project.guided_intake = answers
+            update_fields = ["guided_intake", "updated_at"]
+            if "industry_supervisor_name" in batch_answers:
+                project.industry_supervisor_name = str(batch_answers["industry_supervisor_name"]).strip()
+                update_fields.append("industry_supervisor_name")
+            project.save(update_fields=update_fields)
+
+            for k, ans in batch_answers.items():
+                save_intake_facts(project, k, ans)
+
+            from .completeness import check_project_completeness
+            return Response({"answers": answers, "completeness": check_project_completeness(project)})
+
+        # Single key/answer update: {"key": "...", "answer": "..."}
+        if set(request.data) != {"key", "answer"}:
+            return Response({"error": "Provide only the interview key and its answer or an 'answers' object."}, status=status.HTTP_400_BAD_REQUEST)
+        key, answer = request.data.get("key"), request.data.get("answer")
         if key not in steps:
             return Response({"error": "This interview question is not in the active template."}, status=status.HTTP_400_BAD_REQUEST)
         step = steps[key]
@@ -1162,10 +1208,16 @@ def save_intake_facts(project, key, answer):
             rows.append(("personal_statement", str(answer).strip(), "dedication"))
     else:
         kinds = {
-            "organisation_what": "organisation_detail", "organisation_history": "organisation_detail",
-            "organisation_objectives": "organisation_detail", "organisation_structure": "organisation_detail",
-            "organogram_tree": "organisation_detail", "student_unit": "organisation_detail",
-            "supervisor_title": "person", "duties": "duty", "recommendations": "recommendation",
+            "organisation_what": "organisation_detail",
+            "organisation_when_where": "organisation_detail",
+            "organisation_history": "organisation_detail",
+            "organisation_objectives": "organisation_detail",
+            "organisation_structure": "organisation_detail",
+            "organogram_tree": "organisation_detail",
+            "student_unit": "organisation_detail",
+            "supervisor_title": "person",
+            "duties": "duty",
+            "recommendations": "recommendation",
             "industry_supervisor_name": "person",
             "organisation_paste_text": "organisation_detail",
             "organisation_paste_source": "organisation_detail",

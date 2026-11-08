@@ -399,7 +399,7 @@
       {
         "key": "challenge_pairs",
         "section": "ch3_challenges",
-        "required": true,
+        "required": false,
         "type": "challenge_pairs",
         "title": "What challenges did you encounter and how were they addressed?",
         "hint": "Add two or three real challenge and solution pairs, or select 'I had none'."
@@ -407,7 +407,7 @@
       {
         "key": "recommendations",
         "section": "ch4_recommendations",
-        "required": true,
+        "required": false,
         "type": "long_text",
         "title": "What would have improved your training?",
         "hint": "Tie each recommendation to something you observed."

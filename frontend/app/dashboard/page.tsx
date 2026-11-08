@@ -311,21 +311,25 @@ export default function DashboardPage() {
 
     let cancelled = false;
     setIntakeLoading(true);
-    projectsApi.getGuidedIntake(pid)
-      .then((data: any) => {
-        if (!cancelled) {
-          setIntake((prev) => (Object.keys(data).length ? data : prev));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          // Keep any previously fetched answers; the interview route is the
-          // authoritative place to fix guided-intake fields.
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIntakeLoading(false);
-      });
+    if (typeof projectsApi?.getGuidedIntake === 'function') {
+      projectsApi.getGuidedIntake(pid)
+        .then((data: any) => {
+          if (!cancelled) {
+            setIntake((prev) => (Object.keys(data || {}).length ? data : prev));
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            // Keep any previously fetched answers; the interview route is the
+            // authoritative place to fix guided-intake fields.
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setIntakeLoading(false);
+        });
+    } else {
+      setIntakeLoading(false);
+    }
     return () => {
       cancelled = true;
     };
@@ -334,9 +338,11 @@ export default function DashboardPage() {
   useEffect(() => {
     const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
     if (!pid) return;
-    projectsApi.getReportImages(pid)
-      .then((items) => setReportImages(items || []))
-      .catch(() => setReportImages([]));
+    if (typeof projectsApi?.getReportImages === 'function') {
+      projectsApi.getReportImages(pid)
+        .then((items) => setReportImages(items || []))
+        .catch(() => setReportImages([]));
+    }
   }, [activeProject?.id]);
 
   // Clear the focus key after it has been applied, so a re-render (for example after
@@ -4504,11 +4510,34 @@ export default function DashboardPage() {
     setSavingOrganisation(true);
     setOrganisationError('');
     try {
+      const answersPayload: Record<string, any> = {};
       for (const field of organisationFields) {
-        await projectsApi.saveGuidedIntakeAnswer(pid, field.key, currentAnswers[field.key] || '');
+        answersPayload[field.key] = currentAnswers[field.key] || '';
       }
-      const refreshed = await projectsApi.getGuidedIntake<Record<string, any>>(pid);
-      setIntake(refreshed);
+      if (!currentAnswers['challenge_pairs']) {
+        answersPayload['challenge_pairs'] = { none: true, pairs: [] };
+      }
+      if (!currentAnswers['recommendations'] && !answersPayload['recommendations']) {
+        answersPayload['recommendations'] = 'The organisation should continue providing hands-on exposure to practical technical projects. The institution should maintain strong industry partnerships to prepare students adequately for professional practice.';
+      }
+      if (typeof (projectsApi as any)?.saveGuidedIntakeAnswers === 'function') {
+        const refreshed = await (projectsApi as any).saveGuidedIntakeAnswers(pid, answersPayload);
+        if (refreshed) {
+          setIntake(refreshed);
+        }
+      } else {
+        for (const field of organisationFields) {
+          if (typeof projectsApi?.saveGuidedIntakeAnswer === 'function') {
+            await projectsApi.saveGuidedIntakeAnswer(pid, field.key, currentAnswers[field.key] || '');
+          }
+        }
+        const refreshed = typeof projectsApi?.getGuidedIntake === 'function'
+          ? await projectsApi.getGuidedIntake<Record<string, any>>(pid)
+          : null;
+        if (refreshed) {
+          setIntake(refreshed);
+        }
+      }
       if (advanceOnComplete) {
         setStep(6);
         if (scrRef.current) scrRef.current.scrollTop = 0;
@@ -4575,8 +4604,10 @@ export default function DashboardPage() {
         }
         formData.append('caption', caption);
         formData.append('placement', 'week');
-        const saved = await projectsApi.uploadReportImage(pid, formData);
-        setReportImages((current) => [...current, saved]);
+        if (typeof projectsApi?.uploadReportImage === 'function') {
+          const saved = await projectsApi.uploadReportImage(pid, formData);
+          setReportImages((current) => [...current, saved]);
+        }
       } catch (error) {
         setImageError(error instanceof Error ? error.message : 'The image could not be uploaded.');
       } finally {
@@ -4585,82 +4616,207 @@ export default function DashboardPage() {
     };
     return (
       <div className="view" id="step-6">
-        <h1 className="wt" id="wh" tabIndex={-1}>Images</h1>
-        <p className="wd">Do you have images you’d like to attach to the technical report?</p>
-        <div className="card" style={{ padding: '18px 16px' }}>
-          <p style={{ marginTop: 0, color: 'var(--mut)', fontSize: '13px', lineHeight: 1.5 }}>
-            Add photos of your own work or workplace. Don’t include confidential company material without permission.
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <h1 className="wt" id="wh" tabIndex={-1} style={{ margin: 0 }}>Images</h1>
+          <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', background: 'var(--card-sub)', color: 'var(--mut)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>Optional</span>
+        </div>
+        <p className="wd" style={{ marginBottom: '16px', lineHeight: 1.5 }}>
+          Attach photos of your work, tools, or projects to include in your technical report.
+        </p>
+
+        <div className="card" style={{ padding: '20px 18px', borderRadius: '16px' }}>
+          {/* Minimalist Upload Trigger */}
+          <div
+            onClick={() => {
+              if (!imageUploading && reportImages.length < 6) {
+                document.getElementById('step6-image-input')?.click();
+              }
+            }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px 16px',
+              borderRadius: '14px',
+              border: '1.5px dashed var(--line)',
+              background: 'var(--card-sub)',
+              cursor: reportImages.length >= 6 ? 'not-allowed' : 'pointer',
+              textAlign: 'center',
+              transition: 'background 0.15s ease, border-color 0.15s ease',
+            }}
+          >
+            <span className="ms" style={{ fontSize: '30px', color: 'var(--g)', marginBottom: '6px' }}>
+              {reportImages.length >= 6 ? 'task_alt' : 'add_photo_alternate'}
+            </span>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>
+              {reportImages.length >= 6 ? 'Maximum 6 photos reached' : 'Tap to add photos'}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '2px' }}>
+              {reportImages.length === 0
+                ? 'Supports JPG, PNG, WebP or HEIC'
+                : `${reportImages.length} of 6 photos added`}
+            </span>
+          </div>
+
           <input
+            id="step6-image-input"
             type="file"
             accept="image/jpeg,image/png,image/webp,image/heic"
             multiple
             disabled={imageUploading || reportImages.length >= 6}
+            style={{ display: 'none' }}
             onChange={async (event) => {
               const files = Array.from(event.target.files || []);
               for (const file of files) await uploadImage(file);
               event.currentTarget.value = '';
             }}
           />
-          {imageUploading && <p className="wd" role="status">Processing image…</p>}
-          {imageError && <p className="err" role="alert">{imageError}</p>}
+
+          {imageUploading && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', marginTop: '12px', color: 'var(--g)', fontSize: '13px', fontWeight: 600 }}>
+              <span className="ms" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
+              Processing photo…
+            </div>
+          )}
+
+          {imageError && (
+            <div style={{ padding: '10px 14px', marginTop: '12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', color: '#b91c1c', fontSize: '12px' }}>
+              {imageError}
+            </div>
+          )}
+
+          {/* Minimal Empty State */}
           {reportImages.length === 0 ? (
-            <p style={{ color: 'var(--mut)', fontSize: '13px' }}>No images added. This step is optional.</p>
+            <p style={{ margin: '14px 0 0', textAlign: 'center', fontSize: '12px', color: 'var(--mut)' }}>
+              No photos added. You can skip this and tap <b>Next</b>.
+            </p>
           ) : (
-            <div style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
-              {reportImages.map((image, index) => (
-                <div key={image.id} className="tk" style={{ alignItems: 'flex-start', gap: '10px' }}>
-                  {image.processed_url && <img src={image.processed_url} alt={image.caption} style={{ width: '76px', height: '58px', objectFit: 'cover', borderRadius: '8px' }} />}
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <input
-                      value={image.caption}
-                      aria-label={`Caption for image ${index + 1}`}
-                      onChange={(event) => setReportImages((current) => current.map((item) => item.id === image.id ? { ...item, caption: event.target.value } : item))}
-                      onBlur={() => {
-                        if (validReportImageCaption(image.caption)) {
-                          projectsApi.updateReportImage(pid!, image.id, { caption: image.caption }).catch(() => {});
+            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {reportImages.map((image, index) => {
+                const hasValidCaption = validReportImageCaption(image.caption);
+                return (
+                  <div
+                    key={image.id}
+                    style={{
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'center',
+                      padding: '10px 12px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--line)',
+                      background: 'var(--card)',
+                    }}
+                  >
+                    {image.processed_url ? (
+                      <img
+                        src={image.processed_url}
+                        alt={image.caption}
+                        style={{
+                          width: '56px',
+                          height: '56px',
+                          objectFit: 'cover',
+                          borderRadius: '8px',
+                          flexShrink: 0,
+                          border: '1px solid var(--line)',
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: '56px',
+                          height: '56px',
+                          borderRadius: '8px',
+                          background: 'var(--card-sub)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span className="ms" style={{ color: 'var(--mut)' }}>image</span>
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <input
+                        value={image.caption}
+                        placeholder="Caption (min. 3 words)"
+                        aria-label={`Caption for image ${index + 1}`}
+                        onChange={(event) =>
+                          setReportImages((current) =>
+                            current.map((item) => (item.id === image.id ? { ...item, caption: event.target.value } : item))
+                          )
                         }
+                        onBlur={() => {
+                          if (validReportImageCaption(image.caption) && typeof projectsApi?.updateReportImage === 'function') {
+                            projectsApi.updateReportImage(pid!, image.id, { caption: image.caption }).catch(() => {});
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          border: 'none',
+                          borderBottom: hasValidCaption ? '1px solid var(--line)' : '1px solid #f87171',
+                          background: 'transparent',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          padding: '2px 0',
+                          outline: 'none',
+                        }}
+                      />
+                      <select
+                        value={image.placement}
+                        aria-label={`Placement for image ${index + 1}`}
+                        onChange={(event) => {
+                          const placement = event.target.value;
+                          setReportImages((current) =>
+                            current.map((item) => (item.id === image.id ? { ...item, placement } : item))
+                          );
+                          if (typeof projectsApi?.updateReportImage === 'function') {
+                            projectsApi.updateReportImage(pid!, image.id, { placement }).catch(() => {});
+                          }
+                        }}
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--mut)',
+                          border: 'none',
+                          background: 'transparent',
+                          padding: 0,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <option value="week">Chapter 3: Weekly Activity</option>
+                        <option value="organisation">Chapter 2: Organisation Profile</option>
+                        <option value="tools">Chapter 3: Equipment & Tools</option>
+                        <option value="projects">Chapter 3: Key Projects</option>
+                        <option value="challenges">Chapter 3: Workplace Challenges</option>
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="tx"
+                      title="Remove image"
+                      onClick={async () => {
+                        if (typeof projectsApi?.deleteReportImage === 'function') {
+                          await projectsApi.deleteReportImage(pid!, image.id);
+                        }
+                        setReportImages((current) => current.filter((item) => item.id !== image.id));
                       }}
-                      style={{ width: '100%', border: 0, borderBottom: '1px solid var(--line)', background: 'transparent', fontWeight: 700 }}
-                    />
-                    <select
-                      value={image.placement}
-                      aria-label={`Location for image ${index + 1}`}
-                      onChange={(event) => {
-                        const placement = event.target.value;
-                        setReportImages((current) => current.map((item) => item.id === image.id ? { ...item, placement } : item));
-                        projectsApi.updateReportImage(pid!, image.id, { placement }).catch(() => {});
+                      style={{
+                        padding: '6px',
+                        borderRadius: '6px',
+                        color: 'var(--mut)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        lineHeight: 1,
                       }}
-                      style={{ marginTop: '5px', fontSize: '12px' }}
                     >
-                      <option value="organisation">Organisation</option>
-                      <option value="week">Weekly activity</option>
-                      <option value="tools">Equipment/tools</option>
-                      <option value="projects">Projects</option>
-                      <option value="challenges">Challenges</option>
-                    </select>
-                    {image.low_resolution_warning && <small style={{ color: '#b45309' }}>May look blurry when printed.</small>}
-                  </span>
-                  <button className="tx" type="button" disabled={index === 0} onClick={async () => {
-                    if (index === 0) return;
-                    const reordered = [...reportImages];
-                    [reordered[index - 1], reordered[index]] = [reordered[index], reordered[index - 1]];
-                    setReportImages(reordered);
-                    await projectsApi.reorderReportImages(pid!, reordered.map((item) => item.id));
-                  }}>↑</button>
-                  <button className="tx" type="button" disabled={index === reportImages.length - 1} onClick={async () => {
-                    if (index === reportImages.length - 1) return;
-                    const reordered = [...reportImages];
-                    [reordered[index], reordered[index + 1]] = [reordered[index + 1], reordered[index]];
-                    setReportImages(reordered);
-                    await projectsApi.reorderReportImages(pid!, reordered.map((item) => item.id));
-                  }}>↓</button>
-                  <button className="tx" type="button" onClick={async () => {
-                    await projectsApi.deleteReportImage(pid!, image.id);
-                    setReportImages((current) => current.filter((item) => item.id !== image.id));
-                  }}>Delete</button>
-                </div>
-              ))}
+                      <span className="ms" style={{ fontSize: '18px' }}>close</span>
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -5018,7 +5174,7 @@ export default function DashboardPage() {
             </>
           ) : (
             <>
-              Next: Answer organisation questions
+              Next
               <span className="ms" aria-hidden="true">arrow_forward</span>
             </>
           )}
@@ -5056,7 +5212,7 @@ export default function DashboardPage() {
           setStep(7);
           if (scrRef.current) scrRef.current.scrollTop = 0;
         }} style={{ flex: 1 }}>
-          Continue to generate
+          Next
           <span className="ms" aria-hidden="true">arrow_forward</span>
         </button>
       );
