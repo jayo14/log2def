@@ -419,7 +419,11 @@ def evaluate_report_quality(report, model=None):
             for fact_id in source_ids:
                 fact = facts_by_id.get(fact_id)
                 if not fact:
-                    add(blockers, "invalid_fact_reference", "This paragraph refers to a Fact that is missing or belongs to another project.", key)
+                    other_fact = Fact.objects.filter(id=fact_id).first()
+                    if other_fact and report_proj and other_fact.project_id != report_proj.id:
+                        add(blockers, "cross_project_fact_reference", f"This paragraph refers to Fact {fact_id} which belongs to a different project.", key)
+                    else:
+                        add(blockers, "invalid_fact_reference", "This paragraph refers to a Fact that is missing or belongs to another project.", key)
                 elif fact.status != "confirmed" and not is_student_edit:
                     add(blockers, "unconfirmed_fact_reference", "Confirm or remove the Fact supporting this paragraph.", key)
 

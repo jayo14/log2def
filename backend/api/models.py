@@ -348,6 +348,26 @@ class ReportSection(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def clean(self):
+        super().clean()
+        if self.source_links and self.report and hasattr(self.report, "project_id"):
+            from django.core.exceptions import ValidationError
+            proj_id = self.report.project_id
+            other_facts = Fact.objects.filter(id__in=self.source_links).exclude(project_id=proj_id)
+            if other_facts.exists():
+                raise ValidationError("ReportSection cannot cite facts from another project.")
+
+    def save(self, *args, **kwargs):
+        if self.source_links and self.report and hasattr(self.report, "project_id"):
+            proj_id = self.report.project_id
+            other_facts = Fact.objects.filter(id__in=self.source_links).exclude(project_id=proj_id)
+            if other_facts.exists():
+                from django.core.exceptions import ValidationError
+                raise ValidationError("ReportSection cannot cite facts from another project.")
+            valid_ids = set(Fact.objects.filter(project_id=proj_id, id__in=self.source_links).values_list("id", flat=True))
+            self.source_links = [fid for fid in self.source_links if fid in valid_ids]
+        super().save(*args, **kwargs)
+
     class Meta:
         ordering = ['chapter_number', 'order', 'id']
 
@@ -605,3 +625,20 @@ class UserAnalyticsEvent(models.Model):
 
     def __str__(self):
         return f"{self.step_name}:{self.screen_id} - {self.event_type} ({self.created_at})"
+
+
+from django.db.models.signals import m2m_changed
+from django.dispatch import receiver
+
+
+@receiver(m2m_changed, sender=ReportParagraph.facts.through)
+def validate_report_paragraph_facts_isolation(sender, instance, action, pk_set, **kwargs):
+    """Enforce strict multi-tenant isolation: a ReportParagraph cannot cite Facts from another project."""
+    if action == "pre_add" and pk_set and instance and hasattr(instance, "report"):
+        from django.core.exceptions import ValidationError
+        proj_id = instance.report.project_id
+        foreign_facts = Fact.objects.filter(id__in=pk_set).exclude(project_id=proj_id)
+        if foreign_facts.exists():
+            foreign_ids = list(foreign_facts.values_list("id", flat=True))
+            raise ValidationError(f"ReportParagraph cannot cite Facts belonging to another project or user. Foreign Fact IDs: {foreign_ids}")
+

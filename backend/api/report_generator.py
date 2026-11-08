@@ -1205,8 +1205,17 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         existing_sec = existing_sections.get(key)
         if existing_sec and not force_all:
             if existing_sec.last_edited_by_student:
+                valid_ids = set(Fact.objects.filter(project=project, id__in=existing_sec.source_links).values_list("id", flat=True))
+                if set(existing_sec.source_links) != valid_ids:
+                    existing_sec.source_links = [fid for fid in existing_sec.source_links if fid in valid_ids]
+                    existing_sec.save(update_fields=["source_links", "updated_at"])
                 continue
             if existing_sec.content and len(existing_sec.content.strip()) > 30:
+                linked_facts = confirmed_section_facts(key)
+                valid_ids = set(Fact.objects.filter(project=project, id__in=existing_sec.source_links).values_list("id", flat=True))
+                if set(existing_sec.source_links) != valid_ids or not existing_sec.source_links:
+                    existing_sec.source_links = [f.id for f in linked_facts]
+                    existing_sec.save(update_fields=["source_links", "updated_at"])
                 continue
 
         content_text = source_text.get(key, "")
