@@ -64,10 +64,14 @@ class SimpleHTMLDocxParser(HTMLParser):
             return
 
         if tag in ['p', 'div']:
+            if self.compact_cover and tag == 'div':
+                return
+            if self.compact_cover and self.current_p is not None and not self.current_p.text.strip() and not self.current_p.runs:
+                return
             self.current_p = self.doc.add_paragraph()
             compact = self.compact_cover and self.default_align == WD_ALIGN_PARAGRAPH.CENTER
-            self.current_p.paragraph_format.line_spacing = 1.15 if compact else 1.5
-            self.current_p.paragraph_format.space_after = Pt(2 if compact else 6)
+            self.current_p.paragraph_format.line_spacing = 1.05 if compact else 1.5
+            self.current_p.paragraph_format.space_after = Pt(2 if compact else 4)
             if 'text-align: center' in align_str:
                 self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif 'text-align: right' in align_str:
@@ -87,12 +91,15 @@ class SimpleHTMLDocxParser(HTMLParser):
             self.bold = True
 
         elif tag in ['h3', 'h4']:
-            self.current_p = self.doc.add_paragraph()
             compact = self.compact_cover and self.default_align == WD_ALIGN_PARAGRAPH.CENTER
+            if not compact:
+                self.current_p = self.doc.add_paragraph(style='Heading 2')
+            else:
+                self.current_p = self.doc.add_paragraph()
             self.current_p.paragraph_format.line_spacing = 1.15 if compact else 1.5
-            self.current_p.paragraph_format.space_before = Pt(2 if compact else 10)
-            self.current_p.paragraph_format.space_after = Pt(2 if compact else 4)
-            self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER if compact else self.current_p.alignment
+            self.current_p.paragraph_format.space_before = Pt(2 if compact else 8)
+            self.current_p.paragraph_format.space_after = Pt(2 if compact else 3)
+            self.current_p.alignment = WD_ALIGN_PARAGRAPH.CENTER if compact else WD_ALIGN_PARAGRAPH.LEFT
             self.bold = True
 
         elif tag in ['strong', 'b']:
@@ -107,14 +114,19 @@ class SimpleHTMLDocxParser(HTMLParser):
             abs_path = Path(src)
             if not abs_path.exists():
                 candidate = (Path(__file__).resolve().parent.parent.parent / src.lstrip('/')).resolve()
-                abs_path = candidate
+                if candidate.exists():
+                    abs_path = candidate
+                else:
+                    backend_candidate = (Path(__file__).resolve().parent.parent / src.lstrip('/')).resolve()
+                    if backend_candidate.exists():
+                        abs_path = backend_candidate
             if not abs_path.exists():
                 logger.warning("Report image missing during export: %s", src)
                 return
             from PIL import Image as PILImage
             with PILImage.open(abs_path) as pil_img:
                 width, height = pil_img.size
-            scale = min(12.0 / max(width, 1), 9.0 / max(height, 1), 1.0)
+            scale = min(14.5 / max(width, 1), 8.0 / max(height, 1), 1.0)
             image_p = self.doc.add_paragraph()
             image_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             image_p.paragraph_format.space_after = Pt(0)
@@ -127,7 +139,7 @@ class SimpleHTMLDocxParser(HTMLParser):
                 if doc_pr is not None:
                     doc_pr.set('descr', caption)
                     doc_pr.set('title', caption)
-            caption_p = self.doc.add_paragraph()
+            caption_p = self.doc.add_paragraph(style='Caption')
             caption_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             caption_p.paragraph_format.line_spacing = 1.0
             caption_p.paragraph_format.space_after = Pt(12)
@@ -173,7 +185,6 @@ class SimpleHTMLDocxParser(HTMLParser):
                     )
                 logger.error("Institution logo asset missing for src '%s'; DOCX cover will omit the logo.", src)
                 return
-            from docx.shared import Cm
             width_cm = float(logo_cfg.get('width_cm', 3.2))
             # Ensure a paragraph exists for the image.
             if self.current_p is None:
@@ -263,7 +274,7 @@ class SimpleHTMLDocxParser(HTMLParser):
                 self.current_cell_text = []
             return
 
-        if tag in ['strong', 'b']:
+        if tag in ['strong', 'b', 'h1', 'h2', 'h3', 'h4']:
             self.bold = False
         elif tag in ['em', 'i']:
             self.italic = False
@@ -375,27 +386,26 @@ def render_table_of_contents_section(doc, prelim_sections: list, body_sections: 
             ("CHAPTER ONE: INTRODUCTION", "1", True),
             ("  1.1 Background of SIWES", "1", False),
             ("  1.2 Objectives of SIWES", "1", False),
-            ("  1.3 Importance of SIWES", "2", False),
+            ("  1.3 Importance of SIWES", "1", False),
             ("  1.4 Scope of the Training", "2", False),
             ("  1.5 Duration of the Training", "2", False),
             ("CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE", "3", True),
             ("  2.1 Brief History of the Organisation", "3", False),
             ("  2.2 Objectives of the Organisation", "3", False),
-            ("  2.3 Organisational Structure", "4", False),
-            ("  2.4 Organogram of the Organisation", "4", False),
+            ("  2.3 Organisational Structure", "3", False),
+            ("  2.4 Organogram of the Organisation", "3", False),
             ("CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES", "5", True),
             ("  3.1 Duties and Responsibilities", "5", False),
             ("  3.2 Activities Performed", "5", False),
-            ("  3.3 Skills Acquired and Practical Experience", "7", False),
-            ("  3.4 Equipment/Tools Used", "8", False),
+            ("  3.3 Skills Acquired and Practical Experience", "8", False),
+            ("  3.4 Equipment/Tools Used", "9", False),
             ("  3.5 Challenges Encountered", "9", False),
-            ("  3.6 Solutions to Challenges Encountered", "9", False),
-            ("CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS", "10", True),
-            ("  4.1 Summary", "10", False),
-            ("  4.2 Conclusion", "10", False),
+            ("  3.6 Solutions to Challenges Encountered", "10", False),
+            ("CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS", "11", True),
+            ("  4.1 Summary", "11", False),
+            ("  4.2 Conclusion", "11", False),
             ("  4.3 Recommendations", "11", False),
             ("REFERENCES", "12", True),
-            ("APPENDICES", "13", True),
         ]
     else:
         toc_entries = [
@@ -484,6 +494,8 @@ def document_node_to_html(node: dict) -> str:
         src = node.get("attrs", {}).get("src", "")
         caption = escape(node.get("attrs", {}).get("caption", ""))
         if src:
+            if src.startswith("/api/institutions/") or "logo" in src:
+                return f'<img src="{escape(src)}" alt="{escape(caption)}"/>'
             return f'<img data-report-image="true" src="{escape(src)}" alt="{escape(caption)}"/>'
         return f"<p>{caption}</p>" if caption else ""
     return text + children
@@ -611,21 +623,32 @@ def generate_docx_report(report: Report) -> str:
                     doc.add_page_break()
                 current_chapter = b_sec.chapter_number
 
-                ch_titles = {
-                    1: "CHAPTER ONE\nINTRODUCTION",
-                    2: "CHAPTER TWO\nORGANIZATION PROFILE",
-                    3: "CHAPTER THREE\nTRAINING ACTIVITIES AND TECHNICAL EXPERIENCE",
-                    4: "CHAPTER FOUR\nSKILLS ACQUIRED, CHALLENGES AND SOLUTIONS",
-                    5: "CHAPTER FIVE\nCONCLUSION AND RECOMMENDATIONS",
-                    6: "REFERENCES AND APPENDICES"
-                }
-                header_text = getattr(b_sec, "chapter_title", "") or ch_titles.get(b_sec.chapter_number, f"CHAPTER {b_sec.chapter_number}")
+                if is_v2:
+                    ch_titles_v2 = {
+                        1: "CHAPTER ONE\nINTRODUCTION",
+                        2: "CHAPTER TWO\nBRIEF HISTORY AND ORGANISATIONAL STRUCTURE",
+                        3: "CHAPTER THREE\nACTIVITIES AND EXPERIENCE DURING SIWES",
+                        4: "CHAPTER FOUR\nSUMMARY, CONCLUSION AND RECOMMENDATIONS",
+                        5: "REFERENCES",
+                        6: "APPENDICES"
+                    }
+                    header_text = ch_titles_v2.get(b_sec.chapter_number, f"CHAPTER {b_sec.chapter_number}")
+                else:
+                    ch_titles = {
+                        1: "CHAPTER ONE\nINTRODUCTION",
+                        2: "CHAPTER TWO\nORGANIZATION PROFILE",
+                        3: "CHAPTER THREE\nTRAINING ACTIVITIES AND TECHNICAL EXPERIENCE",
+                        4: "CHAPTER FOUR\nSKILLS ACQUIRED, CHALLENGES AND SOLUTIONS",
+                        5: "CHAPTER FIVE\nCONCLUSION AND RECOMMENDATIONS",
+                        6: "REFERENCES AND APPENDICES"
+                    }
+                    header_text = getattr(b_sec, "chapter_title", "") or ch_titles.get(b_sec.chapter_number, f"CHAPTER {b_sec.chapter_number}")
                 ch_p = doc.add_paragraph()
                 if is_v2:
                     ch_p.style = doc.styles["Heading 1"]
                 ch_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                ch_p.paragraph_format.space_before = Pt(18)
-                ch_p.paragraph_format.space_after = Pt(18)
+                ch_p.paragraph_format.space_before = Pt(12)
+                ch_p.paragraph_format.space_after = Pt(10)
                 run = ch_p.add_run(header_text)
                 run.bold = True
                 run.font.name = 'Times New Roman'
@@ -635,8 +658,8 @@ def generate_docx_report(report: Report) -> str:
                 sub_p = doc.add_paragraph()
                 if is_v2:
                     sub_p.style = doc.styles["Heading 2"]
-                sub_p.paragraph_format.space_before = Pt(12)
-                sub_p.paragraph_format.space_after = Pt(6)
+                sub_p.paragraph_format.space_before = Pt(8)
+                sub_p.paragraph_format.space_after = Pt(3)
                 sub_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                 sub_run = sub_p.add_run(b_sec.title)
                 sub_run.bold = True
