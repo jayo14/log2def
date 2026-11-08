@@ -136,10 +136,10 @@ def _compose_cluster_prose(week_label: str, title: str, entries: list) -> str:
     if not clean_lines:
         return f"During {week_label.lower()}, I engaged in technical engineering activities focusing on {title.lower()}."
 
-    # Group into 2 cohesive, comprehensive paragraphs
+    # Group into 2 cohesive, comprehensive paragraphs (~155-165 words total)
     mid = max(1, len(clean_lines) // 2)
-    part1_sentences = clean_lines[:mid]
-    part2_sentences = clean_lines[mid:]
+    part1_sentences = clean_lines[:mid][:3]
+    part2_sentences = clean_lines[mid:][:3]
 
     p1_body = " ".join(part1_sentences)
     p2_body = " ".join(part2_sentences) if part2_sentences else ""
@@ -400,7 +400,7 @@ def categorise_tools(tools_list: list, entries: list | None = None) -> str:
         if not tools:
             continue
         lines = [f"<strong>{cat_name}</strong>"]
-        for t in tools:
+        for t in tools[:3]:
             usage = tool_usage_map.get(t, f"Utilized for technical engineering and operational workflows during the industrial attachment.")
             lines.append(f"• <strong>{t}</strong>: {usage}")
         output_sections.append("\n".join(lines))
@@ -461,20 +461,20 @@ def synthesize_summary_section(org_name: str, placement_dept: str, clusters: lis
     dept = (placement_dept or "").strip() or "Technical Department"
 
     p1 = (
-        f"Throughout the 12-week SIWES industrial training at {clean_org}, I was embedded within the {dept}, "
-        f"engaging directly in active full-stack software development, platform security engineering, and UI/UX design deliverables. "
-        f"During the initial phases of the placement, I developed educational modules for the Butane platform, implementing report card previews, "
-        f"student promotion logic, and academic term standardization, while also constructing an automated trading bot engine with real-time exchange monitoring. "
-        f"Subsequent engineering work focused on the Gymoraflow mobile application using React Native and Supabase, where I rectified navigation compatibility issues, "
-        f"rebuilt unread chat badge counters, and hardened platform security configurations against CSRF vulnerabilities."
+        f"During the 12-week SIWES attachment at {clean_org}, I was embedded within the {dept}, "
+        f"contributing directly to production software engineering, security hardening, and UI/UX implementation. "
+        f"Initial assignments included developing educational modules for Butane, adding report card previews, "
+        f"student promotion logic, and an automated trading engine with exchange monitoring. "
+        f"Subsequent work focused on Gymoraflow mobile in React Native and Supabase, "
+        f"resolving navigation bugs, fixing chat badges, and mitigating CSRF risks."
     )
 
     p2 = (
-        f"In the later stages of the industrial training, technical activities centered on backend architecture and intelligent system integrations. "
-        f"I developed and deployed containerised FastAPI backend services with Docker, engineered media storage delivery pipelines for the Nexa Esports platform, "
-        f"and implemented retrieval-augmented generation (RAG) document processing agents for the Quiza platform. "
-        f"These practical software engineering assignments were complemented by structured object-oriented programming in Java and the creation of "
-        f"comprehensive brand identity guidelines and promotional materials, culminating in a successful technical handoff and final team project presentation."
+        f"Later responsibilities focused on backend architecture, Docker containers, and intelligent systems. "
+        f"I deployed multi-service FastAPI endpoints, engineered media pipelines for Nexa Esports, "
+        f"and implemented retrieval-augmented generation (RAG) agents for Quiza. "
+        f"These deliverables were complemented by object-oriented Java programming and brand design, "
+        f"culminating in a complete technical handoff and final team presentation."
     )
 
     return f"{p1}\n\n{p2}"
@@ -487,12 +487,10 @@ def synthesize_conclusion_section(org_name: str, clusters: list | None = None) -
     """
     clean_org = to_title_case_name(org_name)
     return (
-        f"The industrial training undertaken at {clean_org} successfully fulfilled the institutional objectives of the "
-        f"Students Industrial Work Experience Scheme by bridging academic computing theory with professional engineering practice. "
-        f"Through direct involvement in production software workflows, I developed measurable technical competence in modern web and mobile frameworks, "
-        f"containerisation technologies, object-oriented software design, and systematic debugging methodologies. "
-        f"The placement provided vital exposure to collaborative engineering standards, version-controlled code review practices, and multi-service "
-        f"deployment architectures, establishing a solid foundation for future professional practice in the software engineering sector."
+        f"The attachment at {clean_org} successfully merged academic computing theory with professional industry practice. "
+        f"Through direct participation in production workflows, I gained demonstrable competence in modern web stacks, "
+        f"Docker containerisation, object-oriented software design, and systematic debugging methodologies. "
+        f"The training established a solid technical foundation for subsequent professional practice in software engineering."
     )
 
 
@@ -504,17 +502,8 @@ def synthesize_recommendations_section(org_name: str, challenges: str = "", recs
     3. ITF / NUC
     """
     clean_org = to_title_case_name(org_name)
-    r1 = (
-        f"1. To {clean_org}: It is recommended that the organisation provide incoming student interns with standardized local development "
-        f"templates and pre-configured multi-service Docker environments during onboarding, ensuring smoother transitions when debugging multi-container architectures."
-    )
-    r2 = (
-        f"2. To Lagos State University of Science and Technology (LASUSTECH): The Department of Computer Science should expand practical curriculum modules "
-        f"to encompass modern containerisation toolchains, continuous integration pipelines, and hands-on REST API development prior to students embarking on industrial attachment."
-    )
-    r3 = (
-        f"3. To the Industrial Training Fund (ITF) and National Universities Commission (NUC): The regulatory agencies should strengthen structured liaison visits "
-        f"between institutional supervisors and host organisations, ensuring student tasks align rigorously with contemporary industry engineering standards."
-    )
+    r1 = f"1. To {clean_org}: Provide incoming interns with pre-configured Docker starter templates to accelerate multi-service debugging."
+    r2 = f"2. To Lagos State University of Science and Technology (LASUSTECH): Incorporate hands-on containerisation and REST API labs into the pre-SIWES computing curriculum."
+    r3 = f"3. To the Industrial Training Fund (ITF) and National Universities Commission (NUC): Maintain scheduled supervisory visits between university coordinators and industry mentors."
 
     return f"{r1}\n\n{r2}\n\n{r3}"
