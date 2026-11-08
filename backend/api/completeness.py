@@ -47,6 +47,17 @@ def validate_training_dates(
     requires_short_duration_confirmation = False
     out_of_period_entries: List[Dict[str, Any]] = []
 
+    if isinstance(start_date, str) and start_date.strip():
+        try:
+            start_date = date.fromisoformat(start_date.strip()[:10])
+        except Exception:
+            start_date = None
+    if isinstance(end_date, str) and end_date.strip():
+        try:
+            end_date = date.fromisoformat(end_date.strip()[:10])
+        except Exception:
+            end_date = None
+
     if start_date and end_date:
         if start_date >= end_date:
             errors.append(f"Training start date ({start_date}) must be before end date ({end_date}).")
