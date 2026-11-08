@@ -23,6 +23,6 @@ def intake_answer_complete(step, answers):
             isinstance(value.get("pairs"), list) and len(value["pairs"]) >= 1 and
             all(str(pair.get("challenge", "")).strip() and str(pair.get("solution", "")).strip() for pair in value["pairs"][:3])
         ))
-    if key == "recommendations":
+    if key in {"recommendations", "acknowledgement", "dedication"}:
         return True
     return bool(str(value or "").strip())
