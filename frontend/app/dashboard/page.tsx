@@ -14,13 +14,13 @@ import '@/app/dashboard.css';
 
 // Approved Design Constants: seven-phase wizard flow
 const SN = [
-  'Your details',
-  'Logbook',
-  'Review',
-  'Missing info',
-  'Organisation',
-  'Images',
-  'Generate',
+  'Upload logbook',
+  'Confirm details',
+  'Check reading',
+  'About organisation',
+  'Your experience',
+  'Extras',
+  'Ready to generate',
 ];
 
 const GS = [
@@ -202,6 +202,7 @@ export default function DashboardPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isSavingStep4, setIsSavingStep4] = useState(false);
   const [step4SaveError, setStep4SaveError] = useState<string | null>(null);
+  const [shortDurationConfirmed, setShortDurationConfirmed] = useState<boolean>(false);
 
   const [pages, setPages] = useState<LogPage[]>([]);
   const [reading, setReading] = useState<boolean>(false);
@@ -1123,6 +1124,24 @@ export default function DashboardPage() {
   };
 
   const hasStarted = Boolean(details.co || pages.length || step > 1);
+
+  const trackWizardEvent = useCallback((stepName: string, screenId: string, eventType: string, meta: Record<string, any> = {}) => {
+    const projId = activeProject?.id;
+    if (!projId) return;
+    fetch(`${getApiBaseUrl()}/api/projects/${projId}/events/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: JSON.stringify({
+        step_name: stepName,
+        screen_id: screenId,
+        event_type: eventType,
+        metadata: meta,
+      }),
+    }).catch(() => {});
+  }, [activeProject?.id]);
 
   // Field helpers
   const getVal = (k: string) => details[k] || answers[k] || '';
@@ -2121,14 +2140,16 @@ export default function DashboardPage() {
     if (scrRef.current) scrRef.current.scrollTop = 0;
   };
 
-  const stepIcons = ['badge', 'photo_camera', 'fact_check', 'edit_note', 'auto_awesome'];
-  const stepNames = ['Details', 'Logbook', 'Review', 'Missing info', 'Generate'];
+  const stepIcons = ['photo_camera', 'badge', 'fact_check', 'domain', 'psychology', 'stars', 'auto_awesome'];
+  const stepNames = ['Upload', 'Details', 'Review', 'Organisation', 'Experience', 'Extras', 'Ready'];
   const stepSubtitles = [
-    'Add your details',
-    'Add your pages',
+    'Upload your logbook pages',
+    'Confirm your details',
     'Check what we read',
-    'Fill what’s missing',
-    'Generate your report',
+    'About your organisation',
+    'Your experience and tools',
+    'Optional extras',
+    'Ready to generate',
   ];
 
   // ==========================================
@@ -3610,295 +3631,17 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 1 (YOUR DETAILS)
+  // WIZARD FLOW: STEP 1 (UPLOAD LOGBOOK)
   // ==========================================
   const renderStep1 = () => {
-    const isPhotos = method === 'photos';
-
-    return (
-      <form id="sf" noValidate onSubmit={handleStep1Submit}>
-        <div className="view" id="step-1">
-          <h1 className="wt" id="wh" tabIndex={-1}>
-            {isPhotos ? 'Photos first' : 'Your details'}
-          </h1>
-          <div className="seg" role="tablist" aria-label="How to start" style={{ marginTop: '14px' }}>
-            <button
-              role="tab"
-              type="button"
-              aria-selected={!isPhotos}
-              onClick={() => setMethod('manual')}
-            >
-              Fill in details
-            </button>
-            <button
-              role="tab"
-              type="button"
-              aria-selected={isPhotos}
-              onClick={() => setMethod('photos')}
-            >
-              Photos first
-            </button>
-          </div>
-
-          {isPhotos ? (
-            <div className="card big" style={{ padding: '26px 16px' }}>
-              <div className="ok">
-                <span className="ms" aria-hidden="true">
-                  photo_camera
-                </span>
-              </div>
-              <p style={{ margin: 0 }}>We read your details from the cover and last page.</p>
-            </div>
-          ) : (
-            <>
-              <p className="gt">ABOUT YOU</p>
-
-              <div className="f" data-f="name">
-                <label htmlFor="name">
-                  Full name <em aria-hidden="true">*</em>
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  value={details.name || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, name: e.target.value }))}
-                  required
-                />
-                <p className="err" id="name-e" hidden={Boolean(details.name?.trim())}>
-                  Please fill this in.
-                </p>
-              </div>
-
-              <div className="f" data-f="matric">
-                <label htmlFor="matric">
-                  Matriculation number <em aria-hidden="true">*</em>
-                </label>
-                <input
-                  id="matric"
-                  name="matric"
-                  type="text"
-                  placeholder="e.g. STE/2021/0456"
-                  value={details.matric || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, matric: e.target.value }))}
-                  required
-                />
-                <p className="err" id="matric-e" hidden={Boolean(details.matric?.trim())}>
-                  Please fill this in.
-                </p>
-              </div>
-
-              <div className="f" data-f="dept">
-                <label htmlFor="dept">
-                  Department <em aria-hidden="true">*</em>
-                </label>
-                <input
-                  id="dept"
-                  name="dept"
-                  type="text"
-                  value={details.dept || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, dept: e.target.value }))}
-                  required
-                />
-                <p className="err" id="dept-e" hidden={Boolean(details.dept?.trim())}>
-                  Please fill this in.
-                </p>
-              </div>
-
-              <div className="f" data-f="fac">
-                <label htmlFor="fac">
-                  Faculty or College <em aria-hidden="true">*</em>
-                </label>
-                <select
-                  id="fac"
-                  name="fac"
-                  value={details.fac || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, fac: e.target.value }))}
-                  required
-                >
-                  {COLLEGES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                {details.fac === 'Other' && (
-                  <input
-                    type="text"
-                    placeholder="Enter your Faculty or College"
-                    value={details.customFac || ''}
-                    onChange={(e) => setDetails((prev) => ({ ...prev, customFac: e.target.value }))}
-                    style={{ marginTop: '8px' }}
-                    required
-                  />
-                )}
-                <p className="err" id="fac-e" hidden={Boolean(details.fac?.trim())}>
-                  Please select your faculty or college.
-                </p>
-              </div>
-
-              <div className="f" data-f="inst">
-                <label htmlFor="inst">
-                  Institution <em aria-hidden="true">*</em>
-                </label>
-                <select
-                  id="inst"
-                  name="inst"
-                  value={details.inst ? (INSTITUTIONS.includes(details.inst) ? details.inst : 'Other') : ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === 'Other') {
-                      setDetails((prev) => ({ ...prev, inst: prev.customInst || 'Other' }));
-                    } else {
-                      setDetails((prev) => ({ ...prev, inst: val }));
-                    }
-                  }}
-                  required
-                >
-                  <option value="">Select an institution</option>
-                  {INSTITUTIONS.map((instOption) => (
-                    <option key={instOption} value={instOption}>
-                      {instOption}
-                    </option>
-                  ))}
-                </select>
-                {(details.inst === 'Other' || (details.inst && !INSTITUTIONS.includes(details.inst))) && (
-                  <input
-                    type="text"
-                    placeholder="Enter your institution name"
-                    value={details.inst === 'Other' ? '' : details.inst}
-                    onChange={(e) =>
-                      setDetails((prev) => ({ ...prev, inst: e.target.value, customInst: e.target.value }))
-                    }
-                    style={{ marginTop: '8px' }}
-                    required
-                  />
-                )}
-                <p className="err" id="inst-e" hidden={Boolean(details.inst?.trim())}>
-                  Please fill this in.
-                </p>
-              </div>
-
-              <p className="gt">YOUR PLACEMENT</p>
-
-              <div className="f" data-f="co">
-                <label htmlFor="co">
-                  Company or organisation <em aria-hidden="true">*</em>
-                </label>
-                <input
-                  id="co"
-                  name="co"
-                  type="text"
-                  value={details.co || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, co: e.target.value }))}
-                  required
-                />
-                <p className="err" id="co-e" hidden={Boolean(details.co?.trim())}>
-                  Please fill this in.
-                </p>
-              </div>
-
-              <div className="f" data-f="addr">
-                <label htmlFor="addr">
-                  Company address <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
-                </label>
-                <input
-                  id="addr"
-                  name="addr"
-                  type="text"
-                  value={details.addr || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, addr: e.target.value }))}
-                />
-              </div>
-
-              <div className="f" data-f="unit">
-                <label htmlFor="unit">
-                  Department or unit at company <span className="mut" style={{ fontWeight: 600 }}>(optional)</span>
-                </label>
-                <input
-                  id="unit"
-                  name="unit"
-                  type="text"
-                  value={details.unit || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, unit: e.target.value }))}
-                />
-              </div>
-
-              <div className="f" data-f="start">
-                <label htmlFor="start">
-                  Training start date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
-                </label>
-                <input
-                  id="start"
-                  name="start"
-                  type="date"
-                  value={details.start || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, start: e.target.value }))}
-                />
-              </div>
-
-              <div className="f" data-f="end">
-                <label htmlFor="end">
-                  Training end date <span className="mut" style={{ fontWeight: 600 }}>(optional now)</span>
-                </label>
-                <input
-                  id="end"
-                  name="end"
-                  type="date"
-                  value={details.end || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, end: e.target.value }))}
-                />
-              </div>
-
-              <p className="gt">SUPERVISORS</p>
-              <p className="hint" style={{ margin: '-4px 4px 12px' }}>
-                If your template asks.
-              </p>
-
-              <div className="f" data-f="sup">
-                <label htmlFor="sup">
-                  Industry supervisor <span className="mut" style={{ fontWeight: 600 }}>(optional)</span>
-                </label>
-                <input
-                  id="sup"
-                  name="sup"
-                  type="text"
-                  value={details.sup || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, sup: e.target.value }))}
-                />
-              </div>
-
-              <div className="f" data-f="isup">
-                <label htmlFor="isup">
-                  Institution supervisor <span className="mut" style={{ fontWeight: 600 }}>(optional)</span>
-                </label>
-                <input
-                  id="isup"
-                  name="isup"
-                  type="text"
-                  value={details.isup || ''}
-                  onChange={(e) => setDetails((prev) => ({ ...prev, isup: e.target.value }))}
-                />
-              </div>
-            </>
-          )}
-        </div>
-      </form>
-    );
-  };
-
-  // ==========================================
-  // WIZARD FLOW: STEP 2 (YOUR LOGBOOK)
-  // ==========================================
-  const renderStep2 = () => {
     const n = pages.length;
 
     return (
-      <div className="view" id="step-2">
+      <div className="view" id="step-1">
         <h1 className="wt" id="wh" tabIndex={-1}>
-          Your logbook
+          Upload your logbook
         </h1>
-        <p className="wd">Cover to last page, in order.</p>
+        <p className="wd">Cover to last page, in order. The page check runs immediately to sequence your weeks.</p>
 
         <div className="row">
           <button className="btn" type="button" onClick={() => startCamera()} style={{ flex: 1 }}>
@@ -4009,7 +3752,6 @@ export default function DashboardPage() {
                       >
                         {p.n}
                       </span>
-                      {/* Small loader line that fills up to the end */}
                       <div
                         style={{
                           width: '84%',
@@ -4105,6 +3847,154 @@ export default function DashboardPage() {
     );
   };
 
+  // ==========================================
+  // WIZARD FLOW: STEP 2 (CONFIRM YOUR DETAILS)
+  // ==========================================
+  const renderStep2 = () => {
+    const startDateObj = details.start ? new Date(details.start) : null;
+    const endDateObj = details.end ? new Date(details.end) : null;
+    const durationDays = (startDateObj && endDateObj && !isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime()))
+      ? Math.round((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 3600 * 24)) + 1
+      : 0;
+    const isShortDuration = durationDays > 0 && durationDays < 28;
+    const isDateInverted = Boolean(details.start && details.end && details.start >= details.end);
+
+    return (
+      <div className="view" id="step-2">
+        <h1 className="wt" id="wh" tabIndex={-1}>
+          Confirm your details
+        </h1>
+        <p className="wd">Pre-filled from your logbook. Tap any value to edit or confirm.</p>
+
+        {isDateInverted && (
+          <div className="card" style={{ border: '1px solid #ef4444', background: 'rgba(239, 68, 68, 0.08)', padding: '12px 16px', borderRadius: '12px', marginBottom: '14px', color: '#b91c1c' }}>
+            <span className="ms" style={{ verticalAlign: 'middle', marginRight: '6px' }}>error</span>
+            <strong>Training start date must be before end date.</strong>
+          </div>
+        )}
+
+        {isShortDuration && (
+          <div className="card" style={{ border: '1px solid #f59e0b', background: 'rgba(245, 158, 11, 0.08)', padding: '14px 16px', borderRadius: '12px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b45309', fontWeight: 600 }}>
+              <span className="ms">info</span>
+              <span>Short training duration ({durationDays} days)</span>
+            </div>
+            <p style={{ margin: '6px 0 10px', fontSize: '13px', color: 'var(--tx)' }}>
+              Standard SIWES is usually 8 to 24 weeks. Did your department approve this short training period?
+            </p>
+            {shortDurationConfirmed ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#059669', fontWeight: 600 }}>
+                <span className="ms">check_circle</span>
+                <span>Approved by institution / department</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                  onClick={async () => {
+                    setShortDurationConfirmed(true);
+                    if (activeProject?.id) {
+                      try {
+                        await projectsApi.saveGuidedIntakeAnswer(activeProject.id, 'short_duration_confirmed', true);
+                        showToast('Short training duration confirmed.');
+                      } catch {}
+                    }
+                  }}
+                >
+                  <span className="ms">check</span> Yes, department approved
+                </button>
+                <button
+                  type="button"
+                  className="btn o"
+                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                  onClick={() => {
+                    const el = document.getElementById('details-start') || document.getElementById('details-end');
+                    if (el) el.focus();
+                  }}
+                >
+                  Change dates
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {FLD.map(([k, label]) => {
+            const val = details[k] || '';
+            const isMissing = !val.trim();
+            const source = fieldSources[k] === 'logbook' ? 'from your logbook' : 'your details';
+
+            return (
+              <div
+                key={k}
+                className="f"
+                style={{
+                  margin: 0,
+                  padding: '10px 14px',
+                  borderRadius: '12px',
+                  border: isMissing ? '1px solid #ef4444' : '1px solid var(--bdr)',
+                  background: isMissing ? 'rgba(239, 68, 68, 0.03)' : 'var(--bg)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label htmlFor={`details-${k}`} style={{ fontWeight: 600, fontSize: '13px' }}>
+                    {label} <em aria-hidden="true" style={{ color: 'var(--e)' }}>*</em>
+                  </label>
+                  {!isMissing ? (
+                    <span style={{ fontSize: '11px', color: '#059669', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span className="ms" style={{ fontSize: '13px' }}>check_circle</span>
+                      {source} · tap to edit
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '11px', color: '#ef4444', fontWeight: 600 }}>
+                      Missing
+                    </span>
+                  )}
+                </div>
+                {k === 'fac' ? (
+                  <select
+                    id={`details-${k}`}
+                    value={details[k] || ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDetails((prev) => ({ ...prev, [k]: v }));
+                      setFieldSources((prev) => ({ ...prev, [k]: 'you added' }));
+                    }}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '14px', borderRadius: '8px' }}
+                  >
+                    {COLLEGES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id={`details-${k}`}
+                    type={k === 'start' || k === 'end' ? 'date' : 'text'}
+                    value={val}
+                    placeholder={`Enter ${label.toLowerCase()}`}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDetails((prev) => ({ ...prev, [k]: v }));
+                      setFieldSources((prev) => ({ ...prev, [k]: 'you added' }));
+                    }}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '14px', borderRadius: '8px' }}
+                  />
+                )}
+                {isMissing && (
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#ef4444' }}>
+                    Required for your technical report title page and certification.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
   // ==========================================
   // WIZARD FLOW: STEP 3 (CHECK WHAT WE READ)
   // ==========================================
@@ -5244,16 +5134,6 @@ export default function DashboardPage() {
   // Primary CTA Button for wizard bottom navigation
   const renderPrimaryCta = () => {
     if (step === 1) {
-      return (
-        <button className="btn" type="submit" form="sf" style={{ flex: 1 }}>
-          Next
-          <span className="ms" aria-hidden="true">
-            arrow_forward
-          </span>
-        </button>
-      );
-    }
-    if (step === 2) {
       const uploadingCount = pages.filter((p) => p.isUploading || (p.uploadProgress !== undefined && p.uploadProgress < 100) || (!p.id && p.q !== 'error')).length;
       const isAnyUploading = uploadingCount > 0;
       return (
@@ -5264,7 +5144,8 @@ export default function DashboardPage() {
           aria-disabled={pages.length === 0 || isAnyUploading}
           onClick={async () => {
             if (pages.length === 0 || isAnyUploading) return;
-            setStep(3);
+            trackWizardEvent('step1_upload', 'logbook_pages', 'step_completed', { page_count: pages.length });
+            setStep(2);
             if (scrRef.current) scrRef.current.scrollTop = 0;
             if (!readDone) {
               await startReading();
@@ -5287,6 +5168,64 @@ export default function DashboardPage() {
               </span>
             </>
           )}
+        </button>
+      );
+    }
+    if (step === 2) {
+      const missingCount = FLD.filter(([k]) => !details[k]?.trim()).length;
+      const startDateObj = details.start ? new Date(details.start) : null;
+      const endDateObj = details.end ? new Date(details.end) : null;
+      const durationDays = (startDateObj && endDateObj && !isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime()))
+        ? Math.round((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 3600 * 24)) + 1
+        : 0;
+      const isShortDuration = durationDays > 0 && durationDays < 28;
+      const isDateInverted = Boolean(details.start && details.end && details.start >= details.end);
+
+      return (
+        <button
+          className="btn"
+          type="button"
+          disabled={missingCount > 0 || isDateInverted || (isShortDuration && !shortDurationConfirmed)}
+          onClick={async () => {
+            if (missingCount > 0 || isDateInverted) return;
+            if (isShortDuration && !shortDurationConfirmed) {
+              showToast('Please confirm your short training duration.');
+              return;
+            }
+            let projId = activeProject?.id;
+            if (projId) {
+              await updateActiveProject(projId, {
+                full_name: details.name || undefined,
+                matric_number: details.matric,
+                department: details.dept,
+                college: details.fac,
+                faculty_school: details.fac,
+                degree: details.degree,
+                university_name: details.inst,
+                organization_name: details.co,
+                organization_address: details.addr,
+                training_start_date: details.start || undefined,
+                training_end_date: details.end || undefined,
+                industry_supervisor_name: details.sup || undefined,
+                institution_supervisor_name: details.isup || undefined,
+              }).catch(() => {});
+            }
+            trackWizardEvent('step2_details', 'confirm_details', 'step_completed');
+            setStep(3);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
+          }}
+          style={{ flex: 1 }}
+        >
+          {missingCount > 0
+            ? `Fill ${missingCount} more to continue`
+            : isDateInverted
+            ? 'Fix training dates'
+            : isShortDuration && !shortDurationConfirmed
+            ? 'Confirm short period'
+            : 'Continue'}
+          <span className="ms" aria-hidden="true">
+            arrow_forward
+          </span>
         </button>
       );
     }
