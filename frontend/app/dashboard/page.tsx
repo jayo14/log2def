@@ -1565,18 +1565,11 @@ export default function DashboardPage() {
   const trackWizardEvent = useCallback((stepName: string, screenId: string, eventType: string, meta: Record<string, any> = {}) => {
     const projId = activeProject?.id;
     if (!projId) return;
-    fetch(`${getApiBaseUrl()}/projects/${projId}/events/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getAuthToken()}`,
-      },
-      body: JSON.stringify({
-        step_name: stepName,
-        screen_id: screenId,
-        event_type: eventType,
-        metadata: meta,
-      }),
+    projectsApi.trackEvent(projId, {
+      step_name: stepName,
+      screen_id: screenId,
+      event_type: eventType,
+      metadata: meta,
     }).catch(() => {});
   }, [activeProject?.id]);
 

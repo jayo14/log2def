@@ -463,6 +463,16 @@ export const projectsApi = {
     }>(`/projects/${projectId}/squad/verify/?transaction_ref=${encodeURIComponent(transactionRef)}`);
   },
 
+  trackEvent: async (
+    projectId: number | string,
+    eventData: { step_name: string; screen_id: string; event_type: string; metadata?: Record<string, any> }
+  ) => {
+    return apiRequest(`/projects/${projectId}/events/`, {
+      method: 'POST',
+      body: JSON.stringify(eventData),
+    });
+  },
+
   // Document Export Download URLs & Asynchronous Status
   getExportDocxUrl: (projectId: number | string) => {
     return `${getApiBaseUrl()}/projects/${projectId}/export/docx/`;
