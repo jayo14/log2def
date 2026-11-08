@@ -1349,6 +1349,7 @@ export default function DashboardPage() {
       const whatText = orgWhat.trim() || (orgNotSure ? `${details.co || 'The organisation'} is an established technical organisation located in ${details.addr || 'Nigeria'}.` : '');
       const whenWhereText = `${orgWhen.trim()} ${orgWhere.trim()}`.trim();
 
+      const placementUnit = studentUnit.trim() || orgUnits[0] || details.unit || activeProject?.placement_department || activeProject?.industry_department || '';
       const payload: Record<string, any> = {
         organisation_not_sure: orgNotSure,
         ...(whatText ? { organisation_what: whatText } : {}),
@@ -1357,7 +1358,7 @@ export default function DashboardPage() {
         ...(orgPasteMode && orgPasteText.trim() ? { organisation_paste_text: orgPasteText.trim() } : {}),
         ...(headTitle.trim() ? { head_title: headTitle.trim() } : {}),
         organisation_units: orgUnits,
-        ...(studentUnit.trim() ? { student_unit: studentUnit.trim() } : {}),
+        ...(placementUnit ? { student_unit: placementUnit } : {}),
         ...(supervisorTitle.trim() ? { supervisor_title: supervisorTitle.trim() } : {}),
         ...(treeToSave ? { organogram_tree: treeToSave } : {}),
         ...(structureNarrative ? { organisation_structure: structureNarrative } : {}),
@@ -5512,7 +5513,10 @@ export default function DashboardPage() {
                       fontWeight: studentUnit === u ? 700 : 500,
                       boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                     }}
-                    onClick={() => setStudentUnit(u)}
+                    onClick={() => {
+                      setStudentUnit(u);
+                      saveStep4Data({ student_unit: u });
+                    }}
                   >
                     {studentUnit === u && <span className="ms" style={{ fontSize: '14px' }}>check</span>}
                     {u}
