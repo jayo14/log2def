@@ -79,6 +79,30 @@ def _sentences(document):
             yield sentence
 
 
+PLAIN_CONNECTORS = {
+    "a", "an", "the", "and", "or", "but", "nor", "so", "yet", "both", "either", "neither",
+    "in", "on", "at", "to", "for", "with", "from", "by", "of", "about", "into", "through",
+    "during", "before", "after", "above", "below", "under", "over", "between", "among",
+    "within", "without", "across", "toward", "towards", "upon", "per", "as", "than",
+    "i", "me", "my", "myself", "we", "us", "our", "ours", "ourselves", "it", "its", "itself",
+    "this", "that", "these", "those", "which", "what", "who", "whom", "whose", "each",
+    "every", "all", "any", "some", "such", "no", "not", "also", "then", "there", "here",
+    "is", "am", "are", "was", "were", "be", "been", "being", "have", "has", "had", "having",
+    "do", "does", "did", "doing", "will", "would", "shall", "should", "can", "could", "may",
+    "might", "must", "first", "second", "third", "finally", "additionally", "furthermore",
+    "moreover", "respectively", "various", "several", "well", "one", "two", "three", "four",
+    "five", "six", "seven", "eight", "nine", "ten",
+}
+
+
+def _stem(word: str) -> str:
+    w = word.lower()
+    for suffix in ("ing", "tion", "sion", "ment", "ness", "able", "ible", "ize", "ise", "ed", "es", "ly", "s", "d"):
+        if len(w) > len(suffix) + 2 and w.endswith(suffix):
+            return w[:-len(suffix)]
+    return w
+
+
 def validate_writer_output(document: dict | list, brief: SectionBrief, finish_reason="STOP") -> list[dict]:
     if finish_reason not in {"STOP", "stop", "completed", ""}:
         raise GroundedWriterError("writer_output_truncated")
@@ -99,6 +123,13 @@ def validate_writer_output(document: dict | list, brief: SectionBrief, finish_re
         for pattern in BLOCKED_PATTERNS:
             if pattern.search(text):
                 raise GroundedWriterError("banned_pattern")
+
+        # Chapter Two is about the organisation (third person), not the student's actions
+        if brief.section_key.startswith("ch2_"):
+            for first_p in ("i", "me", "my", "myself", "we", "our", "ours", "us"):
+                if re.search(r"\b" + first_p + r"\b", text, re.I):
+                    raise GroundedWriterError("chapter_two_must_be_third_person")
+
         for claim in re.finditer(r"\b(?:verified|successfully|successful|success|achieved|enhanced|improved|realized|realised)\b", text, re.I):
             if claim.group(0).casefold() not in " ".join(facts[fid] for fid in ids).casefold():
                 raise GroundedWriterError("unsupported_success_or_verification_claim")
@@ -114,6 +145,23 @@ def validate_writer_output(document: dict | list, brief: SectionBrief, finish_re
                 continue
             if token.casefold() not in cited.casefold():
                 raise GroundedWriterError("unsupported_named_or_numeric_token")
+
+        # Lexical grounding: Every content word in a generated sentence must appear in cited facts or plain connectors
+        if not boilerplate:
+            sentence_words = re.findall(r"\b[A-Za-z0-9'-]+\b", text.lower())
+            cited_words = set(re.findall(r"\b[A-Za-z0-9'-]+\b", cited.lower()))
+            cited_stems = {_stem(cw) for cw in cited_words} | cited_words
+            for word in sentence_words:
+                if word in PLAIN_CONNECTORS:
+                    continue
+                if word in cited_words or _stem(word) in cited_stems:
+                    continue
+                if word.endswith("s") and word[:-1] in cited_words:
+                    continue
+                if (word + "s") in cited_words:
+                    continue
+                raise GroundedWriterError(f"unsupported_content_word: {word}")
+
         result.append({"text": text, "fact_ids": ids, "boilerplate": boilerplate})
     return result
 
