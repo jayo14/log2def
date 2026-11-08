@@ -2396,8 +2396,16 @@ export default function DashboardPage() {
     }
     setDownloadLoading(true);
     try {
+      // Ensure export is ready with server-side long polling wait (avoids rapid client retries)
+      const fmt = format === 'PDF' ? 'pdf' : 'docx';
+      const statusRes = await projectsApi.getExportStatus(projId, fmt, true, 12).catch(() => null);
+      if (statusRes && statusRes.status === 'failed') {
+        showToast(statusRes.error || 'Export generation failed. Please review your chapters.');
+        return;
+      }
+
       // Verify payment via secure backend endpoint
-      const url = `${getApiBaseUrl()}/projects/${projId}/squad/download/${format.toLowerCase()}/`;
+      const url = `${getApiBaseUrl()}/projects/${projId}/squad/download/${fmt}/`;
       const token = getAuthToken();
       const res = await fetch(url, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },

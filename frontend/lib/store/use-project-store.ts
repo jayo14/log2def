@@ -47,6 +47,10 @@ export interface ProjectState {
   pageStatus: any | null;
   fetchPageStatus: (projectId: number | string) => Promise<any>;
 
+  // Long polling
+  lastStateHash: string;
+  pollProject: (projectId: number | string, options?: { timeout?: number }) => Promise<any>;
+
   clearActiveProject: () => void;
   setError: (error: string | null) => void;
 }
@@ -61,6 +65,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   isLoadingCompleteness: false,
   aiStatus: null,
   pageStatus: null,
+  lastStateHash: '',
   error: null,
 
   clearActiveProject: () => set({ activeProject: null, completeness: null, error: null }),
@@ -188,6 +193,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return statusData;
     } catch {
       set({ pageStatus: null });
+      return null;
+    }
+  },
+
+  pollProject: async (projectId: number | string, options?: { timeout?: number }) => {
+    try {
+      const currentHash = get().lastStateHash;
+      const res = await projectsApi.pollProjectStatus(projectId, {
+        since: currentHash,
+        timeout: options?.timeout ?? 15,
+      });
+      if (res && res.state_hash) {
+        set({ lastStateHash: res.state_hash });
+        if (res.has_changes) {
+          await get().fetchActiveProject(projectId).catch(() => {});
+        }
+      }
+      return res;
+    } catch {
       return null;
     }
   },
