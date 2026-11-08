@@ -1310,7 +1310,15 @@ def validate_intake_answer(key, answer, required=False):
 
     # Answer validation: reject keyboard-mash, gibberish, stray leading characters
     ans_str = str(answer).strip()
-    ans_check = validate_answer_text(ans_str, field_label=key.replace('_', ' ').capitalize())
+    is_short_field = key in {"student_unit", "head_title", "supervisor_title", "organisation_units", "industry_supervisor_name"}
+    min_words = 1 if is_short_field else 3
+    min_length = 2 if is_short_field else 10
+    ans_check = validate_answer_text(
+        ans_str,
+        min_words=min_words,
+        min_length=min_length,
+        field_label=key.replace('_', ' ').capitalize()
+    )
     if not ans_check["is_valid"]:
         return ans_check["message"]
 
