@@ -1402,13 +1402,11 @@ export default function DashboardPage() {
       const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
       if (!projId) return;
 
-      const logbookDuties = entries
-        .map((e) => (e.t || e.activity_summary || '').trim())
-        .filter((text): text is string => Boolean(text));
-      const finalDuties = [
-        experienceDuties || (logbookDuties.length > 0 ? logbookDuties.slice(0, 5).join('\n') : ''),
-        experienceAdditional.trim(),
-      ].filter(Boolean).join('\n');
+      const allEntries = entries.length > 0 ? entries : (activeProject?.logbook_entries || []);
+      const logbookDuties = allEntries
+        .map((e: any) => (e.t || e.activity_summary || e.verified_text || e.raw_text || '').trim())
+        .filter((text: string): text is string => Boolean(text));
+      const finalDuties = (experienceDuties.trim() || (logbookDuties.length > 0 ? logbookDuties.slice(0, 5).join('\n') : '') || experienceAdditional.trim() || 'Participated in core technical operations, software workflows, and assigned departmental tasks under engineering supervision.').trim();
 
       let challengePayload: any = { none: true, pairs: [] };
       if (!challengesNone) {
