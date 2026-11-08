@@ -68,7 +68,7 @@ def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasust
         return ""
     alt = logo.get("alt_text", "Institution logo")
     width_cm = float(logo.get("width_cm", 3.2))
-    spacing_pt = float(logo.get("spacing_after_pt", 18))
+    spacing_pt = float(logo.get("spacing_after_pt", 10))
     spacing_str = str(int(spacing_pt)) if spacing_pt.is_integer() else f"{spacing_pt}"
     img = (
         f'<img src="/api/institutions/{institution_code}/logo/" '
@@ -79,77 +79,164 @@ def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasust
     return f'<p style="text-align:center; margin:0 0 {spacing_str}pt 0;">{img}</p>'
 
 
+CONFIRMED_COLLEGES = [
+    "COLLEGE OF INFORMATION AND COMMUNICATION TECHNOLOGY (ICT)",
+    "COLLEGE OF BASIC SCIENCE",
+    "COLLEGE OF APPLIED SCIENCES",
+]
+
+SCHEME_NAME_CANONICAL = "STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)"
+
+
+def clean_address_spacing(addr: str) -> str:
+    """Clean missing spaces in addresses like 12Moshood -> 12 Moshood, Street,Omitoro -> Street, Omitoro."""
+    if not addr:
+        return ""
+    addr = re.sub(r'(\d+)([A-Za-z])', r'\1 \2', addr)
+    addr = re.sub(r',([^\s])', r', \1', addr)
+    addr = re.sub(r'\s+', ' ', addr)
+    return addr.strip()
+
+
+def resolve_degree_and_programme(degree_val: str, dept_val: str, prog_val: str = "") -> tuple[str, str]:
+    """Ensure degree is from confirmed list and programme name is properly spaced."""
+    dept = (dept_val or prog_val or "COMPUTER SCIENCE").strip().upper()
+    if "COMPUTERSCIENCE" in dept:
+        dept = dept.replace("COMPUTERSCIENCE", "COMPUTER SCIENCE")
+    dept = re.sub(r'\s+', ' ', dept)
+
+    clean_deg = (degree_val or "").strip()
+    if not clean_deg or clean_deg.upper() == dept or "COMPUTER SCIENCE" in clean_deg.upper() or "COMPUTERSCIENCE" in clean_deg.upper():
+        deg = "BACHELOR OF SCIENCE (B.Sc.)"
+    else:
+        deg = clean_deg
+        if any(term in deg.upper() for term in ["B.SC", "BSC", "BACHELOR"]):
+            deg = "BACHELOR OF SCIENCE (B.Sc.)"
+        elif "HND" in deg.upper():
+            deg = "HIGHER NATIONAL DIPLOMA (HND)"
+        elif "ND" in deg.upper():
+            deg = "NATIONAL DIPLOMA (ND)"
+    return deg, dept
+
+
+def resolve_college(college_val: str) -> tuple[str, bool]:
+    """Return confirmed college from admin list and whether it needs coordinator confirmation."""
+    clean = (college_val or "").strip().upper()
+    for conf in CONFIRMED_COLLEGES:
+        if conf == clean:
+            return conf, False
+        if any(term in clean for term in ["INFORMATION", "ICT"]) and "INFORMATION" in conf:
+            return conf, False
+        if "BASIC" in clean and "BASIC" in conf:
+            return conf, False
+        if "APPLIED" in clean and "APPLIED" in conf:
+            return conf, False
+    return "COLLEGE OF INFORMATION AND COMMUNICATION TECHNOLOGY (ICT)", True
+
+
+def format_month_range(start: str, end: str) -> str:
+    """Format start and end dates into Month Year range like JULY 2026 – SEPTEMBER 2026."""
+    if not start or not end:
+        return ""
+    import calendar
+    month_names = {m.upper(): m.upper() for m in calendar.month_name if m}
+    # Look for Month and Year in start
+    s_m = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s*(\d{4})?', start, re.I)
+    e_m = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s*(\d{4})?', end, re.I)
+    if s_m and e_m:
+        sm_name = s_m.group(1).upper()
+        em_name = e_m.group(1).upper()
+        # Find 4-digit year
+        sy = re.search(r'\b(20\d\d)\b', start)
+        ey = re.search(r'\b(20\d\d)\b', end)
+        year_str = ey.group(1) if ey else (sy.group(1) if sy else "")
+        if year_str:
+            return f"{sm_name} {year_str} – {em_name} {year_str}"
+        return f"{sm_name} – {em_name}"
+    return f"{start} – {end}".upper()
+
+
+def format_duration_summary(duration: str) -> str:
+    """Format duration into Document B standard (e.g. 12 WEEKS / 3 MONTHS)."""
+    if not duration:
+        return "12 WEEKS / 3 MONTHS"
+    dur_upper = duration.upper()
+    weeks_match = re.search(r'(\d+)\s*WEEKS?', dur_upper)
+    if weeks_match:
+        w = int(weeks_match.group(1))
+        m = round(w / 4) or 1
+        return f"{w} WEEKS / {m} MONTH{'S' if m > 1 else ''}"
+    return dur_upper
+
+
 def render_title_page_html(project: ReportProject, start: str = "", end: str = "", duration: str = "") -> str:
-    """Render a fully labeled, academically compliant title page with logo and metadata."""
+    """Render the exact Document B cover page layout: logo at top, A TECHNICAL REPORT ON, UNDERTAKEN AT, BY, DEGREE, DURATION."""
     logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
-    univ_name = (getattr(project, "university_name", "") or getattr(project, "institution_name", "") or "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY").upper()
-    college = (getattr(project, "college", "") or getattr(project, "faculty_school", "") or getattr(project, "faculty_or_college", "") or "COLLEGE OF BASIC SCIENCE").upper()
-    dept = (getattr(project, "department", "") or "COMPUTER SCIENCE").upper()
-    degree = (getattr(project, "degree", "") or getattr(project, "programme", "") or "BACHELOR OF SCIENCE (B.SC.)").upper()
+    college, needs_confirm = resolve_college(getattr(project, "college", "") or getattr(project, "faculty_school", "") or getattr(project, "faculty_or_college", ""))
+    degree, dept = resolve_degree_and_programme(getattr(project, "degree", ""), getattr(project, "department", ""), getattr(project, "programme", ""))
     student_name = (getattr(project, "full_name", "") or "").upper()
     matric = getattr(project, "matric_number", "") or ""
     org_name = (getattr(project, "organization_name", "") or getattr(project, "company_name", "") or "").upper()
-    org_addr = getattr(project, "organization_address", "") or getattr(project, "company_address", "") or ""
-    dates_str = f"{start} – {end}" if start and end else ""
+    org_addr = clean_address_spacing(getattr(project, "organization_address", "") or getattr(project, "company_address", "") or "")
+    month_duration = format_month_range(start, end) or f"{start} – {end}".upper()
+    dur_summary = format_duration_summary(duration)
+    needs_confirm_badge = " (needs coordinator confirmation)" if needs_confirm else ""
 
-    return f"""<div style="text-align: center; font-family: 'Times New Roman', serif; padding: 20px 0;">
+    return f"""<div style="text-align: center; font-family: 'Times New Roman', serif; padding: 0; line-height: 1.2;">
 {logo_html}
-<h2 style="font-size: 15pt; font-weight: bold; margin-top: 15px; margin-bottom: 5px;">{univ_name}</h2>
-<p style="font-size: 12pt; font-weight: bold; margin-bottom: 20px;">{college}<br/>DEPARTMENT OF {dept}</p>
+<p style="font-size: 13pt; font-weight: bold; margin: 6pt 0 2pt 0; text-transform: uppercase;">A TECHNICAL REPORT ON</p>
+<p style="font-size: 13pt; font-weight: bold; margin: 0 0 2pt 0; text-transform: uppercase;">STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME</p>
+<p style="font-size: 13pt; font-weight: bold; margin: 0 0 8pt 0;">(SIWES)</p>
 
-<div style="margin: 25px 0;">
-    <h3 style="font-size: 13pt; font-weight: bold; line-height: 1.4; margin-bottom: 12px;">A TECHNICAL REPORT ON THE STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</h3>
-    <p style="font-size: 11pt; margin-bottom: 4px;">UNDERTAKEN AT</p>
-    <p style="font-size: 12pt; font-weight: bold; margin-bottom: 4px;">{org_name}</p>
-    <p style="font-size: 11pt;">{org_addr}</p>
-</div>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0; text-transform: uppercase;">UNDERTAKEN AT</p>
+<p style="font-size: 12pt; font-weight: bold; margin: 0 0 2pt 0; text-transform: uppercase;">{org_name}</p>
+<p style="font-size: 11pt; margin: 0 0 8pt 0;">{org_addr}</p>
 
-<div style="margin: 25px 0;">
-    <p style="font-size: 11pt; margin-bottom: 4px;">BY</p>
-    <p style="font-size: 12pt; font-weight: bold; margin-bottom: 4px;">{student_name}</p>
-    <p style="font-size: 11pt;">MATRICULATION NUMBER: <strong>{matric}</strong></p>
-</div>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0; text-transform: uppercase;">BY</p>
+<p style="font-size: 12pt; font-weight: bold; margin: 0 0 2pt 0; text-transform: uppercase;">{student_name}</p>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 8pt 0;">MATRIC NO: {matric}</p>
 
-<div style="margin: 25px 0;">
-    <p style="font-size: 11pt; line-height: 1.4;">SUBMITTED IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF<br/>
-    <strong>{degree} IN {dept}</strong></p>
-</div>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0;">DEPARTMENT: {dept}</p>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0;">COLLEGE: {college}{needs_confirm_badge}</p>
+<p style="font-size: 10pt; font-weight: bold; margin: 4pt 0 2pt 0; text-transform: uppercase;">IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF</p>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 10pt 0; text-transform: uppercase;">{degree} IN {dept}</p>
 
-<div style="margin-top: 25px;">
-    <p style="font-size: 11pt;">TRAINING DURATION: <strong>{duration}</strong></p>
-    <p style="font-size: 11pt;">PERIOD: <strong>{dates_str}</strong></p>
-</div>
+<p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0;">DURATION: {month_duration}</p>
+<p style="font-size: 11pt; font-weight: bold; margin: 0;">({dur_summary})</p>
 </div>"""
 
 
 def render_title_page_text(project: ReportProject, start: str = "", end: str = "", duration: str = "") -> str:
-    """Render plain text title page with proper headings, labels, and metadata."""
-    univ_name = (project.university_name or "Lagos State University of Science and Technology").upper()
-    college = project.college or project.faculty_school or "College of Basic Science"
-    dept = project.department or "Computer Science"
-    degree = project.degree or "Bachelor of Science (B.Sc.)"
+    """Render Document B plain text title page with proper headings, labels, and metadata."""
+    clean_addr = clean_address_spacing(project.organization_address or getattr(project, "company_address", "") or "")
+    degree, dept = resolve_degree_and_programme(getattr(project, "degree", ""), getattr(project, "department", ""), getattr(project, "programme", ""))
+    college, _ = resolve_college(getattr(project, "college", "") or getattr(project, "faculty_school", "") or "")
     student_name = (project.full_name or "").upper()
     matric = project.matric_number or ""
-    org_name = project.organization_name or ""
-    org_addr = project.organization_address or ""
-    dates_str = f"{start} – {end}" if start and end else ""
-    dur_str = f"({duration})" if duration else ""
+    org_name = (project.organization_name or getattr(project, "company_name", "") or "").upper()
+    month_duration = format_month_range(start, end) or f"{start} – {end}".upper()
+    dur_summary = format_duration_summary(duration)
 
     lines = [
-        "A TECHNICAL REPORT ON THE STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)",
+        "A TECHNICAL REPORT ON",
+        "STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME",
+        "(SIWES)",
+        "",
         "UNDERTAKEN AT",
         org_name,
-        org_addr,
+        clean_addr,
         "",
         "BY",
         student_name,
         f"MATRIC NO: {matric}",
+        "",
         f"DEPARTMENT: {dept}",
         f"COLLEGE: {college}",
-        univ_name,
+        "IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF",
+        f"{degree} IN {dept}",
         "",
-        f"IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF {degree.upper()} IN {dept.upper()}",
-        f"DURATION: {dates_str} {dur_str}".strip(),
+        f"DURATION: {month_duration}",
+        f"({dur_summary})",
     ]
     return "\n".join(lines)
 
@@ -1115,27 +1202,26 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "CHAPTER ONE: INTRODUCTION ......................................................... 1",
         "  1.1 Background of SIWES ......................................................... 1",
         "  1.2 Objectives of SIWES ......................................................... 1",
-        "  1.3 Importance of SIWES ......................................................... 2",
+        "  1.3 Importance of SIWES ......................................................... 1",
         "  1.4 Scope of the Training ....................................................... 2",
         "  1.5 Duration of the Training .................................................... 2",
         "CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE ........................... 3",
         "  2.1 Brief History of the Organisation ........................................... 3",
         "  2.2 Objectives of the Organisation .............................................. 3",
-        "  2.3 Organisational Structure .................................................... 4",
-        "  2.4 Organogram of the Organisation .............................................. 4",
+        "  2.3 Organisational Structure .................................................... 3",
+        "  2.4 Organogram of the Organisation .............................................. 3",
         "CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES ............................. 5",
         "  3.1 Duties and Responsibilities ................................................. 5",
         "  3.2 Activities Performed ........................................................ 5",
-        "  3.3 Skills Acquired and Practical Experience .................................... 7",
-        "  3.4 Equipment/Tools Used ........................................................ 8",
+        "  3.3 Skills Acquired and Practical Experience .................................... 8",
+        "  3.4 Equipment/Tools Used ........................................................ 9",
         "  3.5 Challenges Encountered ...................................................... 9",
-        "  3.6 Solutions to Challenges Encountered ......................................... 9",
-        "CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS ............................. 10",
-        "  4.1 Summary ..................................................................... 10",
-        "  4.2 Conclusion .................................................................. 10",
+        "  3.6 Solutions to Challenges Encountered ......................................... 10",
+        "CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS ............................. 11",
+        "  4.1 Summary ..................................................................... 11",
+        "  4.2 Conclusion .................................................................. 11",
         "  4.3 Recommendations ............................................................. 11",
         "REFERENCES ........................................................................ 12",
-        "APPENDICES ........................................................................ 13",
     ]
     toc_text = "\n".join(toc_lines)
 
@@ -1272,9 +1358,11 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         ai_sentences = None
         writer_error = ""
         linked_facts = confirmed_section_facts(key)
-        student_paragraphs = list(report.provenance_paragraphs.filter(
-            section_key=key, origin="STUDENT_EDITED", student_confirmed=True
-        ).prefetch_related("facts").order_by("order"))
+        student_paragraphs = []
+        if not force_all:
+            student_paragraphs = list(report.provenance_paragraphs.filter(
+                section_key=key, origin="STUDENT_EDITED", student_confirmed=True
+            ).prefetch_related("facts").order_by("order"))
         if student_paragraphs:
             content_text = "\n".join(paragraph.text for paragraph in student_paragraphs)
         elif key in ai_results:
@@ -1333,6 +1421,31 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             section.content = "".join(
                 f"<p>{p.strip().replace(chr(10), '<br/>')}</p>"
                 for p in content_text.split("\n\n") if p.strip()
+            )
+        elif key == "ch2_organogram":
+            from .organogram_builder import render_organogram_chart_png
+            head_title = intake.get("head_title") or "Managing Director"
+            units = intake.get("organisation_units") or ["Technical Department", "Operations", "Administration"]
+            placement_unit = intake.get("student_unit") or project.placement_department or "Technical Department"
+            supervisor_title = intake.get("supervisor_title") or "Technical Lead"
+            student_role = "SIWES Intern"
+            img_url = render_organogram_chart_png(project.id, head_title, units, placement_unit, supervisor_title, student_role)
+            caption_text = f"Figure 2.1: Organisational Structure of {clean_org_name}"
+            units_text = ", ".join(units) if isinstance(units, list) else str(units)
+            text_alt = (
+                f"Organisational chart for {clean_org_name}. Executive head: {head_title}. "
+                f"Operating divisions: {units_text}. The student ({student_role}) is positioned under the {placement_unit}, "
+                f"reporting to the {supervisor_title}."
+            )
+            section.content = (
+                f'<figure data-organogram="true" style="text-align: center; margin: 15px 0;">'
+                f'<img data-report-image="true" src="{img_url}" alt="{caption_text}" style="max-width: 100%; height: auto; border: 1px solid #e2e8f0; border-radius: 4px;"/>'
+                f'<figcaption style="font-size: 11pt; font-style: italic; margin-top: 6px; text-align: center;">{caption_text}</figcaption>'
+                f'<details style="margin-top: 10px; font-size: 10pt; color: #475569; text-align: left;">'
+                f'<summary style="cursor: pointer;">Accessible Text Alternative</summary>'
+                f'<p style="margin-top: 4px;">{text_alt}</p>'
+                f'</details>'
+                f'</figure>'
             )
         elif key == "appendices" and report_images:
             section.content = content_text
