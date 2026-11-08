@@ -165,22 +165,22 @@ def persist_fact_candidate(project, candidate: dict[str, Any], transcript: str, 
 
 def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]:
     """Report material sufficiency from confirmed facts, reviewed logbook entries, or day records."""
-    pages = list(LogbookPage.objects.filter(extracted_page__document__project=project).order_by("page_index"))
+    pages = list(LogbookPage.objects.filter(extracted_page__document__project_id=project.id).order_by("page_index"))
     blank_pages = [page.page_index for page in pages if not (page.reviewed_text or "").strip()]
-    confirmed_facts = list(Fact.objects.filter(project=project, status="confirmed").values("kind", "source_field"))
+    confirmed_facts = list(Fact.objects.filter(project_id=project.id, status="confirmed").values("kind", "source_field"))
     confirmed_activities = sum(1 for f in confirmed_facts if f["kind"] == "activity")
     # Prefer confirmed Facts; fall back to logbook entries/day records with substantive text
     # so users who have uploaded/reviewed entries are not blocked by a provenance gap.
     try:
         from .models import LogbookEntry
-        entry_qs = LogbookEntry.objects.filter(project=project)
+        entry_qs = LogbookEntry.objects.filter(project_id=project.id)
         try:
             entry_count = entry_qs.exclude(verified_text='', raw_text='', activity_summary='').count()
         except Exception:
             entry_count = entry_qs.count()
     except Exception:
         entry_count = 0
-    day_count = DayEntry.objects.filter(week_record__project=project).exclude(text='').count()
+    day_count = DayEntry.objects.filter(week_record__project_id=project.id).exclude(text='').count()
     activity_count = max(confirmed_activities, entry_count, day_count)
     from .templates import get_section_requirements
     manifest = get_section_requirements()
@@ -241,7 +241,7 @@ def material_sufficiency(project, minimum_activities: int = 2) -> dict[str, Any]
         if section.get("required") and section.get("confirmed", 0) == 0 and question not in questions:
             questions.append(question)
     transcript_review = {"clarifying_questions": [], "spelling_suggestions": []}
-    for entry in DayEntry.objects.filter(week_record__project=project).order_by("id"):
+    for entry in DayEntry.objects.filter(week_record__project_id=project.id).order_by("id"):
         review = review_ambiguities(entry.text)
         transcript_review["clarifying_questions"].extend(review["clarifying_questions"])
         transcript_review["spelling_suggestions"].extend(review["spelling_suggestions"])

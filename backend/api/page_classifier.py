@@ -187,7 +187,7 @@ def evaluate_project_pages(project) -> dict[str, Any]:
     from .models import ExtractedPage
 
     pages = list(
-        ExtractedPage.objects.filter(document__project=project)
+        ExtractedPage.objects.filter(document__project_id=project.id)
         .order_by("page_index", "page_number")
     )
     if not pages:
