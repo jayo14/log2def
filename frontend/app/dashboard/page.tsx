@@ -5357,18 +5357,43 @@ export default function DashboardPage() {
   const renderStepImages = renderStepExtras;
 
   // ==========================================
-  const renderStep5 = () => {
+  const renderStepReadySummary = () => {
     const n = pages.length;
     const wk = entries.length;
     const layout = computeLayout();
 
+    // Check completeness
+    const missingItems: { label: string; stepTarget: number }[] = [];
+    if (pages.length === 0) {
+      missingItems.push({ label: 'Logbook pages (Upload at least one page)', stepTarget: 1 });
+    }
+    if (!details.name || !details.matric || !details.dept || !details.inst || !details.co || !details.start || !details.end) {
+      missingItems.push({ label: 'Student and institution details', stepTarget: 2 });
+    }
+    if (entries.length === 0) {
+      missingItems.push({ label: 'Logbook weekly activity entries', stepTarget: 3 });
+    }
+    const hasOrgInfo = Boolean(
+      (orgWhat && orgWhat.trim()) ||
+      activeProject?.guided_intake?.organisation_what ||
+      activeProject?.guided_intake?.organisation_objectives
+    );
+    if (!hasOrgInfo) {
+      missingItems.push({ label: 'About your organisation (Chapter 2)', stepTarget: 4 });
+    }
+
+    const itemsToFix = missingItems.slice(0, 3);
+    const isReadyToGenerate = missingItems.length === 0;
+
     if (genState === 1) {
       return (
-        <div className="view" id="step-5">
+        <div className="view" id="step-7-generating">
           <h1 className="wt" id="wh" tabIndex={-1}>
-            Building your report
+            Compiling your institutional report
           </h1>
-          <p className="wd">Almost there</p>
+          <p className="wd" style={{ color: 'var(--mut)', fontSize: '13.5px', marginBottom: '16px' }}>
+            Applying institutional formatting, grounding text to your logbook entries, and compiling preliminary pages…
+          </p>
           <div className="card" style={{ padding: '6px 16px' }} role="status">
             {GS.map((x, i) => {
               const d = i < genProgress;
@@ -5410,11 +5435,11 @@ export default function DashboardPage() {
                 check
               </span>
             </div>
-            <h1 id="wh" tabIndex={-1} style={{ fontSize: '30px' }}>
+            <h1 id="wh" tabIndex={-1} style={{ fontSize: '28px', marginTop: '12px' }}>
               Your report is ready
             </h1>
-            <p style={{ marginTop: '8px' }}>
-              Compiled into a complete ~{layout.total} page SIWES technical report.
+            <p style={{ marginTop: '8px', color: 'var(--mut)', fontSize: '14px' }}>
+              Compiled into a complete ~{layout.total} page SIWES technical report ready for review and download.
             </p>
             <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
@@ -5430,7 +5455,7 @@ export default function DashboardPage() {
                 <span className="ms" aria-hidden="true">
                   menu_book
                 </span>
-                View Report in Logbook
+                Open in Editor &amp; Preview
               </button>
               <button
                 className="btn o w"
@@ -5450,18 +5475,18 @@ export default function DashboardPage() {
     }
 
     return (
-      <div className="view" id="step-5">
+      <div className="view" id="step-7-ready">
         {genError && (
-          <div className="card" style={{ border: '1px solid #ef4444', background: '#fef2f2', marginBottom: '14px' }}>
-            <div className="row" style={{ color: '#b91c1c' }}>
+          <div className="card" style={{ border: '1px solid #ef4444', background: '#fef2f2', marginBottom: '14px', padding: '14px 16px' }}>
+            <div className="row" style={{ color: '#b91c1c', gap: '6px' }}>
               <span className="ms">error</span>
               <b>Generation Note</b>
             </div>
-            <p style={{ margin: '8px 0 14px', fontSize: '13.5px', color: '#7f1d1d' }}>
+            <p style={{ margin: '8px 0 14px', fontSize: '13px', color: '#7f1d1d' }}>
               {genError}
             </p>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button className="btn" type="button" onClick={() => startGenerating()} style={{ flex: 1, minWidth: '180px' }}>
+              <button className="btn" type="button" onClick={() => startGenerating()} style={{ flex: 1, minWidth: '160px' }}>
                 <span className="ms">refresh</span>
                 Retry Generating Report
               </button>
@@ -5475,39 +5500,44 @@ export default function DashboardPage() {
                     setLogbookView('report');
                     if (scrRef.current) scrRef.current.scrollTop = 0;
                   }}
-                  style={{ flex: 1, minWidth: '180px' }}
+                  style={{ flex: 1, minWidth: '160px' }}
                 >
                   <span className="ms">menu_book</span>
-                  View &amp; Edit Draft in Report Viewer
+                  View Draft
                 </button>
               )}
             </div>
           </div>
         )}
-        {!genError && (dbReport?.sections?.length || Object.keys(chapterEdits).length > 0) && (
-          <div className="card" style={{ border: '1px solid #10b981', background: '#ecfdf5', marginBottom: '14px', padding: '14px 16px' }}>
-            <div className="row" style={{ color: '#047857', marginBottom: '6px' }}>
-              <span className="ms">check_circle</span>
-              <b>Report Draft Ready</b>
+
+        {/* Actionable Missing Items Card (Max 3 items) */}
+        {!isReadyToGenerate && (
+          <div className="card" style={{ border: '1px solid #f59e0b', background: '#fffbeb', marginBottom: '16px', padding: '14px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#b45309', fontWeight: 700, fontSize: '13.5px' }}>
+              <span className="ms">info</span>
+              <span>A few items needed before generation:</span>
             </div>
-            <p style={{ margin: '0 0 12px', fontSize: '13.5px', color: '#065f46' }}>
-              Your report has {dbReport?.sections?.length || Object.keys(chapterEdits).length} sections generated in the database. You can view, edit, or preview it right now, or generate fresh sections below.
-            </p>
-            <button
-              className="btn w"
-              type="button"
-              onClick={() => {
-                setInFlow(false);
-                setCurrentTab('logbooks');
-                setLogbookView('report');
-                if (scrRef.current) scrRef.current.scrollTop = 0;
-              }}
-            >
-              <span className="ms">menu_book</span>
-              Open Report in Editor &amp; Preview
-            </button>
+            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {itemsToFix.map((item, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#fff', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                  <span style={{ fontSize: '13px', color: '#92400e', fontWeight: 600 }}>{item.label}</span>
+                  <button
+                    type="button"
+                    className="tx"
+                    onClick={() => {
+                      setStep(item.stepTarget);
+                      if (scrRef.current) scrRef.current.scrollTop = 0;
+                    }}
+                    style={{ fontSize: '12px', fontWeight: 700, color: 'var(--g)', padding: '4px 8px' }}
+                  >
+                    Complete →
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
           <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)', fontWeight: 800 }}>
             <span className="ms" style={{ fontSize: '16px' }} aria-hidden="true">
@@ -5517,107 +5547,114 @@ export default function DashboardPage() {
           </span>
         </div>
         <h1 className="wt" id="wh" tabIndex={-1}>
-          Ready to generate
+          {isReadyToGenerate ? 'Ready to generate' : 'Step 7 of 7 · Report Summary'}
         </h1>
-        <p className="wd" style={{ marginBottom: '16px', fontWeight: 600 }}>
-          We’ll use:
+        <p className="wd" style={{ marginBottom: '16px', color: 'var(--mut)', fontSize: '13px' }}>
+          {isReadyToGenerate ? 'All steps verified. Review details and generate your report.' : 'Please complete the remaining items above to enable generation.'}
         </p>
 
+        {/* Summary Checklist */}
         <div className="gen-checklist">
-          {/* 1. Pages read */}
+          {/* 1. Logbook Pages */}
           <div className="gen-item">
             <div className="gi-icon">
-              <span className="ms" aria-hidden="true">
-                menu_book
-              </span>
+              <span className="ms" aria-hidden="true">menu_book</span>
             </div>
             <div className="gi-content">
-              <div className="gi-title">{n || 9} logbook pages read</div>
-              <div className="gi-desc">Cover to final page extracted &amp; sequenced</div>
+              <div className="gi-title">{n || 0} logbook pages uploaded</div>
+              <div className="gi-desc">Page classification and sequence checked</div>
             </div>
-            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
-              check_circle
+            <span className="ms" style={{ color: n > 0 ? 'var(--g)' : 'var(--mut)', fontSize: '20px' }}>
+              {n > 0 ? 'check_circle' : 'radio_button_unchecked'}
             </span>
           </div>
 
-          {/* 2. Entries confirmed */}
+          {/* 2. Details Confirmed */}
           <div className="gen-item">
             <div className="gi-icon">
-              <span className="ms" aria-hidden="true">
-                event_note
-              </span>
+              <span className="ms" aria-hidden="true">badge</span>
             </div>
             <div className="gi-content">
-              <div className="gi-title">{wk || 6} entries confirmed</div>
-              <div className="gi-desc">Weekly technical activities and competencies mapped</div>
-            </div>
-            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
-              check_circle
-            </span>
-          </div>
-
-          {/* 3. Details complete */}
-          <div className="gen-item">
-            <div className="gi-icon">
-              <span className="ms" aria-hidden="true">
-                badge
-              </span>
-            </div>
-            <div className="gi-content">
-              <div className="gi-title">Your details complete</div>
+              <div className="gi-title">Student &amp; Institution Details</div>
               <div className="gi-desc">
-                {details.name || userFullName || 'Student'} · {details.matric || 'Matric not set'}{details.dept ? `, ${details.dept}` : ''}
+                {details.name || 'Student'} · {details.dept || 'Department'}{details.inst ? ` (${details.inst})` : ''}
               </div>
             </div>
-            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+            <span className="ms" style={{ color: details.name && details.matric ? 'var(--g)' : 'var(--mut)', fontSize: '20px' }}>
+              {details.name && details.matric ? 'check_circle' : 'radio_button_unchecked'}
+            </span>
+          </div>
+
+          {/* 3. Logbook Entries */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">event_note</span>
+            </div>
+            <div className="gi-content">
+              <div className="gi-title">{wk} verified logbook entries</div>
+              <div className="gi-desc">Technical activities and competencies extracted</div>
+            </div>
+            <span className="ms" style={{ color: wk > 0 ? 'var(--g)' : 'var(--mut)', fontSize: '20px' }}>
+              {wk > 0 ? 'check_circle' : 'radio_button_unchecked'}
+            </span>
+          </div>
+
+          {/* 4. Organisation Profile */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">apartment</span>
+            </div>
+            <div className="gi-content">
+              <div className="gi-title">Organisation Profile &amp; Structure</div>
+              <div className="gi-desc">{details.co || 'Organisation'} · Organogram ready</div>
+            </div>
+            <span className="ms" style={{ color: hasOrgInfo ? 'var(--g)' : 'var(--mut)', fontSize: '20px' }}>
+              {hasOrgInfo ? 'check_circle' : 'radio_button_unchecked'}
+            </span>
+          </div>
+
+          {/* 5. Experience & Tools */}
+          <div className="gen-item">
+            <div className="gi-icon">
+              <span className="ms" aria-hidden="true">handyman</span>
+            </div>
+            <div className="gi-content">
+              <div className="gi-title">Experience &amp; Tools Grounding</div>
+              <div className="gi-desc">{experienceTools.length} tools and duties verified</div>
+            </div>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }}>
               check_circle
             </span>
           </div>
 
-          {/* 4. Institutional template */}
+          {/* 6. Optional Extras */}
           <div className="gen-item">
             <div className="gi-icon">
-              <span className="ms" aria-hidden="true">
-                article
-              </span>
+              <span className="ms" aria-hidden="true">add_circle</span>
             </div>
             <div className="gi-content">
-              <div className="gi-title">LASUSTECH technical report</div>
-              <div className="gi-desc">Template version 1</div>
+              <div className="gi-title">Optional Extras</div>
+              <div className="gi-desc">
+                {reportImages.length > 0 ? `${reportImages.length} workplace photos` : 'Optional sections reviewed'}
+              </div>
             </div>
-            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
-              check_circle
-            </span>
-          </div>
-
-          {/* 5. Typography */}
-          <div className="gen-item">
-            <div className="gi-icon">
-              <span className="ms" aria-hidden="true">
-                text_fields
-              </span>
-            </div>
-            <div className="gi-content">
-              <div className="gi-title">Times New Roman 12pt</div>
-              <div className="gi-desc">1.5 spacing, 12–15 pages</div>
-            </div>
-            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }} aria-hidden="true">
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '20px' }}>
               check_circle
             </span>
           </div>
         </div>
 
-        <div className="trust-banner">
+        <div className="trust-banner" style={{ marginTop: '16px' }}>
           <span className="ms" aria-hidden="true">
             verified_user
           </span>
-          <span>Guaranteed academic integrity — No fabricated projects or unverified activities.</span>
+          <span>Guaranteed academic integrity — Grounded strictly in your confirmed logbook activities.</span>
         </div>
       </div>
     );
   };
-
-  const renderStep7 = renderStep5;
+  const renderStep5 = renderStepReadySummary;
+  const renderStep7 = renderStepReadySummary;
 
   // Primary CTA Button for wizard bottom navigation
   const renderPrimaryCta = () => {
@@ -5889,17 +5926,19 @@ export default function DashboardPage() {
     }
     // step === 7
     if (genState === 0) {
+      const hasMissing = pages.length === 0 || !details.name || !details.matric || !details.dept || !details.inst || !details.co || !details.start || !details.end || entries.length === 0;
       return (
         <button
           className="btn"
           type="button"
           onClick={startGenerating}
-          style={{ flex: 1 }}
+          disabled={hasMissing}
+          style={{ flex: 1, opacity: hasMissing ? 0.6 : 1, cursor: hasMissing ? 'not-allowed' : 'pointer' }}
         >
           <span className="ms" aria-hidden="true">
             auto_awesome
           </span>
-          Generate report
+          {hasMissing ? 'Complete missing steps to generate' : 'Generate report'}
         </button>
       );
     }
