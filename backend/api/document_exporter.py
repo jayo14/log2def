@@ -769,6 +769,7 @@ def export_report_documents(report: Report) -> dict:
     from .page_controller import (
         validate_page_range,
         count_docx_pages,
+        count_pdf_pages,
         get_page_settings,
         compute_section_budgets,
         condense_section_content,
