@@ -212,6 +212,7 @@ export default function DashboardPage() {
   const [isSavingStep4, setIsSavingStep4] = useState(false);
   const [step4SaveError, setStep4SaveError] = useState<string | null>(null);
   const [shortDurationConfirmed, setShortDurationConfirmed] = useState<boolean>(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // Step 4: Organisation 4-screen flow state
   const [orgScreen, setOrgScreen] = useState<1 | 2 | 3 | 4>(1);
@@ -238,6 +239,9 @@ export default function DashboardPage() {
   const [challengesNone, setChallengesNone] = useState<boolean>(true);
   const [challengeText, setChallengeText] = useState<string>('');
   const [solutionText, setSolutionText] = useState<string>('');
+  const [challenge2Text, setChallenge2Text] = useState<string>('');
+  const [solution2Text, setSolution2Text] = useState<string>('');
+  const [showSecondPair, setShowSecondPair] = useState<boolean>(false);
   const [selectedRecommendations, setSelectedRecommendations] = useState<string[]>([]);
   const [customRecommendation, setCustomRecommendation] = useState<string>('');
 
@@ -357,7 +361,56 @@ export default function DashboardPage() {
       projectsApi.getGuidedIntake(pid)
         .then((data: any) => {
           if (!cancelled) {
-            setIntake((prev) => (Object.keys(data || {}).length ? data : prev));
+            const ans = (data?.answers || data || {}) as Record<string, any>;
+            setIntake((prev) => (Object.keys(ans || {}).length ? ans : prev));
+
+            if (ans.organisation_what) setOrgWhat(ans.organisation_what);
+            if (ans.organisation_not_sure !== undefined) setOrgNotSure(Boolean(ans.organisation_not_sure));
+            if (ans.organisation_when_where) {
+              const match = ans.organisation_when_where.match(/^(\d{4})\s*(.*)$/);
+              if (match) {
+                setOrgWhen(match[1]);
+                if (match[2]) setOrgWhere(match[2]);
+              } else {
+                setOrgWhere(ans.organisation_when_where);
+              }
+            }
+            if (ans.organisation_objectives) setOrgObjectives(ans.organisation_objectives);
+            if (ans.organisation_paste_text) {
+              setOrgPasteText(ans.organisation_paste_text);
+              if (!ans.organisation_objectives || ans.organisation_objectives === ans.organisation_paste_text) {
+                setOrgPasteMode(true);
+              }
+            }
+            if (ans.head_title) setHeadTitle(ans.head_title);
+            if (Array.isArray(ans.organisation_units) && ans.organisation_units.length > 0) {
+              setOrgUnits(ans.organisation_units);
+            }
+            if (ans.student_unit) setStudentUnit(ans.student_unit);
+            if (ans.supervisor_title) setSupervisorTitle(ans.supervisor_title);
+            if (ans.organogram_tree) setCustomTreeText(ans.organogram_tree);
+
+            if (ans.duties) setExperienceDuties(ans.duties);
+            if (ans.challenge_pairs) {
+              setChallengesNone(Boolean(ans.challenge_pairs.none));
+              if (Array.isArray(ans.challenge_pairs.pairs) && ans.challenge_pairs.pairs.length > 0) {
+                setChallengeText(ans.challenge_pairs.pairs[0].challenge || '');
+                setSolutionText(ans.challenge_pairs.pairs[0].solution || '');
+                if (ans.challenge_pairs.pairs.length > 1) {
+                  setShowSecondPair(true);
+                  setChallenge2Text(ans.challenge_pairs.pairs[1].challenge || '');
+                  setSolution2Text(ans.challenge_pairs.pairs[1].solution || '');
+                }
+              }
+            }
+            if (ans.recommendations) {
+              const recLines = ans.recommendations.split('\n').map((s: string) => s.trim()).filter(Boolean);
+              setSelectedRecommendations(recLines.filter((l: string) => RECOMMENDATION_SUGGESTIONS.includes(l)));
+              const custom = recLines.filter((l: string) => !RECOMMENDATION_SUGGESTIONS.includes(l)).join('\n');
+              if (custom) setCustomRecommendation(custom);
+            }
+            if (ans.dedication) setDedicationText(ans.dedication);
+            if (ans.acknowledgement) setAcknowledgementText(ans.acknowledgement);
           }
         })
         .catch(() => {
@@ -731,6 +784,17 @@ export default function DashboardPage() {
         }))
       );
       setReadDone(true);
+    }
+
+    if (activeProject.placement_department) {
+      setStudentUnit((prev) => prev || activeProject.placement_department || '');
+    }
+    if (activeProject.industry_supervisor_title) {
+      setSupervisorTitle((prev) => prev || activeProject.industry_supervisor_title || '');
+    }
+    if (activeProject.tools_used) {
+      const tools = activeProject.tools_used.split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (tools.length > 0) setExperienceTools((prev) => (prev.length === 0 || prev.join(',') === 'VS Code,Git,Linux,Python' ? tools : prev));
     }
   }, [activeProject, userFullName]);
 
@@ -1198,10 +1262,273 @@ export default function DashboardPage() {
     return lines.join('\n');
   };
 
+  const buildStructureNarrative = (
+    head: string,
+    units: string[],
+    selectedUnit: string,
+    supervisor: string
+  ): string => {
+    if (!head.trim()) return '';
+    const narrative: string[] = [`The organisation is headed by the ${head.trim()}.`];
+    const cleanUnits = units.map((u) => u.trim()).filter(Boolean);
+    if (cleanUnits.length === 1) {
+      narrative.push(`The primary operating unit is the ${cleanUnits[0]}.`);
+    } else if (cleanUnits.length > 1) {
+      const unitsStr = cleanUnits.slice(0, -1).join(', ') + ' and ' + cleanUnits[cleanUnits.length - 1];
+      narrative.push(`The operational divisions comprise the ${unitsStr}.`);
+    }
+    if (selectedUnit.trim()) {
+      const superStr = supervisor.trim() ? ` under the supervision of the ${supervisor.trim()}` : '';
+      narrative.push(`During the training period, the student was assigned to the ${selectedUnit.trim()}${superStr}.`);
+    }
+    return narrative.join(' ');
+  };
+
+  const saveStep2Data = useCallback(async () => {
+    const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (!projId) return;
+    setAutoSaveStatus('saving');
+    try {
+      await updateActiveProject(projId, {
+        full_name: details.name || undefined,
+        matric_number: details.matric,
+        department: details.dept,
+        college: details.fac,
+        faculty_school: details.fac,
+        degree: details.degree,
+        university_name: details.inst,
+        organization_name: details.co,
+        organization_address: details.addr,
+        training_start_date: details.start || undefined,
+        training_end_date: details.end || undefined,
+        industry_supervisor_name: details.sup || undefined,
+        institution_supervisor_name: details.isup || undefined,
+      });
+      setAutoSaveStatus('saved');
+    } catch (err) {
+      console.warn('Step 2 autosave failed:', err);
+      setAutoSaveStatus('error');
+    }
+  }, [activeProject?.id, details, updateActiveProject]);
+
+  const saveStep4Data = useCallback(
+    async (overrides?: Record<string, any>) => {
+      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+      if (!projId) return;
+
+      const treeToSave = isEditingTree && customTreeText.trim()
+        ? customTreeText.trim()
+        : computeOrganogramTree(headTitle, orgUnits, studentUnit, supervisorTitle);
+      const structureNarrative = buildStructureNarrative(headTitle, orgUnits, studentUnit, supervisorTitle);
+      const objText = (orgPasteMode && orgPasteText.trim()) ? orgPasteText.trim() : orgObjectives.trim();
+      const whatText = orgWhat.trim() || (orgNotSure ? `${details.co || 'The organisation'} is an established technical organisation located in ${details.addr || 'Nigeria'}.` : '');
+      const whenWhereText = `${orgWhen.trim()} ${orgWhere.trim()}`.trim();
+
+      const payload: Record<string, any> = {
+        organisation_not_sure: orgNotSure,
+        ...(whatText ? { organisation_what: whatText } : {}),
+        ...(whenWhereText ? { organisation_when_where: whenWhereText } : {}),
+        ...(objText ? { organisation_objectives: objText } : {}),
+        ...(orgPasteMode && orgPasteText.trim() ? { organisation_paste_text: orgPasteText.trim() } : {}),
+        ...(headTitle.trim() ? { head_title: headTitle.trim() } : {}),
+        organisation_units: orgUnits,
+        ...(studentUnit.trim() ? { student_unit: studentUnit.trim() } : {}),
+        ...(supervisorTitle.trim() ? { supervisor_title: supervisorTitle.trim() } : {}),
+        ...(treeToSave ? { organogram_tree: treeToSave } : {}),
+        ...(structureNarrative ? { organisation_structure: structureNarrative } : {}),
+        ...(overrides || {}),
+      };
+
+      setAutoSaveStatus('saving');
+      try {
+        await projectsApi.saveGuidedIntakeAnswers(projId, payload);
+        setAutoSaveStatus('saved');
+      } catch (err) {
+        console.warn('Step 4 autosave failed:', err);
+        setAutoSaveStatus('error');
+      }
+    },
+    [
+      activeProject?.id,
+      orgWhat,
+      orgNotSure,
+      orgWhen,
+      orgWhere,
+      orgObjectives,
+      orgPasteMode,
+      orgPasteText,
+      headTitle,
+      orgUnits,
+      studentUnit,
+      supervisorTitle,
+      customTreeText,
+      isEditingTree,
+      details.co,
+      details.addr,
+    ]
+  );
+
+  const saveStep5Data = useCallback(
+    async (overrides?: Record<string, any>) => {
+      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+      if (!projId) return;
+
+      const logbookDuties = entries
+        .map((e) => (e.t || e.activity_summary || '').trim())
+        .filter((text): text is string => Boolean(text));
+      const finalDuties = [
+        experienceDuties || (logbookDuties.length > 0 ? logbookDuties.slice(0, 5).join('\n') : ''),
+        experienceAdditional.trim(),
+      ].filter(Boolean).join('\n');
+
+      let challengePayload: any = { none: true, pairs: [] };
+      if (!challengesNone) {
+        const pairs: { challenge: string; solution: string }[] = [];
+        if (challengeText.trim()) {
+          pairs.push({
+            challenge: challengeText.trim(),
+            solution: solutionText.trim() || 'Addressed through consultation with industrial supervisor.',
+          });
+        }
+        if (showSecondPair && challenge2Text.trim()) {
+          pairs.push({
+            challenge: challenge2Text.trim(),
+            solution: solution2Text.trim() || 'Resolved under the guidance of technical team leads.',
+          });
+        }
+        if (pairs.length > 0) {
+          challengePayload = { none: false, pairs };
+        }
+      }
+
+      const allRecs = [...selectedRecommendations, customRecommendation.trim()].filter(Boolean);
+
+      const payload: Record<string, any> = {
+        ...(finalDuties ? { duties: finalDuties } : {}),
+        challenge_pairs: challengePayload,
+        ...(allRecs.length > 0 ? { recommendations: allRecs.join('\n') } : {}),
+        ...(overrides || {}),
+      };
+
+      setAutoSaveStatus('saving');
+      try {
+        await projectsApi.saveGuidedIntakeAnswers(projId, payload);
+        if (experienceTools.length > 0) {
+          await updateActiveProject(projId, { tools_used: experienceTools.join(', ') }).catch(() => {});
+        }
+        setAutoSaveStatus('saved');
+      } catch (err) {
+        console.warn('Step 5 autosave failed:', err);
+        setAutoSaveStatus('error');
+      }
+    },
+    [
+      activeProject?.id,
+      entries,
+      experienceDuties,
+      experienceAdditional,
+      experienceTools,
+      challengesNone,
+      challengeText,
+      solutionText,
+      showSecondPair,
+      challenge2Text,
+      solution2Text,
+      selectedRecommendations,
+      customRecommendation,
+      updateActiveProject,
+    ]
+  );
+
+  const saveStep6Data = useCallback(async () => {
+    const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+    if (!projId) return;
+
+    const payload: Record<string, any> = {
+      ...(dedicationText.trim() ? { dedication: dedicationText.trim() } : {}),
+      ...(acknowledgementText.trim() ? { acknowledgement: acknowledgementText.trim() } : {}),
+    };
+    if (Object.keys(payload).length === 0) return;
+
+    setAutoSaveStatus('saving');
+    try {
+      await projectsApi.saveGuidedIntakeAnswers(projId, payload);
+      setAutoSaveStatus('saved');
+    } catch (err) {
+      console.warn('Step 6 autosave failed:', err);
+      setAutoSaveStatus('error');
+    }
+  }, [activeProject?.id, dedicationText, acknowledgementText]);
+
+  // Debounced autosave effects per step
+  useEffect(() => {
+    if (step !== 2 || !activeProject?.id) return;
+    const timer = setTimeout(() => {
+      saveStep2Data();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [step, activeProject?.id, details, saveStep2Data]);
+
+  useEffect(() => {
+    if (step !== 4 || !activeProject?.id) return;
+    const timer = setTimeout(() => {
+      saveStep4Data();
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [
+    step,
+    activeProject?.id,
+    orgWhat,
+    orgNotSure,
+    orgWhen,
+    orgWhere,
+    orgObjectives,
+    orgPasteMode,
+    orgPasteText,
+    headTitle,
+    orgUnits,
+    studentUnit,
+    supervisorTitle,
+    customTreeText,
+    isEditingTree,
+    saveStep4Data,
+  ]);
+
+  useEffect(() => {
+    if (step !== 5 || !activeProject?.id) return;
+    const timer = setTimeout(() => {
+      saveStep5Data();
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [
+    step,
+    activeProject?.id,
+    experienceDuties,
+    experienceAdditional,
+    experienceTools,
+    challengesNone,
+    challengeText,
+    solutionText,
+    showSecondPair,
+    challenge2Text,
+    solution2Text,
+    selectedRecommendations,
+    customRecommendation,
+    saveStep5Data,
+  ]);
+
+  useEffect(() => {
+    if (step !== 6 || !activeProject?.id) return;
+    const timer = setTimeout(() => {
+      saveStep6Data();
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [step, activeProject?.id, dedicationText, acknowledgementText, saveStep6Data]);
+
   const trackWizardEvent = useCallback((stepName: string, screenId: string, eventType: string, meta: Record<string, any> = {}) => {
     const projId = activeProject?.id;
     if (!projId) return;
-    fetch(`${getApiBaseUrl()}/api/projects/${projId}/events/`, {
+    fetch(`${getApiBaseUrl()}/projects/${projId}/events/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1438,6 +1765,12 @@ export default function DashboardPage() {
     setGenProgress(0);
     if (scrRef.current) scrRef.current.scrollTop = 0;
 
+    // Flush any pending intake and details data before generation
+    await saveStep2Data().catch(() => {});
+    await saveStep4Data().catch(() => {});
+    await saveStep5Data().catch(() => {});
+    await saveStep6Data().catch(() => {});
+
     // Progress smoothly through the 8 stages (up to 7 while waiting for backend)
     const iv = setInterval(() => {
       setGenProgress((prev) => (prev < GS.length - 1 ? prev + 1 : prev));
@@ -1514,20 +1847,21 @@ export default function DashboardPage() {
         } else {
           msg = 'We couldn’t generate the report yet — some required information is still missing.';
         }
-        // Guided-intake fields are filled on the separate report-interview route,
-        // so point the user there explicitly when they are part of the block.
         if (hasGuidedIntake) {
-          msg +=
-            ' Some of these are answered in the report interview — open it from the Missing info step.';
+          msg += ' Review and confirm details in Step 4 (Organisation) or Step 5 (Experience).';
         }
         setGenError(msg);
 
-        // Route to the missing-info step ONLY if an inline FLD detail field is missing.
+        // Route to the appropriate step if fields are missing
         const firstDetailMissing = missingFields.find(
           (k) => typeof k === 'string' && !k.startsWith('guided_intake:') && !k.startsWith('section:') && FLD.some(([key]) => key === k)
         ) || null;
+        const firstGuidedMissing = missingFields.find(
+          (k) => typeof k === 'string' && k.startsWith('guided_intake:')
+        ) || null;
+
         if (firstDetailMissing) {
-          setStep(4);
+          setStep(2);
           setIntakeFocusKey(firstDetailMissing as string);
           setTimeout(() => {
             const el = intakeRefs.current[firstDetailMissing as string];
@@ -1536,6 +1870,22 @@ export default function DashboardPage() {
               el.scrollIntoView({ block: 'center', behavior: 'smooth' });
             }
           }, 0);
+        } else if (firstGuidedMissing) {
+          const rawKey = firstGuidedMissing.replace(/^guided_intake:/, '');
+          if (['organisation_what', 'organisation_when_where', 'organisation_objectives', 'organisation_structure', 'organogram_tree', 'student_unit', 'head_title'].includes(rawKey)) {
+            setStep(4);
+            if (['organisation_structure', 'organogram_tree', 'head_title', 'student_unit'].includes(rawKey)) {
+              setOrgScreen(4);
+            } else if (rawKey === 'organisation_objectives') {
+              setOrgScreen(3);
+            } else if (rawKey === 'organisation_when_where') {
+              setOrgScreen(2);
+            } else {
+              setOrgScreen(1);
+            }
+          } else if (['duties', 'challenge_pairs', 'recommendations'].includes(rawKey)) {
+            setStep(5);
+          }
         }
         showToast('Report generation note — check required details.');
       } else {
@@ -4450,7 +4800,19 @@ export default function DashboardPage() {
 
     return (
       <div className="view" id="step-5-experience">
-        <h1 className="wt" id="wh" tabIndex={-1}>Your experience</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <h1 className="wt" id="wh" tabIndex={-1} style={{ margin: 0 }}>Your experience</h1>
+          {autoSaveStatus === 'saving' && (
+            <span style={{ fontSize: '11px', color: 'var(--mut)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+              <span className="ms" style={{ fontSize: '13px', animation: 'spin 1s linear infinite' }}>sync</span> Saving...
+            </span>
+          )}
+          {autoSaveStatus === 'saved' && (
+            <span style={{ fontSize: '11px', color: 'var(--g)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+              <span className="ms" style={{ fontSize: '13px' }}>check_circle</span> Auto-saved
+            </span>
+          )}
+        </div>
         <p className="wd" style={{ margin: '4px 0 16px', color: 'var(--mut)', fontSize: '13px' }}>
           Confirms your technical duties, tools, and reflections for Chapters 3 and 4.
         </p>
@@ -4576,36 +4938,115 @@ export default function DashboardPage() {
             </label>
             <button
               type="button"
-              className={`btn ${challengesNone ? '' : 'o'}`}
-              style={{ padding: '4px 10px', fontSize: '12px' }}
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: challengesNone ? '1.5px solid #059669' : '1.5px solid #64748b',
+                background: challengesNone ? '#059669' : '#ffffff',
+                color: challengesNone ? '#ffffff' : '#0f172a',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                transition: 'all 0.15s ease',
+              }}
               onClick={() => {
-                setChallengesNone(!challengesNone);
-                if (!challengesNone) {
+                const nextNone = !challengesNone;
+                setChallengesNone(nextNone);
+                if (nextNone) {
                   setChallengeText('');
                   setSolutionText('');
+                  setChallenge2Text('');
+                  setSolution2Text('');
+                  setShowSecondPair(false);
                 }
               }}
             >
+              <span className="ms" style={{ fontSize: '14px' }}>
+                {challengesNone ? 'check' : 'add'}
+              </span>
               {challengesNone ? '✓ Nothing major' : 'Nothing major'}
             </button>
           </div>
 
           {!challengesNone ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-              <input
-                type="text"
-                value={challengeText}
-                onChange={(e) => setChallengeText(e.target.value)}
-                placeholder="What real challenge did you encounter? (e.g. Intermittent network connectivity during deployment)"
-                style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
-              />
-              <input
-                type="text"
-                value={solutionText}
-                onChange={(e) => setSolutionText(e.target.value)}
-                placeholder="How did you resolve it? (e.g. Re-terminated Ethernet RJ-45 connectors and rerouted trunk lines)"
-                style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
-              />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--mut)' }}>Challenge 1</span>
+                <input
+                  type="text"
+                  value={challengeText}
+                  onChange={(e) => setChallengeText(e.target.value)}
+                  placeholder="What real challenge did you encounter? (e.g. Intermittent network connectivity during deployment)"
+                  style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+                />
+                <input
+                  type="text"
+                  value={solutionText}
+                  onChange={(e) => setSolutionText(e.target.value)}
+                  placeholder="How did you resolve it? (e.g. Re-terminated Ethernet RJ-45 connectors and rerouted trunk lines)"
+                  style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+                />
+              </div>
+
+              {!showSecondPair ? (
+                <button
+                  type="button"
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    border: '1.5px solid var(--bdr, #cbd5e1)',
+                    background: 'var(--card-bg, #ffffff)',
+                    color: 'var(--ink, #0f172a)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    alignSelf: 'flex-start',
+                    marginTop: '4px',
+                  }}
+                  onClick={() => setShowSecondPair(true)}
+                >
+                  <span className="ms" style={{ fontSize: '15px', color: 'var(--g)' }}>add</span>
+                  Add another challenge & solution (optional)
+                </button>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', background: 'var(--bg, #f8fafc)', borderRadius: '8px', border: '1px solid var(--bdr, #cbd5e1)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--mut)' }}>Challenge 2 (optional)</span>
+                    <button
+                      type="button"
+                      style={{ fontSize: '11px', color: 'var(--mut)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                      onClick={() => {
+                        setShowSecondPair(false);
+                        setChallenge2Text('');
+                        setSolution2Text('');
+                      }}
+                    >
+                      Remove ×
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={challenge2Text}
+                    onChange={(e) => setChallenge2Text(e.target.value)}
+                    placeholder="Second challenge encountered..."
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+                  />
+                  <input
+                    type="text"
+                    value={solution2Text}
+                    onChange={(e) => setSolution2Text(e.target.value)}
+                    placeholder="How was this second challenge resolved?..."
+                    style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <p style={{ margin: 0, fontSize: '12px', color: 'var(--mut)' }}>
@@ -4680,21 +5121,7 @@ export default function DashboardPage() {
     const orgName = details.co?.trim() || 'your organisation';
 
     const saveOrgScreen = async (nextScreen: 1 | 2 | 3 | 4) => {
-      const projId = activeProject?.id;
-      if (projId) {
-        if (orgScreen === 1) {
-          if (orgWhat.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_what', orgWhat.trim()).catch(() => {});
-          if (orgNotSure) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_not_sure', true).catch(() => {});
-        } else if (orgScreen === 2) {
-          if (orgWhen.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_when_where', `${orgWhen.trim()} ${orgWhere.trim()}`.trim()).catch(() => {});
-        } else if (orgScreen === 3) {
-          if (orgPasteMode && orgPasteText.trim()) {
-            await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_paste_text', orgPasteText.trim()).catch(() => {});
-          } else if (orgObjectives.trim()) {
-            await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_objectives', orgObjectives.trim()).catch(() => {});
-          }
-        }
-      }
+      await saveStep4Data();
       trackWizardEvent('step4_organisation', `screen_${orgScreen}`, 'screen_completed');
       setOrgScreen(nextScreen);
       if (scrRef.current) scrRef.current.scrollTop = 0;
@@ -4706,17 +5133,41 @@ export default function DashboardPage() {
       <div className="view" id="step-4-org">
         {/* Step indicator header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--g)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-            About {orgName} · Screen {orgScreen} of 4
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--g)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+              About {orgName} · Screen {orgScreen} of 4
+            </span>
+            {autoSaveStatus === 'saving' && (
+              <span style={{ fontSize: '11px', color: 'var(--mut)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <span className="ms" style={{ fontSize: '13px', animation: 'spin 1s linear infinite' }}>sync</span> Saving...
+              </span>
+            )}
+            {autoSaveStatus === 'saved' && (
+              <span style={{ fontSize: '11px', color: 'var(--g)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <span className="ms" style={{ fontSize: '13px' }}>check_circle</span> Auto-saved
+              </span>
+            )}
+          </div>
           {orgScreen > 1 && (
             <button
               type="button"
-              className="tx"
-              style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}
-              onClick={() => setOrgScreen((prev) => (Math.max(1, prev - 1) as 1 | 2 | 3 | 4))}
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                padding: '5px 12px',
+                borderRadius: '8px',
+                border: '1.5px solid var(--bdr, #cbd5e1)',
+                background: 'var(--card-bg, #ffffff)',
+                color: 'var(--ink, #0f172a)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+              }}
+              onClick={() => saveOrgScreen(Math.max(1, orgScreen - 1) as 1 | 2 | 3 | 4)}
             >
-              <span className="ms" style={{ fontSize: '16px' }}>arrow_back</span> Back
+              <span className="ms" style={{ fontSize: '15px' }}>arrow_back</span> Back
             </button>
           )}
         </div>
@@ -4747,24 +5198,41 @@ export default function DashboardPage() {
             </div>
 
             {/* I'm not sure path */}
-            <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg)', border: '1px solid var(--bdr)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600 }}>Not sure about their background?</span>
+            <div style={{ marginTop: '16px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg, #f8fafc)', border: '1.5px solid var(--bdr, #cbd5e1)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #0f172a)' }}>Not sure about their background?</span>
                 <button
                   type="button"
-                  className="tx"
-                  style={{ fontSize: '13px', color: orgNotSure ? 'var(--g)' : 'var(--tx)' }}
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    border: orgNotSure ? '1.5px solid #059669' : '1.5px solid #64748b',
+                    background: orgNotSure ? '#059669' : '#ffffff',
+                    color: orgNotSure ? '#ffffff' : '#0f172a',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
                   onClick={() => {
-                    setOrgNotSure(!orgNotSure);
-                    if (!orgWhat.trim()) {
+                    const nextVal = !orgNotSure;
+                    setOrgNotSure(nextVal);
+                    if (nextVal && !orgWhat.trim()) {
                       setOrgWhat(`${orgName} is an established technical organisation located in ${details.addr || 'Nigeria'}.`);
                     }
                   }}
                 >
+                  <span className="ms" style={{ fontSize: '14px' }}>
+                    {orgNotSure ? 'check' : 'help_outline'}
+                  </span>
                   {orgNotSure ? 'Using standard details ✓' : "I'm not sure"}
                 </button>
               </div>
-              <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
+              <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
                 If you're not sure, Log2Def will synthesize verified details from your placement location and let you polish it later.
               </p>
             </div>
@@ -4874,18 +5342,32 @@ export default function DashboardPage() {
             )}
 
             {/* I'm not sure path */}
-            <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg)', border: '1px solid var(--bdr)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600 }}>Don't have their formal mission statement?</span>
+            <div style={{ marginTop: '16px', padding: '14px 16px', borderRadius: '10px', background: 'var(--bg, #f8fafc)', border: '1.5px solid var(--bdr, #cbd5e1)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ink, #0f172a)' }}>Don't have their formal mission statement?</span>
                 <button
                   type="button"
-                  className="tx"
-                  style={{ fontSize: '13px' }}
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #059669',
+                    background: '#ecfdf5',
+                    color: '#065f46',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
                   onClick={() => {
                     setOrgObjectives(`To deliver professional services, engineering quality, and innovative technical solutions in its operational domain.`);
                     showToast('Standard institutional objectives added.');
                   }}
                 >
+                  <span className="ms" style={{ fontSize: '14px' }}>add_task</span>
                   Use general objective
                 </button>
               </div>
@@ -4927,19 +5409,19 @@ export default function DashboardPage() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '6px',
-                      padding: '4px 10px',
+                      padding: '5px 12px',
                       borderRadius: '16px',
                       fontSize: '13px',
-                      background: studentUnit === unit ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg)',
-                      border: studentUnit === unit ? '1px solid var(--g)' : '1px solid var(--bdr)',
+                      background: studentUnit === unit ? 'rgba(16, 185, 129, 0.15)' : 'var(--card-bg, #ffffff)',
+                      border: studentUnit === unit ? '1.5px solid var(--g)' : '1px solid var(--bdr)',
                       fontWeight: studentUnit === unit ? 700 : 500,
+                      color: 'var(--ink, #0f172a)',
                     }}
                   >
                     <span>{unit}</span>
                     <button
                       type="button"
-                      className="tx"
-                      style={{ padding: 0, color: 'var(--mut)', fontSize: '14px', lineHeight: 1 }}
+                      style={{ padding: '0 4px', color: 'var(--mut)', fontSize: '14px', lineHeight: 1, border: 'none', background: 'none', cursor: 'pointer' }}
                       onClick={() => setOrgUnits(orgUnits.filter((_, i) => i !== idx))}
                     >
                       ×
@@ -4988,7 +5470,12 @@ export default function DashboardPage() {
                     key={u}
                     type="button"
                     className={`btn ${studentUnit === u ? '' : 'o'}`}
-                    style={{ padding: '6px 12px', fontSize: '13px' }}
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '13px',
+                      fontWeight: studentUnit === u ? 700 : 500,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                    }}
                     onClick={() => setStudentUnit(u)}
                   >
                     {studentUnit === u && <span className="ms" style={{ fontSize: '14px' }}>check</span>}
@@ -5021,8 +5508,21 @@ export default function DashboardPage() {
                 </span>
                 <button
                   type="button"
-                  className="tx"
-                  style={{ fontSize: '12px' }}
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '5px 12px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #64748b',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
                   onClick={() => {
                     setIsEditingTree(!isEditingTree);
                     if (!customTreeText) {
@@ -5030,6 +5530,9 @@ export default function DashboardPage() {
                     }
                   }}
                 >
+                  <span className="ms" style={{ fontSize: '14px', color: '#059669' }}>
+                    {isEditingTree ? 'account_tree' : 'edit'}
+                  </span>
                   {isEditingTree ? 'Use auto-build' : 'Edit as text'}
                 </button>
               </div>
@@ -5550,6 +6053,30 @@ export default function DashboardPage() {
                 <span className="ms">refresh</span>
                 Retry Generating Report
               </button>
+              <button
+                className="btn o"
+                type="button"
+                onClick={() => {
+                  setStep(4);
+                  if (scrRef.current) scrRef.current.scrollTop = 0;
+                }}
+                style={{ flex: 1, minWidth: '140px' }}
+              >
+                <span className="ms">apartment</span>
+                Step 4: Organisation
+              </button>
+              <button
+                className="btn o"
+                type="button"
+                onClick={() => {
+                  setStep(5);
+                  if (scrRef.current) scrRef.current.scrollTop = 0;
+                }}
+                style={{ flex: 1, minWidth: '140px' }}
+              >
+                <span className="ms">assignment</span>
+                Step 5: Experience
+              </button>
               {(dbReport?.sections?.length || Object.keys(chapterEdits).length > 0) && (
                 <button
                   className="btn o"
@@ -5777,24 +6304,7 @@ export default function DashboardPage() {
               showToast('Please confirm your short training duration.');
               return;
             }
-            let projId = activeProject?.id;
-            if (projId) {
-              await updateActiveProject(projId, {
-                full_name: details.name || undefined,
-                matric_number: details.matric,
-                department: details.dept,
-                college: details.fac,
-                faculty_school: details.fac,
-                degree: details.degree,
-                university_name: details.inst,
-                organization_name: details.co,
-                organization_address: details.addr,
-                training_start_date: details.start || undefined,
-                training_end_date: details.end || undefined,
-                industry_supervisor_name: details.sup || undefined,
-                institution_supervisor_name: details.isup || undefined,
-              }).catch(() => {});
-            }
+            await saveStep2Data();
             trackWizardEvent('step2_details', 'confirm_details', 'step_completed');
             setStep(3);
             if (scrRef.current) scrRef.current.scrollTop = 0;
@@ -5842,21 +6352,7 @@ export default function DashboardPage() {
             type="button"
             disabled={orgScreen === 1 && !orgWhat.trim() && !orgNotSure}
             onClick={async () => {
-              const projId = activeProject?.id;
-              if (projId) {
-                if (orgScreen === 1) {
-                  if (orgWhat.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_what', orgWhat.trim()).catch(() => {});
-                  if (orgNotSure) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_not_sure', true).catch(() => {});
-                } else if (orgScreen === 2) {
-                  if (orgWhen.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_when_where', `${orgWhen.trim()} ${orgWhere.trim()}`.trim()).catch(() => {});
-                } else if (orgScreen === 3) {
-                  if (orgPasteMode && orgPasteText.trim()) {
-                    await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_paste_text', orgPasteText.trim()).catch(() => {});
-                  } else if (orgObjectives.trim()) {
-                    await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_objectives', orgObjectives.trim()).catch(() => {});
-                  }
-                }
-              }
+              await saveStep4Data();
               trackWizardEvent('step4_organisation', `screen_${orgScreen}`, 'screen_completed');
               setOrgScreen((prev) => (Math.min(4, prev + 1) as 1 | 2 | 3 | 4));
               if (scrRef.current) scrRef.current.scrollTop = 0;
@@ -5874,21 +6370,7 @@ export default function DashboardPage() {
           type="button"
           disabled={!headTitle.trim() || !studentUnit.trim()}
           onClick={async () => {
-            const projId = activeProject?.id;
-            if (projId) {
-              const treeToSave = isEditingTree && customTreeText.trim()
-                ? customTreeText.trim()
-                : computeOrganogramTree(headTitle, orgUnits, studentUnit, supervisorTitle);
-              await projectsApi.saveGuidedIntakeAnswer(projId, 'head_title', headTitle.trim()).catch(() => {});
-              await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_units', orgUnits).catch(() => {});
-              await projectsApi.saveGuidedIntakeAnswer(projId, 'student_unit', studentUnit.trim()).catch(() => {});
-              if (supervisorTitle.trim()) {
-                await projectsApi.saveGuidedIntakeAnswer(projId, 'supervisor_title', supervisorTitle.trim()).catch(() => {});
-              }
-              if (treeToSave) {
-                await projectsApi.saveGuidedIntakeAnswer(projId, 'organogram_tree', treeToSave).catch(() => {});
-              }
-            }
+            await saveStep4Data();
             trackWizardEvent('step4_organisation', 'screen_4', 'screen_completed');
             setStep(5);
             if (scrRef.current) scrRef.current.scrollTop = 0;
@@ -5906,35 +6388,7 @@ export default function DashboardPage() {
           className="btn"
           type="button"
           onClick={async () => {
-            const projId = activeProject?.id;
-            if (projId) {
-              // Collect duties
-              const logbookDuties = entries
-                .map((e) => (e.t || e.activity_summary || '').trim())
-                .filter((text): text is string => Boolean(text));
-              const finalDuties = [
-                experienceDuties || (logbookDuties.length > 0 ? logbookDuties.slice(0, 5).join('\n') : ''),
-                experienceAdditional.trim(),
-              ].filter(Boolean).join('\n');
-
-              if (finalDuties.trim()) {
-                await projectsApi.saveGuidedIntakeAnswer(projId, 'duties', finalDuties.trim()).catch(() => {});
-              }
-              if (experienceTools.length > 0) {
-                await updateActiveProject(projId, { tools_used: experienceTools.join(', ') }).catch(() => {});
-              }
-              if (challengesNone) {
-                await projectsApi.saveGuidedIntakeAnswer(projId, 'challenge_pairs', { none: true }).catch(() => {});
-              } else if (challengeText.trim()) {
-                await projectsApi.saveGuidedIntakeAnswer(projId, 'challenge_pairs', {
-                  pairs: [{ challenge: challengeText.trim(), solution: solutionText.trim() || 'Addressed with supervisor guidance.' }]
-                }).catch(() => {});
-              }
-              const allRecs = [...selectedRecommendations, customRecommendation.trim()].filter(Boolean);
-              if (allRecs.length > 0) {
-                await projectsApi.saveGuidedIntakeAnswer(projId, 'recommendations', allRecs.join('\n')).catch(() => {});
-              }
-            }
+            await saveStep5Data();
             trackWizardEvent('step5_experience', 'experience_overview', 'step_completed');
             setStep(6);
             if (scrRef.current) scrRef.current.scrollTop = 0;
@@ -5965,15 +6419,7 @@ export default function DashboardPage() {
             type="button"
             style={{ flex: 2 }}
             onClick={async () => {
-              const pid = activeProject?.id;
-              if (pid) {
-                if (dedicationText.trim()) {
-                  await projectsApi.saveGuidedIntakeAnswer(pid, 'dedication', dedicationText.trim()).catch(() => {});
-                }
-                if (acknowledgementText.trim()) {
-                  await projectsApi.saveGuidedIntakeAnswer(pid, 'acknowledgement', acknowledgementText.trim()).catch(() => {});
-                }
-              }
+              await saveStep6Data();
               setStep(7);
               if (scrRef.current) scrRef.current.scrollTop = 0;
             }}
@@ -6304,7 +6750,11 @@ export default function DashboardPage() {
                   <button
                     className="ib"
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
+                      if (step === 2) await saveStep2Data();
+                      if (step === 4) await saveStep4Data();
+                      if (step === 5) await saveStep5Data();
+                      if (step === 6) await saveStep6Data();
                       setInFlow(false);
                       setCurrentTab('home');
                       showToast('Progress saved');
@@ -6315,9 +6765,21 @@ export default function DashboardPage() {
                       close
                     </span>
                   </button>
-                  <b style={{ fontSize: '14px' }}>
-                    Step {step} of 7 · {SN[step - 1]}
-                  </b>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <b style={{ fontSize: '14px' }}>
+                      Step {step} of 7 · {SN[step - 1]}
+                    </b>
+                    {autoSaveStatus === 'saving' && (
+                      <span style={{ fontSize: '11px', color: 'var(--mut)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <span className="ms" style={{ fontSize: '12px', animation: 'spin 1s linear infinite' }}>sync</span> Saving...
+                      </span>
+                    )}
+                    {autoSaveStatus === 'saved' && (
+                      <span style={{ fontSize: '11px', color: 'var(--g)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <span className="ms" style={{ fontSize: '13px' }}>check_circle</span> Saved
+                      </span>
+                    )}
+                  </div>
                   <span className="sp" />
                 </div>
                 <div
@@ -6410,7 +6872,11 @@ export default function DashboardPage() {
                 type="button"
                 style={{ flex: '0 0 42%' }}
                 disabled={step === 1 || reading || (step === 7 && genState === 1)}
-                onClick={() => {
+                onClick={async () => {
+                  if (step === 2) await saveStep2Data();
+                  if (step === 4) await saveStep4Data();
+                  if (step === 5) await saveStep5Data();
+                  if (step === 6) await saveStep6Data();
                   setStep((prev) => Math.max(1, prev - 1));
                   if (scrRef.current) scrRef.current.scrollTop = 0;
                 }}

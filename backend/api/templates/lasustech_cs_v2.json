@@ -373,6 +373,30 @@
         "hint": "Use one role per line and indent each reporting level with two spaces."
       },
       {
+        "key": "head_title",
+        "section": "ch2_structure",
+        "required": false,
+        "type": "short_text",
+        "title": "Who heads the organisation (Job title)",
+        "hint": "Job title of the organisation's leader (e.g. Managing Director, CEO, CTO)."
+      },
+      {
+        "key": "organisation_units",
+        "section": "ch2_structure",
+        "required": false,
+        "type": "list",
+        "title": "Departments or Operating Units",
+        "hint": "List of operating divisions or departments."
+      },
+      {
+        "key": "organisation_not_sure",
+        "section": "ch2_history",
+        "required": false,
+        "type": "boolean",
+        "title": "Organisation background not sure",
+        "hint": "Flag indicating standard details should be used for background."
+      },
+      {
         "key": "student_unit",
         "section": "ch3_duties",
         "required": true,

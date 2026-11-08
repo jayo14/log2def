@@ -1086,14 +1086,40 @@ class GuidedIntakeView(views.APIView):
 
             answers = dict(project.guided_intake or {})
             answers.update(batch_answers)
+
+            # Auto-synthesize structure narrative and organogram if head and units exist
+            head = answers.get("head_title") or project.industry_supervisor_title or ""
+            units = answers.get("organisation_units") or []
+            student_unit = answers.get("student_unit") or project.placement_department or ""
+            supervisor = answers.get("supervisor_title") or ""
+            if head and (units or student_unit):
+                from .organogram_builder import build_structure_narrative, build_organogram_from_structure
+                if not answers.get("organisation_structure"):
+                    answers["organisation_structure"] = build_structure_narrative(
+                        head_title=head, units=units, placement_unit=student_unit, supervisor_title=supervisor
+                    )
+                if not answers.get("organogram_tree"):
+                    answers["organogram_tree"] = build_organogram_from_structure(
+                        head_title=head, units=units, placement_unit=student_unit, supervisor_title=supervisor
+                    )
+
+            if answers.get("organisation_paste_text") and not answers.get("organisation_objectives"):
+                answers["organisation_objectives"] = answers["organisation_paste_text"]
+
             project.guided_intake = answers
             update_fields = ["guided_intake", "updated_at"]
-            if "industry_supervisor_name" in batch_answers:
+            if "industry_supervisor_name" in batch_answers and batch_answers["industry_supervisor_name"]:
                 project.industry_supervisor_name = str(batch_answers["industry_supervisor_name"]).strip()
                 update_fields.append("industry_supervisor_name")
-            project.save(update_fields=update_fields)
+            if "supervisor_title" in batch_answers and batch_answers["supervisor_title"]:
+                project.industry_supervisor_title = str(batch_answers["supervisor_title"]).strip()
+                update_fields.append("industry_supervisor_title")
+            if "student_unit" in batch_answers and batch_answers["student_unit"]:
+                project.placement_department = str(batch_answers["student_unit"]).strip()
+                update_fields.append("placement_department")
+            project.save(update_fields=list(set(update_fields)))
 
-            for k, ans in batch_answers.items():
+            for k, ans in answers.items():
                 save_intake_facts(project, k, ans)
 
             from .completeness import check_project_completeness
@@ -1111,13 +1137,45 @@ class GuidedIntakeView(views.APIView):
             return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
         answers = dict(project.guided_intake or {})
         answers[key] = answer
+
+        # Auto-synthesize structure narrative and organogram if head and units exist
+        head = answers.get("head_title") or project.industry_supervisor_title or ""
+        units = answers.get("organisation_units") or []
+        student_unit = answers.get("student_unit") or project.placement_department or ""
+        supervisor = answers.get("supervisor_title") or ""
+        if head and (units or student_unit):
+            from .organogram_builder import build_structure_narrative, build_organogram_from_structure
+            if not answers.get("organisation_structure"):
+                answers["organisation_structure"] = build_structure_narrative(
+                    head_title=head, units=units, placement_unit=student_unit, supervisor_title=supervisor
+                )
+            if not answers.get("organogram_tree"):
+                answers["organogram_tree"] = build_organogram_from_structure(
+                    head_title=head, units=units, placement_unit=student_unit, supervisor_title=supervisor
+                )
+
+        if answers.get("organisation_paste_text") and not answers.get("organisation_objectives"):
+            answers["organisation_objectives"] = answers["organisation_paste_text"]
+
         project.guided_intake = answers
-        if key == "industry_supervisor_name":
+        update_fields = ["guided_intake", "updated_at"]
+        if key == "industry_supervisor_name" and answer:
             project.industry_supervisor_name = str(answer).strip()
-            project.save(update_fields=["guided_intake", "industry_supervisor_name", "updated_at"])
-        else:
-            project.save(update_fields=["guided_intake", "updated_at"])
+            update_fields.append("industry_supervisor_name")
+        if key == "supervisor_title" and answer:
+            project.industry_supervisor_title = str(answer).strip()
+            update_fields.append("industry_supervisor_title")
+        if key == "student_unit" and answer:
+            project.placement_department = str(answer).strip()
+            update_fields.append("placement_department")
+        project.save(update_fields=list(set(update_fields)))
         save_intake_facts(project, key, answer)
+        if "organisation_structure" in answers:
+            save_intake_facts(project, "organisation_structure", answers["organisation_structure"])
+        if "organogram_tree" in answers:
+            save_intake_facts(project, "organogram_tree", answers["organogram_tree"])
+        if "organisation_objectives" in answers:
+            save_intake_facts(project, "organisation_objectives", answers["organisation_objectives"])
         from .completeness import check_project_completeness
         return Response({"answers": answers, "completeness": check_project_completeness(project)})
 
@@ -1127,12 +1185,12 @@ def validate_intake_answer(key, answer, required=False):
 
     if key == "challenge_pairs":
         if not isinstance(answer, dict):
-            return "Choose ‘I had none’ or provide two or three challenge and solution pairs."
+            return "Choose ‘I had none’ or provide one to three challenge and solution pairs."
         if answer.get("none") is True:
             return ""
         pairs = answer.get("pairs")
-        if not isinstance(pairs, list) or len(pairs) not in (2, 3):
-            return "Provide two or three real challenge and solution pairs, or select ‘I had none’."
+        if not isinstance(pairs, list) or len(pairs) not in (1, 2, 3):
+            return "Provide one to three real challenge and solution pairs, or select ‘I had none’."
         if any(not str(pair.get("challenge", "")).strip() or not str(pair.get("solution", "")).strip() for pair in pairs):
             return "Each challenge needs its own solution. Complete both fields in every pair."
         for idx, pair in enumerate(pairs, start=1):
@@ -1161,9 +1219,13 @@ def validate_intake_answer(key, answer, required=False):
             if "\t" in line or indent % 2 or (index == 0 and depth != 0) or depth > 4 or depth > previous_depth + 1:
                 return "Use a root line, then indent each child by two spaces, up to five levels."
             previous_depth = depth
-    if key in {"include_dedication", "thank_god", "thank_family", "allow_non_logbook_pages", "short_duration_confirmed"}:
+    if key in {"include_dedication", "thank_god", "thank_family", "allow_non_logbook_pages", "short_duration_confirmed", "organisation_not_sure"}:
         return "" if isinstance(answer, bool) else "Choose yes or no."
-    if key not in {"challenge_pairs", "acknowledgement_people"} and not isinstance(answer, str):
+    if key == "organisation_units":
+        if isinstance(answer, (list, tuple, str)):
+            return ""
+        return "Provide operating units as a list or text."
+    if key not in {"challenge_pairs", "acknowledgement_people", "organisation_units"} and not isinstance(answer, str):
         return "Enter a text answer for this question."
     if answer is None or not str(answer).strip():
         return "Please enter an answer." if required else ""
