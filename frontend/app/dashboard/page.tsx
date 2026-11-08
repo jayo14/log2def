@@ -496,6 +496,7 @@ export default function DashboardPage() {
     editorRef.current.focus();
   }, [currentSectionIdx]);
   const camInputRef = useRef<HTMLInputElement>(null);
+  const lastSavedDetailsRef = useRef<string>('');
 
   // Show Toast helper
   const showToast = useCallback((msg: string) => {
@@ -734,21 +735,27 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!activeProject) return;
 
-    setDetails((prev) => ({
-      name: activeProject.full_name || prev.name || userFullName,
-      matric: activeProject.matric_number || prev.matric || '',
-      dept: activeProject.department || prev.dept || '',
-      fac: activeProject.college || activeProject.faculty_school || prev.fac || 'College of Basic Science',
-      degree: activeProject.degree || prev.degree || '',
-      inst: activeProject.university_name || prev.inst || '',
-      co: activeProject.organization_name || prev.co || '',
-      addr: activeProject.organization_address || prev.addr || '',
-      unit: activeProject.industry_department || prev.unit || '',
-      start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : prev.start,
-      end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : prev.end,
-      sup: activeProject.industry_supervisor_name || prev.sup || '',
-      isup: activeProject.institution_supervisor_name || prev.isup || '',
-    }));
+    setDetails((prev) => {
+      const next = {
+        name: activeProject.full_name || prev.name || userFullName,
+        matric: activeProject.matric_number || prev.matric || '',
+        dept: activeProject.department || prev.dept || '',
+        fac: activeProject.college || activeProject.faculty_school || prev.fac || 'College of Basic Science',
+        degree: activeProject.degree || prev.degree || '',
+        inst: activeProject.university_name || prev.inst || '',
+        co: activeProject.organization_name || prev.co || '',
+        addr: activeProject.organization_address || prev.addr || '',
+        unit: activeProject.industry_department || prev.unit || '',
+        start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : prev.start,
+        end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : prev.end,
+        sup: activeProject.industry_supervisor_name || prev.sup || '',
+        isup: activeProject.institution_supervisor_name || prev.isup || '',
+      };
+      const isDiff = Object.keys(next).some((k) => (next as any)[k] !== (prev as any)[k]);
+      if (!isDiff) return prev;
+      lastSavedDetailsRef.current = JSON.stringify(next);
+      return next;
+    });
 
     if (activeProject.source_documents && activeProject.source_documents.length > 0) {
       setPages(
@@ -841,30 +848,40 @@ export default function DashboardPage() {
     }
   }, [payments]);
 
-  // Auto-save student details directly to database (debounced)
+  // Auto-save student details directly to database (debounced and dirty-checked)
   const detailsDebounceTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!isHydrated || !activeProject?.id) return;
 
+    const serialized = JSON.stringify(details);
+    if (serialized === lastSavedDetailsRef.current) return;
+
     if (detailsDebounceTimer.current) clearTimeout(detailsDebounceTimer.current);
-    detailsDebounceTimer.current = setTimeout(() => {
-      updateActiveProject(activeProject.id, {
-        full_name: details.name || undefined,
-        matric_number: details.matric || undefined,
-        department: details.dept || undefined,
-        college: details.fac || undefined,
-        faculty_school: details.fac || undefined,
-        degree: details.degree || undefined,
-        university_name: details.inst || undefined,
-        organization_name: details.co || undefined,
-        organization_address: details.addr || undefined,
-        industry_department: details.unit || undefined,
-        training_start_date: details.start || undefined,
-        training_end_date: details.end || undefined,
-        industry_supervisor_name: details.sup || undefined,
-        institution_supervisor_name: details.isup || undefined,
-      }).catch(() => {});
-    }, 800);
+    detailsDebounceTimer.current = setTimeout(async () => {
+      const currentSerialized = JSON.stringify(details);
+      if (currentSerialized === lastSavedDetailsRef.current) return;
+      lastSavedDetailsRef.current = currentSerialized;
+      try {
+        await updateActiveProject(activeProject.id, {
+          full_name: details.name || undefined,
+          matric_number: details.matric || undefined,
+          department: details.dept || undefined,
+          college: details.fac || undefined,
+          faculty_school: details.fac || undefined,
+          degree: details.degree || undefined,
+          university_name: details.inst || undefined,
+          organization_name: details.co || undefined,
+          organization_address: details.addr || undefined,
+          industry_department: details.unit || undefined,
+          training_start_date: details.start || undefined,
+          training_end_date: details.end || undefined,
+          industry_supervisor_name: details.sup || undefined,
+          institution_supervisor_name: details.isup || undefined,
+        });
+      } catch (err) {
+        console.warn('Auto-save student details failed:', err);
+      }
+    }, 1000);
 
     return () => {
       if (detailsDebounceTimer.current) clearTimeout(detailsDebounceTimer.current);
