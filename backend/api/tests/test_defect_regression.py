@@ -352,3 +352,36 @@ def test_autofix_safe_text_issues():
     assert "analyse" in mock_model["sections"][0]["nodes"][0]["text"]
     assert mock_model["sections"][0]["nodes"][0]["text"].endswith(".")
 
+
+# =========================================================================
+# TEST I: Organogram Builder and Structure Narrative
+# =========================================================================
+def test_build_organogram_from_structure():
+    from api.organogram_builder import build_organogram_from_structure, build_structure_narrative
+
+    tree = build_organogram_from_structure(
+        head_title="Chief Executive Officer",
+        units=["Software Engineering", "Network Operations", "Administration"],
+        placement_unit="Software Engineering",
+        supervisor_title="Lead Systems Architect",
+        student_role="SIWES Intern"
+    )
+    lines = tree.splitlines()
+    assert lines[0] == "Chief Executive Officer"
+    assert lines[1] == "  Software Engineering"
+    assert lines[2] == "    Lead Systems Architect"
+    assert lines[3] == "      SIWES Intern"
+    assert lines[4] == "  Network Operations"
+    assert lines[5] == "  Administration"
+
+    narrative = build_structure_narrative(
+        head_title="Chief Executive Officer",
+        units=["Software Engineering", "Network Operations"],
+        placement_unit="Software Engineering",
+        supervisor_title="Lead Systems Architect"
+    )
+    assert "Chief Executive Officer" in narrative
+    assert "Software Engineering" in narrative
+    assert "Lead Systems Architect" in narrative
+
+

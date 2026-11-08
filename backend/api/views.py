@@ -1217,6 +1217,8 @@ def save_intake_facts(project, key, answer):
             "organisation_objectives": "organisation_detail",
             "organisation_structure": "organisation_detail",
             "organogram_tree": "organisation_detail",
+            "head_title": "organisation_detail",
+            "organisation_units": "organisation_detail",
             "student_unit": "organisation_detail",
             "supervisor_title": "person",
             "duties": "duty",

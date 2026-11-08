@@ -916,8 +916,28 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         acknowledgement_text = "I acknowledge " + ", ".join(acknowledgement_lines) + " for their support during my training."
     challenge_answer = intake.get("challenge_pairs") or {}
     challenge_pairs = challenge_answer.get("pairs", []) if not challenge_answer.get("none") else []
+    
+    # Auto-synthesize structure narrative and organogram tree if structured inputs exist
+    if not intake.get("organisation_structure") and (intake.get("head_title") or intake.get("organisation_units")):
+        from .organogram_builder import build_structure_narrative
+        intake["organisation_structure"] = build_structure_narrative(
+            head_title=intake.get("head_title", ""),
+            units=intake.get("organisation_units", []),
+            placement_unit=intake.get("student_unit") or project.placement_department or "",
+            supervisor_title=intake.get("supervisor_title", ""),
+        )
+
     organogram = []
-    for line in str(intake.get("organogram_tree", "")).splitlines():
+    organogram_raw = intake.get("organogram_tree", "")
+    if not organogram_raw and (intake.get("head_title") or intake.get("organisation_units")):
+        from .organogram_builder import build_organogram_from_structure
+        organogram_raw = build_organogram_from_structure(
+            head_title=intake.get("head_title", ""),
+            units=intake.get("organisation_units", []),
+            placement_unit=intake.get("student_unit") or project.placement_department or "",
+            supervisor_title=intake.get("supervisor_title", ""),
+        )
+    for line in str(organogram_raw or "").splitlines():
         if line.strip():
             depth = (len(line) - len(line.lstrip(" "))) // 2
             organogram.append("\u2003" * depth + line.strip())
