@@ -124,9 +124,10 @@ def validate_answer_text(
 
     words = re.findall(r"\b[A-Za-z0-9'-]+\b", val)
     if len(words) < min_words or len(val) < min_length:
+        msg = f"Please provide a more descriptive answer (at least {min_words} words)." if min_words > 1 else f"Please provide a valid {field_label}."
         return ValidationResult(
             False,
-            f"Please provide a more descriptive answer (at least {min_words} words)."
+            msg
         )
 
     # Check for repeated character sequences (e.g., 'aaaaaa', 'qwertyqwerty')
