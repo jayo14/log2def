@@ -453,6 +453,14 @@
         "hint": "Add only names and titles you want to acknowledge. Thank God and family lines are optional and off by default."
       },
       {
+        "key": "acknowledgement",
+        "section": "acknowledgement",
+        "required": false,
+        "type": "long_text",
+        "title": "Acknowledgement statement (optional)",
+        "hint": "Write a short personal acknowledgement."
+      },
+      {
         "key": "industry_supervisor_name",
         "section": "certification",
         "required": false,
