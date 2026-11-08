@@ -203,7 +203,10 @@ def check_project_completeness(project) -> Dict[str, Any]:
             found = intake_answer_complete(step, answers)
             ans_val = answers.get(step['key'])
             if found and isinstance(ans_val, str) and step.get("type") in ["long_text", "short_text"]:
-                v_res = validate_answer_text(ans_val, field_label=step["title"])
+                is_short = step.get("key") in {"student_unit", "head_title", "supervisor_title"} or step.get("type") == "short_text"
+                min_words = 1 if is_short else 3
+                min_length = 2 if is_short else 10
+                v_res = validate_answer_text(ans_val, min_words=min_words, min_length=min_length, field_label=step["title"])
                 if not v_res["is_valid"]:
                     found = False
             field_reports[key] = {
