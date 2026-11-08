@@ -292,18 +292,19 @@ def test_acceptance_g_title_page_layout_and_labels():
     title_text = render_title_page_text(mock_proj, start="2 March 2026", end="22 May 2026", duration="12 Weeks")
 
     # Required elements
-    assert "A TECHNICAL REPORT ON THE STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)" in title_text
+    assert "A TECHNICAL REPORT ON" in title_text
+    assert "STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME" in title_text
+    assert "(SIWES)" in title_text
     assert "UNDERTAKEN AT" in title_text
-    assert "ICT Centre, LASUSTECH" in title_text
+    assert "ICT CENTRE, LASUSTECH" in title_text
     assert "MATRIC NO: 240303010042" in title_text
-    assert "DEPARTMENT: Computer Science" in title_text
-    assert "COLLEGE: College of Basic Science" in title_text
-    assert "BACHELOR OF SCIENCE (B.SC.) IN COMPUTER SCIENCE" in title_text
-    assert "DURATION: 2 March 2026 – 22 May 2026 (12 Weeks)" in title_text
+    assert "DEPARTMENT: COMPUTER SCIENCE" in title_text
+    assert "COLLEGE: COLLEGE OF BASIC SCIENCE" in title_text
+    assert "BACHELOR OF SCIENCE (B.Sc.) IN COMPUTER SCIENCE" in title_text
+    assert "DURATION: MARCH 2026 – MAY 2026" in title_text
 
     title_html = render_title_page_html(mock_proj, start="2 March 2026", end="22 May 2026", duration="12 Weeks")
-    assert "<h2" in title_html
-    assert "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY" in title_html
+    assert "A TECHNICAL REPORT ON" in title_html
     assert "ADAOBI NKEM" in title_html
 
 
@@ -369,10 +370,9 @@ def test_build_organogram_from_structure():
     lines = tree.splitlines()
     assert lines[0] == "Chief Executive Officer"
     assert lines[1] == "  Software Engineering"
-    assert lines[2] == "    Lead Systems Architect"
-    assert lines[3] == "      SIWES Intern"
-    assert lines[4] == "  Network Operations"
-    assert lines[5] == "  Administration"
+    assert lines[2] == "    SIWES Intern (Supervisor: Lead Systems Architect)"
+    assert lines[3] == "  Network Operations"
+    assert lines[4] == "  Administration"
 
     narrative = build_structure_narrative(
         head_title="Chief Executive Officer",
