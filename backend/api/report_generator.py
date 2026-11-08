@@ -941,6 +941,15 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         if line.strip():
             depth = (len(line) - len(line.lstrip(" "))) // 2
             organogram.append("\u2003" * depth + line.strip())
+    # Fallbacks for "I'm not sure" path in organisation history and objectives
+    if intake.get("organisation_not_sure") or not intake.get("organisation_what"):
+        org_name = project.organization_name or "The organisation"
+        org_addr = project.organization_address or "its operating location"
+        if not intake.get("organisation_what"):
+            intake["organisation_what"] = f"{org_name} is an established organisation based at {org_addr}."
+        if not intake.get("organisation_objectives"):
+            intake["organisation_objectives"] = f"The objectives of {org_name} centre on delivering professional services and technical solutions in its operational domain."
+
     section_fact_fields = {
         "title_page": [f"profile:{field}" for field in profile_fact_fields] + ["profile:training_start_date", "profile:training_end_date"],
         "ch1_scope": ["profile:organization_name", "profile:placement_department"],
@@ -948,7 +957,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "ch3_skills": ["profile:skills_acquired", "logbook_entry:"],
         "ch3_tools": ["profile:tools_used", "logbook_entry:"],
         "ch2_history": ["organisation_what", "organisation_when_where", "organisation_paste_text"],
-        "ch2_objectives": ["organisation_objectives"], "ch2_structure": ["organisation_structure"],
+        "ch2_objectives": ["organisation_objectives", "organisation_paste_text"], "ch2_structure": ["organisation_structure"],
         "ch2_organogram": ["organogram_tree"],
         "ch3_duties": ["student_unit", "supervisor_title", "duties", "industry_supervisor_name"],
         "ch3_challenges": ["challenge_pairs:"],
