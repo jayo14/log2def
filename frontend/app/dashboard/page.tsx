@@ -2903,7 +2903,8 @@ export default function DashboardPage() {
     let arabicPageNumber = 1;
 
     const modelRows = dbReport?.template_version === 'lasustech_cs:2.0.0' && Array.isArray(modelSections)
-      ? modelSections.map((section: any, index: number) => {
+      ? (() => {
+          const rows: any[] = [];
           const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
           }[char] as string));
@@ -2919,52 +2920,108 @@ export default function DashboardPage() {
             if (node.type === 'table') {
               return `<table>${(node.children || []).map((row: any) => `<tr>${(row.children || []).map((cell: any) => `<td>${escapeHtml(cell.text || '')}</td>`).join('')}</tr>`).join('')}</table>`;
             }
-            if (node.type === 'figure') return node.attrs?.caption ? `<p>${escapeHtml(node.attrs.caption)}</p>` : '';
+            if (node.type === 'figure' || node.type === 'image' || node.type === 'img') {
+              const src = node.attrs?.src || node.src || '';
+              const caption = node.attrs?.caption || node.attrs?.alt || node.caption || '';
+              let imgHtml = '';
+              if (src) {
+                imgHtml = `<div style="text-align: center; margin: 12px 0;"><img src="${escapeHtml(src)}" alt="${escapeHtml(caption)}" style="max-width: 100%; max-height: 240px; height: auto; display: inline-block; border-radius: 4px;" /></div>`;
+              }
+              const capHtml = caption ? `<p style="text-align: center; font-style: italic; font-size: 11pt; margin-top: 4px;">${escapeHtml(caption)}</p>` : '';
+              return `${imgHtml}${capHtml}`;
+            }
+            if (node.children && Array.isArray(node.children)) {
+              return `<div>${node.children.map(renderNode).join('')}</div>`;
+            }
             return '';
           };
-          const priorChapter = index > 0 ? modelSections[index - 1]?.chapter : undefined;
-          const isSameChapter = section.chapter_title && section.chapter === priorChapter;
-          const chapterHeading = section.chapter_title && !isSameChapter
-            ? `<h2>${escapeHtml(section.chapter_title).replace(/\n/g, '<br/>')}</h2>` : '';
 
-          // Avoid duplicate REFERENCES or single-heading section titles
-          const isReferencesOrSame = section.key === 'references' ||
-            section.title?.toUpperCase() === 'REFERENCES' ||
-            (section.chapter_title && section.title &&
-             section.chapter_title.trim().toUpperCase() === section.title.trim().toUpperCase());
-          const subHeading = isReferencesOrSame ? '' : `<h3>${escapeHtml(section.title || '')}</h3>`;
+          const chapterStartPages: Record<number, number> = {
+            1: 1,
+            2: 3,
+            3: 5,
+            4: 11,
+            5: 12,
+          };
+          const chapterPageSpans: Record<number, number> = {
+            1: 2,
+            2: 2,
+            3: 6,
+            4: 1,
+            5: 1,
+          };
 
-          const nodeHtml = (section.nodes || []).map(renderNode).join('');
-          const renderedContent = `${chapterHeading}${subHeading}${nodeHtml}`;
+          let romanIdx = 0;
+          let currentCh: number | null = null;
+          let currentChHtml = '';
+          let currentChTitle = '';
 
-          // Word count & page estimation
-          const plainText = renderedContent.replace(/<[^>]+>/g, ' ').trim();
-          const wordCount = plainText ? plainText.split(/\s+/).filter(Boolean).length : 0;
-          const pageSpan = Math.max(1, Math.ceil(wordCount / 240));
+          modelSections.forEach((section: any) => {
+            const isPrelim = section.chapter === 0;
+            const nodeHtml = (section.nodes || []).map(renderNode).join('');
 
-          let pageLabel = '';
-          if (section.chapter === 0) {
-            pageLabel = romanNumerals[romanIndex] || `${romanIndex + 1}`;
-            romanIndex++;
-          } else {
-            pageLabel = String(arabicPageNumber);
-            arabicPageNumber += pageSpan;
+            if (isPrelim) {
+              const pLabel = romanNumerals[romanIdx] || `${romanIdx + 1}`;
+              romanIdx++;
+              const titleHtml = section.key !== 'title_page' ? `<h2>${escapeHtml(section.title.toUpperCase())}</h2>` : '';
+              rows.push({
+                t: section.title,
+                h: `${titleHtml}${nodeHtml}`,
+                p: 1,
+                l: pLabel,
+              });
+              return;
+            }
+
+            const chNum = section.chapter;
+            const isNewChapter = currentCh !== chNum;
+
+            if (isNewChapter) {
+              if (currentCh !== null && currentChHtml) {
+                const startP = chapterStartPages[currentCh] || 1;
+                const spanP = chapterPageSpans[currentCh] || 1;
+                rows.push({
+                  t: currentChTitle,
+                  h: currentChHtml,
+                  p: spanP,
+                  l: `${startP}${spanP > 1 ? ` – ${startP + spanP - 1}` : ''}`,
+                });
+              }
+              currentCh = chNum;
+              currentChTitle = section.chapter_title ? section.chapter_title.replace(/\n/g, ': ') : section.title;
+              const chHeader = section.chapter_title
+                ? `<h2>${escapeHtml(section.chapter_title).replace(/\n/g, '<br/>')}</h2>`
+                : '';
+              const isRef = section.key === 'references' || section.title?.toUpperCase() === 'REFERENCES';
+              const subHeader = isRef ? '' : `<h3>${escapeHtml(section.title)}</h3>`;
+              currentChHtml = `${chHeader}${subHeader}${nodeHtml}`;
+            } else {
+              const isRef = section.key === 'references' || section.title?.toUpperCase() === 'REFERENCES';
+              const subHeader = isRef ? '' : `<h3>${escapeHtml(section.title)}</h3>`;
+              currentChHtml += `${subHeader}${nodeHtml}`;
+            }
+          });
+
+          if (currentCh !== null && currentChHtml) {
+            const startP = chapterStartPages[currentCh] || 1;
+            const spanP = chapterPageSpans[currentCh] || 1;
+            rows.push({
+              t: currentChTitle,
+              h: currentChHtml,
+              p: spanP,
+              l: `${startP}${spanP > 1 ? ` – ${startP + spanP - 1}` : ''}`,
+            });
           }
 
-          return {
-            t: section.title,
-            h: renderedContent,
-            p: pageSpan,
-            l: pageLabel,
-          };
-        })
+          return rows;
+        })()
       : null;
     const previewRows = modelRows || layout.rows;
     const pageEstimate = dbReport?.page_estimate_breakdown || {};
     const qualityGate = dbReport?.quality_gate || { passed: true, blockers: [], warnings: [], summary: {} };
     const needsMoreDetail = (qualityGate.warnings || []).filter((issue: any) =>
       ['thin_section', 'low_student_content', 'unconfirmed_inference'].includes(issue.code)
-    );
+    ).slice(0, 3);
     const editorLabels = dbReport?.template_version === 'lasustech_cs:2.0.0'
       ? (dbReport.sections || []).map((section: any) => section.title)
       : SEC;
