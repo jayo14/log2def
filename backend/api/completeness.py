@@ -207,7 +207,7 @@ def check_project_completeness(project) -> Dict[str, Any]:
         from .guided_intake import intake_answer_complete
         answers = dict(project.guided_intake or {})
         if not answers.get("student_unit"):
-            fallback_unit = project.placement_department or project.industry_department or ""
+            fallback_unit = project.placement_department or getattr(project, "industry_department", "") or ""
             if fallback_unit:
                 answers["student_unit"] = fallback_unit
         if not answers.get("duties"):
