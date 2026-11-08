@@ -19,12 +19,12 @@ COMMON_WORDS = {
     "also", "back", "after", "use", "two", "how", "our", "work", "first", "well", "way", "even",
     "new", "want", "because", "any", "these", "give", "day", "most", "us", "is", "are", "was",
     "were", "has", "had", "been", "being", "student", "siwes", "training", "industrial", "experience",
-    "organisation", "organization", "department", "unit", "company", "firm", "service", "services",
-    "product", "products", "software", "hardware", "network", "system", "systems", "development",
-    "data", "web", "website", "application", "technology", "technologies", "engineering", "computer",
+    "organisation", "organization", "department", "unit", "units", "company", "firm", "service", "services",
+    "product", "products", "software", "hardware", "network", "networks", "system", "systems", "development",
+    "data", "web", "website", "application", "applications", "technology", "technologies", "engineering", "computer",
     "science", "information", "communication", "management", "director", "manager", "supervisor",
-    "head", "staff", "client", "clients", "project", "projects", "maintenance", "support", "database",
-    "design", "testing", "code", "programming", "python", "java", "html", "css", "javascript",
+    "head", "staff", "client", "clients", "project", "projects", "maintenance", "support", "database", "databases",
+    "design", "testing", "code", "programming", "python", "java", "html", "css", "javascript", "typescript",
     "lagos", "nigeria", "established", "founded", "mission", "vision", "objective", "objectives",
     "provide", "provides", "providing", "deliver", "delivers", "delivering", "solution", "solutions",
     "consulting", "logistics", "finance", "banking", "health", "education", "research", "centre",
@@ -34,6 +34,19 @@ COMMON_WORDS = {
     "none", "nothing", "major", "encountered", "challenges", "solutions", "guidance", "recommend",
     "recommendations", "improve", "improved", "improvement", "internship", "attachment", "university",
     "institution", "coordinator", "mentor", "mentors", "practical", "technical", "skills", "tools",
+    "docker", "dockerfile", "compose", "fastapi", "redis", "celery", "render", "vercel", "playwright",
+    "linux", "git", "github", "gitlab", "vscode", "ide", "api", "client", "worker", "module", "dashboard",
+    "ratings", "promotion", "access", "control", "elements", "visual", "concepts", "tuning", "contrast",
+    "downpour", "studied", "layout", "standard", "colours", "colors", "executed", "developed", "teaching",
+    "assignment", "errors", "fixed", "features", "bulk", "processing", "preview", "card", "board", "rate",
+    "blue", "tests", "focusing", "cisco", "router", "switch", "firewall", "wireshark", "packet", "tracer",
+    "server", "servers", "cloud", "staging", "production", "container", "containers", "script", "scripts",
+    "branch", "branches", "merge", "commit", "commits", "pull", "push", "microservices", "deployment",
+    "backend", "frontend", "fullstack", "query", "queries", "cache", "token", "auth", "authentication",
+}
+
+COMMON_TECH_PREFIXES = {
+    "ios", "iphone", "ipad", "ipod", "ecommerce", "elearning", "grpc", "vsphere", "ebay"
 }
 
 STRAY_PREFIX_REGEX = re.compile(r"^[a-z]{1,2}[A-Z][a-z]")
@@ -43,16 +56,22 @@ def is_valid_word(word: str) -> bool:
     """Checks if a cleaned word looks like a legitimate English/technical word."""
     clean = re.sub(r"[^a-zA-Z]", "", word).lower()
     if not clean:
-        return False
+        return bool(re.match(r"^[0-9a-zA-Z._/-]+$", word))
     if clean in COMMON_WORDS:
         return True
-    # Word length 2-25 with balanced vowels
+    # Acronyms (e.g. CI/CD, API, SDK, HTML, CSS, SQL, AWS, GCP, IDE)
+    if word.isupper() and 2 <= len(word) <= 8:
+        return True
+    # Short abbreviations (e.g. 'db', 'os', 'ip', 'ui', 'ux', 'ai', 'pr', 'qa', 'io')
+    if len(clean) <= 3:
+        return True
+    # Word length 2-30 with balanced vowels
     vowels = sum(1 for c in clean if c in "aeiouy")
     vowel_ratio = vowels / len(clean)
-    if len(clean) >= 4 and (vowel_ratio < 0.15 or vowel_ratio > 0.85):
+    if len(clean) >= 4 and (vowel_ratio < 0.10 or vowel_ratio > 0.90):
         return False
-    # No 5+ consecutive consonants
-    if re.search(r"[bcdfghjklmnpqrstvwxyz]{5,}", clean):
+    # No 6+ consecutive consonants
+    if re.search(r"[bcdfghjklmnpqrstvwxyz]{6,}", clean):
         return False
     # No repeated characters 3+ times
     if re.search(r"(.)\1{2,}", clean):
@@ -60,16 +79,24 @@ def is_valid_word(word: str) -> bool:
     return True
 
 
-def detect_repeated_ngrams(text: str, n: int = 4, threshold: int = 3) -> bool:
-    """Detects if repetitive n-grams (e.g. keyboard mash sequences) dominate."""
+def detect_repeated_ngrams(text: str, n: int = 4, threshold: int = 4) -> bool:
+    """Detects if repetitive keyboard-mash n-grams or copy-pasted nonsense dominate."""
     clean = re.sub(r"\s+", "", text).lower()
-    if len(clean) < n * threshold:
+    if len(clean) < 8:
         return False
+    # 1. Consecutive identical sub-chunk repeated 3+ times (e.g. asdfasdfasdf, qwertyqwertyqwerty)
+    if re.search(r"([a-z0-9]{2,12})\1{2,}", clean):
+        return True
+    # 2. Same whole word repeated 4+ times consecutively (e.g. "test test test test")
+    if re.search(r"\b([a-zA-Z0-9'-]+)\b(?:\s+\1\b){3,}", text, flags=re.IGNORECASE):
+        return True
+    # 3. N-gram repetition density: only flag if a single n-gram accounts for >= 40% of the entire text
     seen: dict[str, int] = {}
     for i in range(len(clean) - n + 1):
         gram = clean[i : i + n]
         seen[gram] = seen.get(gram, 0) + 1
-        if seen[gram] >= threshold:
+    for gram, count in seen.items():
+        if count >= threshold and (count * n) / len(clean) >= 0.40:
             return True
     return False
 
@@ -116,11 +143,13 @@ def validate_answer_text(
     # Check for stray leading letter before capital letter (e.g. bAwjkn... or dWho...)
     # Often happens with keyboard typos or copy-paste artifacts
     if STRAY_PREFIX_REGEX.match(val):
-        return ValidationResult(
-            False,
-            "Please provide a clear and meaningful answer. "
-            "This answer appears to begin with stray characters or keyboard noise."
-        )
+        first_word = re.findall(r"\b[A-Za-z0-9'-]+\b", val)
+        if not (first_word and first_word[0].lower() in COMMON_TECH_PREFIXES):
+            return ValidationResult(
+                False,
+                "Please provide a clear and meaningful answer. "
+                "This answer appears to begin with stray characters or keyboard noise."
+            )
 
     words = re.findall(r"\b[A-Za-z0-9'-]+\b", val)
     if len(words) < min_words or len(val) < min_length:
@@ -130,8 +159,8 @@ def validate_answer_text(
             msg
         )
 
-    # Check for repeated character sequences (e.g., 'aaaaaa', 'qwertyqwerty')
-    if re.search(r"(.)\1{4,}", val):
+    # Check for repeated character sequences (e.g., 'aaaaaa', '111111')
+    if re.search(r"([a-zA-Z0-9])\1{4,}", val):
         return ValidationResult(
             False,
             "Please provide a meaningful answer. "
