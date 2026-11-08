@@ -482,7 +482,18 @@ export const projectsApi = {
     return `${getApiBaseUrl()}/projects/${projectId}/export/pdf/`;
   },
 
-  getExportStatus: async (projectId: number | string, format: 'pdf' | 'docx' = 'pdf', trigger: boolean = false) => {
+  getExportStatus: async (
+    projectId: number | string,
+    format: 'pdf' | 'docx' = 'pdf',
+    trigger: boolean = false,
+    timeout: number = 0
+  ) => {
+    const q = new URLSearchParams({
+      doc_format: format,
+      format,
+      trigger: String(trigger),
+    });
+    if (timeout > 0) q.set('timeout', String(timeout));
     return apiRequest<{
       project_id: number;
       format: string;
@@ -491,7 +502,26 @@ export const projectsApi = {
       download_url: string | null;
       filename: string | null;
       error: string | null;
-    }>(`/projects/${projectId}/export/status/?doc_format=${format}&trigger=${trigger}`);
+    }>(`/projects/${projectId}/export/status/?${q.toString()}`);
+  },
+
+  pollProjectStatus: async (
+    projectId: number | string,
+    options: { since?: string; timeout?: number } = {}
+  ) => {
+    const { since = '', timeout = 15 } = options;
+    const q = new URLSearchParams();
+    if (since) q.set('since', since);
+    if (timeout > 0) q.set('timeout', String(timeout));
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return apiRequest<{
+      project_id: number;
+      has_changes: boolean;
+      state_hash: string;
+      docs: { total: number; processed: number; errors: number; all_done: boolean };
+      entries: { total: number; verified: number };
+      report: { generated: boolean; version: number; sections_count: number };
+    }>(`/projects/${projectId}/poll/${qs}`);
   },
 
   downloadWithSignedUrl: async (downloadUrl: string, filename?: string) => {
