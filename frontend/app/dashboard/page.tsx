@@ -204,6 +204,23 @@ export default function DashboardPage() {
   const [step4SaveError, setStep4SaveError] = useState<string | null>(null);
   const [shortDurationConfirmed, setShortDurationConfirmed] = useState<boolean>(false);
 
+  // Step 4: Organisation 4-screen flow state
+  const [orgScreen, setOrgScreen] = useState<1 | 2 | 3 | 4>(1);
+  const [orgWhat, setOrgWhat] = useState<string>('');
+  const [orgWhen, setOrgWhen] = useState<string>('');
+  const [orgWhere, setOrgWhere] = useState<string>('');
+  const [orgObjectives, setOrgObjectives] = useState<string>('');
+  const [orgPasteMode, setOrgPasteMode] = useState<boolean>(false);
+  const [orgPasteText, setOrgPasteText] = useState<string>('');
+  const [orgNotSure, setOrgNotSure] = useState<boolean>(false);
+  const [headTitle, setHeadTitle] = useState<string>('');
+  const [orgUnits, setOrgUnits] = useState<string[]>(['Technical Department', 'Operations Unit', 'Administration']);
+  const [newUnitInput, setNewUnitInput] = useState<string>('');
+  const [studentUnit, setStudentUnit] = useState<string>('');
+  const [supervisorTitle, setSupervisorTitle] = useState<string>('');
+  const [customTreeText, setCustomTreeText] = useState<string>('');
+  const [isEditingTree, setIsEditingTree] = useState<boolean>(false);
+
   const [pages, setPages] = useState<LogPage[]>([]);
   const [reading, setReading] = useState<boolean>(false);
   const [readProgress, setReadProgress] = useState<number>(0);
@@ -1124,6 +1141,38 @@ export default function DashboardPage() {
   };
 
   const hasStarted = Boolean(details.co || pages.length || step > 1);
+
+  const computeOrganogramTree = (
+    head: string,
+    units: string[],
+    selectedUnit: string,
+    supervisor: string
+  ) => {
+    if (!head.trim()) return '';
+    const lines: string[] = [head.trim()];
+    const cleanPlacement = selectedUnit.trim();
+    let placed = false;
+    units.forEach((u) => {
+      lines.push(`  ${u.trim()}`);
+      if (cleanPlacement && u.trim().toLowerCase() === cleanPlacement.toLowerCase() && !placed) {
+        placed = true;
+        if (supervisor.trim()) {
+          lines.push(`    ${supervisor.trim()}`);
+          lines.push(`      SIWES Intern`);
+        } else {
+          lines.push(`    SIWES Intern`);
+        }
+      }
+    });
+    if (!placed && supervisor.trim()) {
+      if (lines.length > 1) {
+        lines.splice(2, 0, `    ${supervisor.trim()}`, `      SIWES Intern`);
+      } else {
+        lines.push(`  ${supervisor.trim()}`, `    SIWES Intern`);
+      }
+    }
+    return lines.join('\n');
+  };
 
   const trackWizardEvent = useCallback((stepName: string, screenId: string, eventType: string, meta: Record<string, any> = {}) => {
     const projId = activeProject?.id;
@@ -4596,43 +4645,411 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 5 (READY TO GENERATE) — ENHANCED UI
+  // WIZARD FLOW: STEP 4 (ABOUT ORGANISATION - 4 SCREENS)
+  // ==========================================
   const renderStepOrganisation = () => {
-    const currentAnswers = ((intake as any).answers || {}) as Record<string, string>;
+    const orgName = details.co?.trim() || 'your organisation';
+
+    const saveOrgScreen = async (nextScreen: 1 | 2 | 3 | 4) => {
+      const projId = activeProject?.id;
+      if (projId) {
+        if (orgScreen === 1) {
+          if (orgWhat.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_what', orgWhat.trim()).catch(() => {});
+          if (orgNotSure) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_not_sure', true).catch(() => {});
+        } else if (orgScreen === 2) {
+          if (orgWhen.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_when_where', `${orgWhen.trim()} ${orgWhere.trim()}`.trim()).catch(() => {});
+        } else if (orgScreen === 3) {
+          if (orgPasteMode && orgPasteText.trim()) {
+            await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_paste_text', orgPasteText.trim()).catch(() => {});
+          } else if (orgObjectives.trim()) {
+            await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_objectives', orgObjectives.trim()).catch(() => {});
+          }
+        }
+      }
+      trackWizardEvent('step4_organisation', `screen_${orgScreen}`, 'screen_completed');
+      setOrgScreen(nextScreen);
+      if (scrRef.current) scrRef.current.scrollTop = 0;
+    };
+
+    const treeToShow = isEditingTree ? customTreeText : computeOrganogramTree(headTitle, orgUnits, studentUnit, supervisorTitle);
+
     return (
-      <div className="view" id="step-5">
-        <h1 className="wt" id="wh" tabIndex={-1}>About your organisation</h1>
-        <p className="wd">Answer only what your logbook and profile do not already provide. Your progress is saved as you go.</p>
-        <div className="card" style={{ padding: '18px 16px' }}>
-          <p style={{ marginTop: 0, color: 'var(--mut)', fontSize: '13px', lineHeight: 1.5 }}>
-            We never look up your company or fill gaps. Use a true sentence, paste confirmed profile text, or leave optional items blank.
-          </p>
-          {organisationFields.map((field) => (
-            <div className="f" key={field.key} style={{ marginTop: '16px' }}>
-              <label htmlFor={`organisation-${field.key}`}>
-                {field.label} {field.required && <em aria-hidden="true">*</em>}
+      <div className="view" id="step-4-org">
+        {/* Step indicator header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--g)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+            About {orgName} · Screen {orgScreen} of 4
+          </span>
+          {orgScreen > 1 && (
+            <button
+              type="button"
+              className="tx"
+              style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}
+              onClick={() => setOrgScreen((prev) => (Math.max(1, prev - 1) as 1 | 2 | 3 | 4))}
+            >
+              <span className="ms" style={{ fontSize: '16px' }}>arrow_back</span> Back
+            </button>
+          )}
+        </div>
+
+        {/* SCREEN 1: What does organisation do? */}
+        {orgScreen === 1 && (
+          <div>
+            <h1 className="wt" id="wh" tabIndex={-1}>What does {orgName} do?</h1>
+            <p className="wd" style={{ margin: '4px 0 16px', color: 'var(--mut)', fontSize: '13px' }}>
+              Used for Section 2.1 (Brief History & Background) of your technical report.
+            </p>
+
+            <div className="f" style={{ margin: '14px 0' }}>
+              <label htmlFor="org-what" style={{ fontWeight: 600, fontSize: '14px' }}>
+                Core activities or domain <em aria-hidden="true" style={{ color: 'var(--e)' }}>*</em>
               </label>
               <textarea
-                id={`organisation-${field.key}`}
-                rows={field.rows}
-                value={currentAnswers[field.key] || ''}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setIntake((previous) => ({
-                    ...previous,
-                    answers: { ...((previous as any).answers || {}), [field.key]: value },
-                  }));
-                }}
-                placeholder={field.key === 'organogram_tree' ? 'Managing Director\n  Operations Manager\n    Your Unit' : ''}
+                id="org-what"
+                rows={4}
+                value={orgWhat}
+                onChange={(e) => setOrgWhat(e.target.value)}
+                placeholder="e.g. A technology solutions company specializing in web application development, cloud infrastructure, and IT consultancy services for businesses and public institutions."
+                style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '10px' }}
+              />
+              <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
+                Grey hint is an example — your answer should reflect where you trained.
+              </p>
+            </div>
+
+            {/* I'm not sure path */}
+            <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg)', border: '1px solid var(--bdr)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>Not sure about their background?</span>
+                <button
+                  type="button"
+                  className="tx"
+                  style={{ fontSize: '13px', color: orgNotSure ? 'var(--g)' : 'var(--tx)' }}
+                  onClick={() => {
+                    setOrgNotSure(!orgNotSure);
+                    if (!orgWhat.trim()) {
+                      setOrgWhat(`${orgName} is an established technical organisation located in ${details.addr || 'Nigeria'}.`);
+                    }
+                  }}
+                >
+                  {orgNotSure ? 'Using standard details ✓' : "I'm not sure"}
+                </button>
+              </div>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
+                If you're not sure, Log2Def will synthesize verified details from your placement location and let you polish it later.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* SCREEN 2: When started and where based */}
+        {orgScreen === 2 && (
+          <div>
+            <h1 className="wt" id="wh" tabIndex={-1}>When did it start and where is it based?</h1>
+            <p className="wd" style={{ margin: '4px 0 16px', color: 'var(--mut)', fontSize: '13px' }}>
+              Gives historical and geographic context to your SIWES attachment.
+            </p>
+
+            <div className="f" style={{ margin: '14px 0' }}>
+              <label htmlFor="org-when" style={{ fontWeight: 600, fontSize: '14px' }}>
+                Year founded or began operations <span className="mut" style={{ fontWeight: 400 }}>(optional)</span>
+              </label>
+              <input
+                id="org-when"
+                type="text"
+                value={orgWhen}
+                onChange={(e) => setOrgWhen(e.target.value)}
+                placeholder="e.g. Founded in 2018"
+                style={{ width: '100%', padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
               />
             </div>
-          ))}
-          {organisationError && <p className="err" role="alert">{organisationError}</p>}
-        </div>
+
+            <div className="f" style={{ margin: '14px 0' }}>
+              <label htmlFor="org-where" style={{ fontWeight: 600, fontSize: '14px' }}>
+                Location / headquarters
+              </label>
+              <input
+                id="org-where"
+                type="text"
+                value={orgWhere || details.addr || ''}
+                onChange={(e) => setOrgWhere(e.target.value)}
+                placeholder="e.g. Ikeja, Lagos State"
+                style={{ width: '100%', padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
+              />
+              <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--g)' }}>
+                Pre-filled from your company address.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* SCREEN 3: What does it aim to achieve (Mission & Objectives) */}
+        {orgScreen === 3 && (
+          <div>
+            <h1 className="wt" id="wh" tabIndex={-1}>What does {orgName} aim to achieve?</h1>
+            <p className="wd" style={{ margin: '4px 0 16px', color: 'var(--mut)', fontSize: '13px' }}>
+              Used for Section 2.2 (Objectives of the Organisation).
+            </p>
+
+            {/* Toggle between writing and pasting */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <button
+                type="button"
+                className={`btn ${!orgPasteMode ? '' : 'o'}`}
+                style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
+                onClick={() => setOrgPasteMode(false)}
+              >
+                Summarize objectives
+              </button>
+              <button
+                type="button"
+                className={`btn ${orgPasteMode ? '' : 'o'}`}
+                style={{ flex: 1, padding: '8px 12px', fontSize: '13px' }}
+                onClick={() => setOrgPasteMode(true)}
+              >
+                <span className="ms" style={{ fontSize: '16px' }}>content_paste</span> Paste from website
+              </button>
+            </div>
+
+            {orgPasteMode ? (
+              <div className="f" style={{ margin: '14px 0' }}>
+                <label htmlFor="org-paste" style={{ fontWeight: 600, fontSize: '14px' }}>
+                  Paste text from their website or company profile
+                </label>
+                <textarea
+                  id="org-paste"
+                  rows={5}
+                  value={orgPasteText}
+                  onChange={(e) => setOrgPasteText(e.target.value)}
+                  placeholder="Paste their 'About Us', 'Mission', or 'Objectives' paragraph here..."
+                  style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '10px' }}
+                />
+                <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
+                  The writer will use this pasted text as its sole authoritative source for this section.
+                </p>
+              </div>
+            ) : (
+              <div className="f" style={{ margin: '14px 0' }}>
+                <label htmlFor="org-objectives" style={{ fontWeight: 600, fontSize: '14px' }}>
+                  Mission or main objectives <em aria-hidden="true" style={{ color: 'var(--e)' }}>*</em>
+                </label>
+                <textarea
+                  id="org-objectives"
+                  rows={4}
+                  value={orgObjectives}
+                  onChange={(e) => setOrgObjectives(e.target.value)}
+                  placeholder="e.g. To deliver secure, high-availability software solutions and cultivate technological talent across West Africa."
+                  style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '10px' }}
+                />
+              </div>
+            )}
+
+            {/* I'm not sure path */}
+            <div style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '10px', background: 'var(--bg)', border: '1px solid var(--bdr)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>Don't have their formal mission statement?</span>
+                <button
+                  type="button"
+                  className="tx"
+                  style={{ fontSize: '13px' }}
+                  onClick={() => {
+                    setOrgObjectives(`To deliver professional services, engineering quality, and innovative technical solutions in its operational domain.`);
+                    showToast('Standard institutional objectives added.');
+                  }}
+                >
+                  Use general objective
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SCREEN 4: Leadership, Units, and Auto-built Organogram */}
+        {orgScreen === 4 && (
+          <div>
+            <h1 className="wt" id="wh" tabIndex={-1}>Organisation Structure & Organogram</h1>
+            <p className="wd" style={{ margin: '4px 0 16px', color: 'var(--mut)', fontSize: '13px' }}>
+              Auto-builds Section 2.3 (Structure) and Section 2.4 (Organogram) from your entered boxes.
+            </p>
+
+            <div className="f" style={{ margin: '12px 0' }}>
+              <label htmlFor="org-head" style={{ fontWeight: 600, fontSize: '13px' }}>
+                Who heads {orgName}? (Job title) <em aria-hidden="true" style={{ color: 'var(--e)' }}>*</em>
+              </label>
+              <input
+                id="org-head"
+                type="text"
+                value={headTitle}
+                onChange={(e) => setHeadTitle(e.target.value)}
+                placeholder="e.g. Managing Director / Chief Executive Officer"
+                style={{ width: '100%', padding: '10px 12px', fontSize: '14px', borderRadius: '8px' }}
+              />
+            </div>
+
+            <div className="f" style={{ margin: '12px 0' }}>
+              <label style={{ fontWeight: 600, fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+                Departments or Operating Units (add as chips)
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                {orgUnits.map((unit, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '16px',
+                      fontSize: '13px',
+                      background: studentUnit === unit ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg)',
+                      border: studentUnit === unit ? '1px solid var(--g)' : '1px solid var(--bdr)',
+                      fontWeight: studentUnit === unit ? 700 : 500,
+                    }}
+                  >
+                    <span>{unit}</span>
+                    <button
+                      type="button"
+                      className="tx"
+                      style={{ padding: 0, color: 'var(--mut)', fontSize: '14px', lineHeight: 1 }}
+                      onClick={() => setOrgUnits(orgUnits.filter((_, i) => i !== idx))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  value={newUnitInput}
+                  onChange={(e) => setNewUnitInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newUnitInput.trim()) {
+                      e.preventDefault();
+                      setOrgUnits([...orgUnits, newUnitInput.trim()]);
+                      setNewUnitInput('');
+                    }
+                  }}
+                  placeholder="Add another unit/department and press enter"
+                  style={{ flex: 1, padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+                />
+                <button
+                  type="button"
+                  className="btn o"
+                  style={{ padding: '8px 14px', fontSize: '13px' }}
+                  onClick={() => {
+                    if (newUnitInput.trim()) {
+                      setOrgUnits([...orgUnits, newUnitInput.trim()]);
+                      setNewUnitInput('');
+                    }
+                  }}
+                >
+                  + Add
+                </button>
+              </div>
+            </div>
+
+            <div className="f" style={{ margin: '12px 0' }}>
+              <label style={{ fontWeight: 600, fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+                Which unit did you work in? <em aria-hidden="true" style={{ color: 'var(--e)' }}>*</em>
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {orgUnits.map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    className={`btn ${studentUnit === u ? '' : 'o'}`}
+                    style={{ padding: '6px 12px', fontSize: '13px' }}
+                    onClick={() => setStudentUnit(u)}
+                  >
+                    {studentUnit === u && <span className="ms" style={{ fontSize: '14px' }}>check</span>}
+                    {u}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="f" style={{ margin: '12px 0' }}>
+              <label htmlFor="supervisor-title" style={{ fontWeight: 600, fontSize: '13px' }}>
+                Who supervised you? (Job title) <span className="mut" style={{ fontWeight: 400 }}>(optional)</span>
+              </label>
+              <input
+                id="supervisor-title"
+                type="text"
+                value={supervisorTitle}
+                onChange={(e) => setSupervisorTitle(e.target.value)}
+                placeholder="e.g. Senior Software Engineer / Technical Lead"
+                style={{ width: '100%', padding: '10px 12px', fontSize: '14px', borderRadius: '8px' }}
+              />
+            </div>
+
+            {/* LIVE ORGANOGRAM PREVIEW */}
+            <div style={{ marginTop: '18px', padding: '14px', borderRadius: '12px', background: 'var(--bg)', border: '1px solid var(--bdr)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span className="ms" style={{ fontSize: '18px', color: 'var(--g)' }}>account_tree</span>
+                  Organogram Preview (Never adds unentered boxes)
+                </span>
+                <button
+                  type="button"
+                  className="tx"
+                  style={{ fontSize: '12px' }}
+                  onClick={() => {
+                    setIsEditingTree(!isEditingTree);
+                    if (!customTreeText) {
+                      setCustomTreeText(computeOrganogramTree(headTitle, orgUnits, studentUnit, supervisorTitle));
+                    }
+                  }}
+                >
+                  {isEditingTree ? 'Use auto-build' : 'Edit as text'}
+                </button>
+              </div>
+
+              {isEditingTree ? (
+                <textarea
+                  rows={6}
+                  value={customTreeText}
+                  onChange={(e) => setCustomTreeText(e.target.value)}
+                  style={{ width: '100%', fontFamily: 'monospace', fontSize: '13px', padding: '10px', borderRadius: '8px' }}
+                />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px 4px' }}>
+                  {treeToShow.split('\n').map((line, idx) => {
+                    if (!line.trim()) return null;
+                    const indent = line.length - line.trimStart().length;
+                    const isStudent = line.includes('SIWES Intern');
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          marginLeft: `${indent * 12}px`,
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          background: isStudent ? 'rgba(16, 185, 129, 0.15)' : indent === 0 ? 'rgba(30, 41, 59, 0.06)' : 'var(--card-bg, #fff)',
+                          border: isStudent ? '1px solid var(--g)' : '1px solid var(--bdr)',
+                          fontSize: '13px',
+                          fontWeight: isStudent || indent === 0 ? 700 : 500,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          width: 'fit-content',
+                        }}
+                      >
+                        <span className="ms" style={{ fontSize: '14px', color: isStudent ? 'var(--g)' : 'var(--mut)' }}>
+                          {indent === 0 ? 'domain' : isStudent ? 'school' : 'person'}
+                        </span>
+                        {line.trim()}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
-
   const renderStepImages = () => {
     const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
     const uploadImage = async (file: File) => {
@@ -5250,69 +5667,68 @@ export default function DashboardPage() {
       );
     }
     if (step === 4) {
+      if (orgScreen < 4) {
+        return (
+          <button
+            className="btn"
+            type="button"
+            disabled={orgScreen === 1 && !orgWhat.trim() && !orgNotSure}
+            onClick={async () => {
+              const projId = activeProject?.id;
+              if (projId) {
+                if (orgScreen === 1) {
+                  if (orgWhat.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_what', orgWhat.trim()).catch(() => {});
+                  if (orgNotSure) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_not_sure', true).catch(() => {});
+                } else if (orgScreen === 2) {
+                  if (orgWhen.trim()) await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_when_where', `${orgWhen.trim()} ${orgWhere.trim()}`.trim()).catch(() => {});
+                } else if (orgScreen === 3) {
+                  if (orgPasteMode && orgPasteText.trim()) {
+                    await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_paste_text', orgPasteText.trim()).catch(() => {});
+                  } else if (orgObjectives.trim()) {
+                    await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_objectives', orgObjectives.trim()).catch(() => {});
+                  }
+                }
+              }
+              trackWizardEvent('step4_organisation', `screen_${orgScreen}`, 'screen_completed');
+              setOrgScreen((prev) => (Math.min(4, prev + 1) as 1 | 2 | 3 | 4));
+              if (scrRef.current) scrRef.current.scrollTop = 0;
+            }}
+            style={{ flex: 1 }}
+          >
+            Next question
+            <span className="ms" aria-hidden="true">arrow_forward</span>
+          </button>
+        );
+      }
       return (
         <button
           className="btn"
           type="button"
-          id="c4"
-          disabled={isStep4Invalid() || isSavingStep4}
-          aria-busy={isSavingStep4}
+          disabled={!headTitle.trim() || !studentUnit.trim()}
           onClick={async () => {
-            if (isStep4Invalid() || isSavingStep4) return;
-            setIsSavingStep4(true);
-            setStep4SaveError(null);
-            const updatedDetails = { ...details };
-            for (const [k, v] of Object.entries(answers)) {
-              if (v && v.trim() && !updatedDetails[k]) {
-                updatedDetails[k] = v.trim();
+            const projId = activeProject?.id;
+            if (projId) {
+              const treeToSave = isEditingTree && customTreeText.trim()
+                ? customTreeText.trim()
+                : computeOrganogramTree(headTitle, orgUnits, studentUnit, supervisorTitle);
+              await projectsApi.saveGuidedIntakeAnswer(projId, 'head_title', headTitle.trim()).catch(() => {});
+              await projectsApi.saveGuidedIntakeAnswer(projId, 'organisation_units', orgUnits).catch(() => {});
+              await projectsApi.saveGuidedIntakeAnswer(projId, 'student_unit', studentUnit.trim()).catch(() => {});
+              if (supervisorTitle.trim()) {
+                await projectsApi.saveGuidedIntakeAnswer(projId, 'supervisor_title', supervisorTitle.trim()).catch(() => {});
+              }
+              if (treeToSave) {
+                await projectsApi.saveGuidedIntakeAnswer(projId, 'organogram_tree', treeToSave).catch(() => {});
               }
             }
-            try {
-              let projectId = activeProject?.id || useProjectStore.getState().activeProject?.id;
-              if (!projectId) {
-                const ensured = await ensureActiveProject().catch(() => null);
-                projectId = ensured?.id;
-              }
-              if (!projectId) throw new Error('Could not find your report project. Please try again.');
-              await updateActiveProject(projectId, {
-                full_name: updatedDetails.name,
-                matric_number: updatedDetails.matric,
-                department: updatedDetails.dept,
-                college: updatedDetails.fac,
-                university_name: updatedDetails.inst,
-                degree: updatedDetails.degree,
-                organization_name: updatedDetails.co,
-                organization_address: updatedDetails.addr,
-                placement_department: updatedDetails.unit,
-                training_start_date: updatedDetails.start,
-                training_end_date: updatedDetails.end,
-                industry_supervisor_name: updatedDetails.sup,
-                academic_supervisor_name: updatedDetails.isup,
-              });
-              setDetails(updatedDetails);
-              setStep(5);
-              if (scrRef.current) scrRef.current.scrollTop = 0;
-            } catch (err: unknown) {
-              const message = err instanceof Error ? err.message : 'Could not save your details. Please try again.';
-              setStep4SaveError(message);
-              showToast(message);
-            } finally {
-              setIsSavingStep4(false);
-            }
+            trackWizardEvent('step4_organisation', 'screen_4', 'screen_completed');
+            setStep(5);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
           }}
           style={{ flex: 1 }}
         >
-          {isSavingStep4 ? (
-            <>
-              <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
-              Saving details…
-            </>
-          ) : (
-            <>
-              Next
-              <span className="ms" aria-hidden="true">arrow_forward</span>
-            </>
-          )}
+          Continue to Experience
+          <span className="ms" aria-hidden="true">arrow_forward</span>
         </button>
       );
     }
@@ -5704,8 +6120,8 @@ export default function DashboardPage() {
               {step === 1 && renderStep1()}
               {step === 2 && renderStep2()}
               {step === 3 && renderStep3()}
-              {step === 4 && renderStep4()}
-              {step === 5 && renderStepOrganisation()}
+              {step === 4 && renderStepOrganisation()}
+              {step === 5 && renderStep4()}
               {step === 6 && renderStepImages()}
               {step === 7 && renderStep7()}
             </>
