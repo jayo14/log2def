@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import time
 import threading
 from io import BytesIO
 from html import escape, unescape
@@ -1546,6 +1547,14 @@ class ExportStatusView(views.APIView):
         if fmt == 'docx' and not is_feature_enabled('report_docx_export'):
             return Response({"detail": "DOCX export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
 
+        raw_timeout = request.query_params.get('timeout') or request.query_params.get('wait')
+        poll_timeout = 0
+        if raw_timeout:
+            try:
+                poll_timeout = max(0, min(int(raw_timeout), 25))
+            except (ValueError, TypeError):
+                poll_timeout = 0
+
         trigger = request.query_params.get('trigger', 'false').lower() in ('true', '1')
         key = (project.id, fmt)
 
@@ -1556,32 +1565,57 @@ class ExportStatusView(views.APIView):
 
         job = EXPORT_JOBS.get(key)
 
-        if _export_is_current(file_path, project.report) and (not trigger or (job and job.get('status') == 'ready')):
-            signer = TimestampSigner(salt='report-export-download')
-            token = signer.sign(f"{project.id}:{request.user.id}:{fmt}")
-            download_url = f"/api/projects/{project.id}/export/download/?format={fmt}&token={token}"
-            return Response({
-                "project_id": project.id,
-                "format": fmt,
-                "status": "ready",
-                "progress_percent": 100,
-                "download_url": download_url,
-                "filename": expected_filename,
-                "error": None
-            })
-
         if trigger and (not job or job.get('status') in ['failed', 'ready', 'idle']):
             t = threading.Thread(target=run_export_background, args=(project.id, fmt), daemon=True)
             t.start()
-            return Response({
-                "project_id": project.id,
-                "format": fmt,
-                "status": "processing",
-                "progress_percent": 30,
-                "download_url": None,
-                "filename": expected_filename,
-                "error": None
-            })
+            if poll_timeout == 0:
+                return Response({
+                    "project_id": project.id,
+                    "format": fmt,
+                    "status": "processing",
+                    "progress_percent": 30,
+                    "download_url": None,
+                    "filename": expected_filename,
+                    "error": None
+                })
+
+        start_time = time.time()
+        while True:
+            job = EXPORT_JOBS.get(key)
+            if _export_is_current(file_path, project.report) and (not trigger or (job and job.get('status') == 'ready')):
+                signer = TimestampSigner(salt='report-export-download')
+                token = signer.sign(f"{project.id}:{request.user.id}:{fmt}")
+                download_url = f"/api/projects/{project.id}/export/download/?format={fmt}&token={token}"
+                return Response({
+                    "project_id": project.id,
+                    "format": fmt,
+                    "status": "ready",
+                    "progress_percent": 100,
+                    "download_url": download_url,
+                    "filename": expected_filename,
+                    "error": None
+                })
+
+            if job:
+                status_val = job.get('status', 'processing')
+                if status_val in ['ready', 'failed']:
+                    signer = TimestampSigner(salt='report-export-download')
+                    token = signer.sign(f"{project.id}:{request.user.id}:{fmt}")
+                    dl = f"/api/projects/{project.id}/export/download/?format={fmt}&token={token}" if status_val == 'ready' else None
+                    return Response({
+                        "project_id": project.id,
+                        "format": fmt,
+                        "status": status_val,
+                        "progress_percent": job.get('progress_percent', 100 if status_val == 'ready' else 0),
+                        "download_url": dl,
+                        "filename": expected_filename,
+                        "error": job.get('error'),
+                        "quality_gate": job.get('quality_gate'),
+                    })
+
+            if poll_timeout <= 0 or (time.time() - start_time) >= poll_timeout:
+                break
+            time.sleep(0.4)
 
         if job:
             status_val = job.get('status', 'processing')
