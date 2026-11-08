@@ -988,6 +988,33 @@ class ReportGenerateView(views.APIView):
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
 
+        # Auto-synthesize student_unit and duties if available on project
+        answers = dict(project.guided_intake or {})
+        changed = False
+        if not answers.get("student_unit"):
+            fallback_unit = project.placement_department or project.industry_department or ""
+            if fallback_unit:
+                answers["student_unit"] = fallback_unit
+                changed = True
+        if not answers.get("duties"):
+            verified_entries = project.logbook_entries.filter(is_verified=True)
+            if not verified_entries.exists():
+                verified_entries = project.logbook_entries.all()
+            if verified_entries.exists():
+                entry_texts = [
+                    (e.verified_text or e.raw_text or e.activity_summary or "").strip()
+                    for e in verified_entries[:5]
+                    if (e.verified_text or e.raw_text or e.activity_summary or "").strip()
+                ]
+                if entry_texts:
+                    answers["duties"] = "\n".join(entry_texts)
+                    changed = True
+        if changed:
+            project.guided_intake = answers
+            project.save(update_fields=["guided_intake", "updated_at"])
+            for k, ans in answers.items():
+                save_intake_facts(project, k, ans)
+
         # Block generation while essential required information is missing or dates invalid
         from .completeness import check_project_completeness
         completeness = check_project_completeness(project)

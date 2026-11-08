@@ -199,6 +199,18 @@ def check_project_completeness(project) -> Dict[str, Any]:
             fallback_unit = project.placement_department or project.industry_department or ""
             if fallback_unit:
                 answers["student_unit"] = fallback_unit
+        if not answers.get("duties"):
+            verified_entries = project.logbook_entries.filter(is_verified=True)
+            if not verified_entries.exists():
+                verified_entries = project.logbook_entries.all()
+            if verified_entries.exists():
+                entry_texts = [
+                    (e.verified_text or e.raw_text or e.activity_summary or "").strip()
+                    for e in verified_entries[:5]
+                    if (e.verified_text or e.raw_text or e.activity_summary or "").strip()
+                ]
+                if entry_texts:
+                    answers["duties"] = "\n".join(entry_texts)
         intake_steps = get_section_requirements()["guided_intake"]["steps"]
         for step in intake_steps:
             if not step.get("required"):
