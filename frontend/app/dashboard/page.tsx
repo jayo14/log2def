@@ -48,6 +48,14 @@ const SEC = [
   'References',
 ];
 
+const RECOMMENDATION_SUGGESTIONS = [
+  'Provide interns with dedicated computing workstations and test environments',
+  'Organize structured onboarding sessions on production toolchains and git workflows',
+  'Increase practical hands-on project assignments aligned with university curriculum',
+  'Strengthen liaison visits between industrial supervisors and university SIWES coordinators',
+  'Grant interns expanded access to internal technical documentation and APIs',
+];
+
 const FLD: [string, string][] = [
   ['name', 'Full name'],
   ['matric', 'Matric number'],
@@ -103,6 +111,7 @@ interface LogEntry {
   id?: number;
   w: number;
   t: string;
+  activity_summary?: string;
   area: string;
   tools: string;
   u?: number;
@@ -220,6 +229,17 @@ export default function DashboardPage() {
   const [supervisorTitle, setSupervisorTitle] = useState<string>('');
   const [customTreeText, setCustomTreeText] = useState<string>('');
   const [isEditingTree, setIsEditingTree] = useState<boolean>(false);
+
+  // Step 5: Your Experience state
+  const [experienceDuties, setExperienceDuties] = useState<string>('');
+  const [experienceAdditional, setExperienceAdditional] = useState<string>('');
+  const [experienceTools, setExperienceTools] = useState<string[]>(['VS Code', 'Git', 'Linux', 'Python']);
+  const [newToolInput, setNewToolInput] = useState<string>('');
+  const [challengesNone, setChallengesNone] = useState<boolean>(true);
+  const [challengeText, setChallengeText] = useState<string>('');
+  const [solutionText, setSolutionText] = useState<string>('');
+  const [selectedRecommendations, setSelectedRecommendations] = useState<string[]>([]);
+  const [customRecommendation, setCustomRecommendation] = useState<string>('');
 
   const [pages, setPages] = useState<LogPage[]>([]);
   const [reading, setReading] = useState<boolean>(false);
@@ -4355,293 +4375,238 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // WIZARD FLOW: STEP 4 (COMPLETE MISSING INFO)
+  // WIZARD FLOW: STEP 5 (YOUR EXPERIENCE)
   // ==========================================
-  const renderStep4 = () => {
-    const items = checkCompleteness();
-    const missing = items.filter((x) => !x.exists);
-    const st = details.start;
-    const en = details.end;
-    const dateError = Boolean(st && en && en <= st);
+  const renderStepExperience = () => {
+    // Collect logbook duties from verified entries
+    const logbookDuties = entries
+      .map((e) => (e.t || e.activity_summary || '').trim())
+      .filter((text): text is string => Boolean(text));
+    const displayDuties = experienceDuties || (logbookDuties.length > 0 ? logbookDuties.slice(0, 5).join('\n') : '');
 
     return (
-      <div className="view" id="step-4">
-        <h1 className="wt" id="wh" tabIndex={-1}>
-          {missing.length ? 'Complete your details' : 'All details found'}
-        </h1>
-        <p className="wd">
-          {missing.length ? 'Fill what’s missing. Check the rest.' : 'Check them, then continue.'}
+      <div className="view" id="step-5-experience">
+        <h1 className="wt" id="wh" tabIndex={-1}>Your experience</h1>
+        <p className="wd" style={{ margin: '4px 0 16px', color: 'var(--mut)', fontSize: '13px' }}>
+          Confirms your technical duties, tools, and reflections for Chapters 3 and 4.
         </p>
 
-        <div className="card" style={{ padding: '4px 16px' }}>
-          {items.map((x) => {
-            if (x.exists) {
-              return (
-                <div key={x.key} className="tk">
-                  <span className="ms" style={{ color: 'var(--g)' }} aria-hidden="true">
-                    check_circle
-                  </span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    {x.label}
-                    <small style={{ wordBreak: 'break-word' }}>
-                      {x.value} · {x.source}
-                    </small>
-                  </span>
-                  <button
-                    className="tx"
-                    type="button"
-                    onClick={() => {
-                      setAnswers((prev) => ({ ...prev, [x.key]: details[x.key] || '' }));
-                      setDetails((prev) => ({ ...prev, [x.key]: '' }));
-                    }}
-                  >
-                    Edit
-                  </button>
-                </div>
-              );
-            }
+        {/* 1. Day-to-day Responsibilities */}
+        <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label htmlFor="exp-duties" style={{ fontWeight: 700, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="ms" style={{ color: 'var(--g)', fontSize: '18px' }}>assignment</span>
+              What were you responsible for day-to-day?
+            </label>
+            <span style={{ fontSize: '11px', color: '#059669', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 8px', borderRadius: '8px' }}>
+              from your logbook · tap to confirm
+            </span>
+          </div>
+          <textarea
+            id="exp-duties"
+            rows={4}
+            value={displayDuties}
+            onChange={(e) => setExperienceDuties(e.target.value)}
+            placeholder="e.g. Diagnosed hardware and network interface issues.\nInstalled operating systems and configured office workstations.\nAssisted software team with code testing and documentation."
+            style={{ width: '100%', padding: '10px 12px', fontSize: '13px', borderRadius: '8px', lineHeight: 1.5 }}
+          />
 
-            const isDate = x.key === 'start' || x.key === 'end';
-            if (x.key === 'fac') {
-              return (
-                <div key={x.key} className="f" style={{ margin: '14px 0 16px' }}>
-                  <label htmlFor={`a_${x.key}`}>
-                    {x.label} <em aria-hidden="true">*</em>
-                    <span className="chip w" style={{ marginLeft: '6px' }}>
-                      <span className="ms" aria-hidden="true">
-                        error
-                      </span>
-                      Missing
-                    </span>
-                  </label>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <select
-                      id={`a_${x.key}`}
-                      ref={(el) => { intakeRefs.current[x.key] = el; }}
-                      value={answers[x.key] || ''}
-                      onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
-                      style={{ flex: 1, minWidth: 0 }}
-                      required
-                    >
-                      {COLLEGES.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="btn s"
-                      onClick={() => handleConfirmField(x.key)}
-                      style={{
-                        padding: '0 14px',
-                        height: '46px',
-                        borderRadius: '12px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        flexShrink: 0,
-                        background: 'var(--g)',
-                        color: '#fff',
-                      }}
-                      title="Save and confirm"
-                      aria-label={`Confirm and save ${x.label}`}
-                    >
-                      <span className="ms" style={{ fontSize: '20px' }}>check</span>
-                      <span>Save</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-            if (x.key === 'inst') {
-              return (
-                <div key={x.key} className="f" style={{ margin: '14px 0 16px' }}>
-                  <label htmlFor={`a_${x.key}`}>
-                    {x.label} <em aria-hidden="true">*</em>
-                    <span className="chip w" style={{ marginLeft: '6px' }}>
-                      <span className="ms" aria-hidden="true">
-                        error
-                      </span>
-                      Missing
-                    </span>
-                  </label>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <select
-                      id={`a_${x.key}`}
-                      ref={(el) => { intakeRefs.current[x.key] = el; }}
-                      value={answers[x.key] || ''}
-                      onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
-                      style={{ flex: 1, minWidth: 0 }}
-                      required
-                    >
-                      {INSTITUTIONS.map((instOption) => (
-                        <option key={instOption} value={instOption}>
-                          {instOption}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="btn s"
-                      onClick={() => handleConfirmField(x.key)}
-                      style={{
-                        padding: '0 14px',
-                        height: '46px',
-                        borderRadius: '12px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        flexShrink: 0,
-                        background: 'var(--g)',
-                        color: '#fff',
-                      }}
-                      title="Save and confirm"
-                      aria-label={`Confirm and save ${x.label}`}
-                    >
-                      <span className="ms" style={{ fontSize: '20px' }}>check</span>
-                      <span>Save</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div key={x.key} className="f" style={{ margin: '14px 0 16px' }}>
-                <label htmlFor={`a_${x.key}`}>
-                  {x.label} <em aria-hidden="true">*</em>
-                  <span className="chip w" style={{ marginLeft: '6px' }}>
-                    <span className="ms" aria-hidden="true">
-                      error
-                    </span>
-                    Missing
-                  </span>
-                </label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input                    id={`a_${x.key}`}
-                    ref={(el) => { intakeRefs.current[x.key] = el; }}
-                    type={isDate ? 'date' : 'text'}
-                    placeholder={isDate ? 'dd/mm/yyyy' : `Enter ${x.label.toLowerCase()}`}
-                    value={answers[x.key] || ''}
-                    onChange={(e) => setAnswers((prev) => ({ ...prev, [x.key]: e.target.value }))}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleConfirmField(x.key);
-                      }
-
-                    }}
-                    style={{ flex: 1, minWidth: 0 }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="btn s"
-                    disabled={!(answers[x.key]?.trim())}
-                    onClick={() => handleConfirmField(x.key)}
-                    style={{
-                      padding: '0 14px',
-                      height: '46px',
-                      borderRadius: '12px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      flexShrink: 0,
-                      opacity: !(answers[x.key]?.trim()) ? 0.45 : 1,
-                      background: 'var(--g)',
-                      color: '#fff',
-                    }}
-                    title="Confirm and save"
-                    aria-label={`Confirm and save ${x.label}`}
-                  >
-                    <span className="ms" style={{ fontSize: '20px' }}>check</span>
-                    <span>Save</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          <div style={{ marginTop: '10px' }}>
+            <label htmlFor="exp-add" style={{ fontSize: '13px', fontWeight: 600, color: 'var(--mut)' }}>
+              Anything to add? (Optional)
+            </label>
+            <input
+              id="exp-add"
+              type="text"
+              value={experienceAdditional}
+              onChange={(e) => setExperienceAdditional(e.target.value)}
+              placeholder="e.g. Attended weekly technical design reviews with senior engineers"
+              style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px', marginTop: '4px' }}
+            />
+          </div>
         </div>
 
-        {dateError && (
-          <p className="err" id="derr" role="alert">
-            The end date must be after the start date.
+        {/* 2. Tools or Equipment Used */}
+        <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ fontWeight: 700, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="ms" style={{ color: 'var(--g)', fontSize: '18px' }}>build</span>
+              What tools or equipment did you use?
+            </label>
+            <span style={{ fontSize: '11px', color: 'var(--mut)' }}>
+              tap off or add to
+            </span>
+          </div>
+          <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--mut)' }}>
+            Populated from your logbook entries. Only tools you keep here will be included.
           </p>
-        )}
-        {isSavingStep4 && (
-          <p className="wd" role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-            <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
-            Saving your details… Please wait.
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+            {experienceTools.map((tool, idx) => (
+              <span
+                key={idx}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 10px',
+                  borderRadius: '16px',
+                  fontSize: '13px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid var(--g)',
+                  fontWeight: 600,
+                  color: 'var(--ink)',
+                }}
+              >
+                <span>{tool}</span>
+                <button
+                  type="button"
+                  className="tx"
+                  style={{ padding: 0, color: 'var(--mut)', fontSize: '14px', lineHeight: 1 }}
+                  onClick={() => setExperienceTools(experienceTools.filter((_, i) => i !== idx))}
+                  aria-label={`Remove ${tool}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="text"
+              value={newToolInput}
+              onChange={(e) => setNewToolInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newToolInput.trim()) {
+                  e.preventDefault();
+                  if (!experienceTools.includes(newToolInput.trim())) {
+                    setExperienceTools([...experienceTools, newToolInput.trim()]);
+                  }
+                  setNewToolInput('');
+                }
+              }}
+              placeholder="e.g. Cisco Packet Tracer, Wireshark, Docker"
+              style={{ flex: 1, padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+            />
+            <button
+              type="button"
+              className="btn o"
+              style={{ padding: '8px 14px', fontSize: '13px' }}
+              onClick={() => {
+                if (newToolInput.trim() && !experienceTools.includes(newToolInput.trim())) {
+                  setExperienceTools([...experienceTools, newToolInput.trim()]);
+                  setNewToolInput('');
+                }
+              }}
+            >
+              + Add tool
+            </button>
+          </div>
+        </div>
+
+        {/* 3. Challenges Faced */}
+        <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ fontWeight: 700, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="ms" style={{ color: 'var(--g)', fontSize: '18px' }}>psychology</span>
+              Any challenges you faced? <span className="mut" style={{ fontWeight: 400 }}>(optional)</span>
+            </label>
+            <button
+              type="button"
+              className={`btn ${challengesNone ? '' : 'o'}`}
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+              onClick={() => {
+                setChallengesNone(!challengesNone);
+                if (!challengesNone) {
+                  setChallengeText('');
+                  setSolutionText('');
+                }
+              }}
+            >
+              {challengesNone ? '✓ Nothing major' : 'Nothing major'}
+            </button>
+          </div>
+
+          {!challengesNone ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+              <input
+                type="text"
+                value={challengeText}
+                onChange={(e) => setChallengeText(e.target.value)}
+                placeholder="What real challenge did you encounter? (e.g. Intermittent network connectivity during deployment)"
+                style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+              />
+              <input
+                type="text"
+                value={solutionText}
+                onChange={(e) => setSolutionText(e.target.value)}
+                placeholder="How did you resolve it? (e.g. Re-terminated Ethernet RJ-45 connectors and rerouted trunk lines)"
+                style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+              />
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: '12px', color: 'var(--mut)' }}>
+              Selected: Nothing major. Log2Def will state that duties were completed without significant impediment.
+            </p>
+          )}
+        </div>
+
+        {/* 4. Recommendations */}
+        <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+          <label style={{ fontWeight: 700, fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <span className="ms" style={{ color: 'var(--g)', fontSize: '18px' }}>recommend</span>
+            Recommendations for {details.co || 'organisation'} or SIWES? <span className="mut" style={{ fontWeight: 400 }}>(optional)</span>
+          </label>
+          <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--mut)' }}>
+            Tap suggestions to include, or type your own. Suggestions start unselected.
           </p>
-        )}
-        {step4SaveError && <p className="err" role="alert">{step4SaveError}</p>}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+            {RECOMMENDATION_SUGGESTIONS.map((sug, idx) => {
+              const isSelected = selectedRecommendations.includes(sug);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedRecommendations(selectedRecommendations.filter((item) => item !== sug));
+                    } else {
+                      setSelectedRecommendations([...selectedRecommendations, sug]);
+                    }
+                  }}
+                  style={{
+                    textAlign: 'left',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    border: isSelected ? '1px solid var(--g)' : '1px solid var(--bdr)',
+                    background: isSelected ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: 'var(--ink)',
+                  }}
+                >
+                  <span className="ms" style={{ fontSize: '16px', color: isSelected ? 'var(--g)' : 'var(--mut)' }}>
+                    {isSelected ? 'check_box' : 'check_box_outline_blank'}
+                  </span>
+                  <span>{sug}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <input
+            type="text"
+            value={customRecommendation}
+            onChange={(e) => setCustomRecommendation(e.target.value)}
+            placeholder="+ Add your own custom recommendation"
+            style={{ width: '100%', padding: '8px 10px', fontSize: '13px', borderRadius: '8px' }}
+          />
+        </div>
       </div>
     );
-  };
-
-  const organisationFields = [
-    { key: 'organisation_what', label: "What does the organisation do? (main products or services)", required: true, rows: 4 },
-    { key: 'organisation_when_where', label: 'When and how did it start? Where is it based?', required: false, rows: 3 },
-    { key: 'organisation_objectives', label: "What is the organisation's mission, vision or main objectives?", required: true, rows: 4 },
-    { key: 'organisation_structure', label: 'Who heads the organisation (title)? What are the main departments or units? Which one did you work in? Who did you report to?', required: true, rows: 5 },
-    { key: 'organogram_tree', label: 'Organogram: one role per line, with two spaces for each reporting level', required: true, rows: 6 },
-    { key: 'student_unit', label: 'Which unit were you attached to?', required: true, rows: 2 },
-    { key: 'duties', label: 'What were your main responsibilities there?', required: true, rows: 4 },
-    { key: 'organisation_paste_text', label: 'Paste instead (optional): text from the company profile or About page', required: false, rows: 4 },
-    { key: 'organisation_paste_source', label: 'Where did the pasted text come from? (optional)', required: false, rows: 2 },
-  ];
-
-  const saveOrganisationAnswers = async (advanceOnComplete: boolean = false): Promise<boolean> => {
-    const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
-    if (!pid) return false;
-    const currentAnswers = ((intake as any).answers || {}) as Record<string, string>;
-    const missing = organisationFields.filter((field) => field.required && !String(currentAnswers[field.key] || '').trim());
-    if (missing.length) {
-      setOrganisationError(`Please complete: ${missing.map((field) => field.label).join(', ')}`);
-      return false;
-    }
-    setSavingOrganisation(true);
-    setOrganisationError('');
-    try {
-      const answersPayload: Record<string, any> = {};
-      for (const field of organisationFields) {
-        answersPayload[field.key] = currentAnswers[field.key] || '';
-      }
-      if (!currentAnswers['challenge_pairs']) {
-        answersPayload['challenge_pairs'] = { none: true, pairs: [] };
-      }
-      if (!currentAnswers['recommendations'] && !answersPayload['recommendations']) {
-        answersPayload['recommendations'] = 'The organisation should continue providing hands-on exposure to practical technical projects. The institution should maintain strong industry partnerships to prepare students adequately for professional practice.';
-      }
-      if (typeof (projectsApi as any)?.saveGuidedIntakeAnswers === 'function') {
-        const refreshed = await (projectsApi as any).saveGuidedIntakeAnswers(pid, answersPayload);
-        if (refreshed) {
-          setIntake(refreshed);
-        }
-      } else {
-        for (const field of organisationFields) {
-          if (typeof projectsApi?.saveGuidedIntakeAnswer === 'function') {
-            await projectsApi.saveGuidedIntakeAnswer(pid, field.key, currentAnswers[field.key] || '');
-          }
-        }
-        const refreshed = typeof projectsApi?.getGuidedIntake === 'function'
-          ? await projectsApi.getGuidedIntake<Record<string, any>>(pid)
-          : null;
-        if (refreshed) {
-          setIntake(refreshed);
-        }
-      }
-      if (advanceOnComplete) {
-        setStep(6);
-        if (scrRef.current) scrRef.current.scrollTop = 0;
-      }
-      return true;
-    } catch (error) {
-      setOrganisationError(error instanceof Error ? error.message : 'Your organisation answers could not be saved.');
-      return false;
-    } finally {
-      setSavingOrganisation(false);
-    }
   };
 
   // ==========================================
@@ -5737,23 +5702,44 @@ export default function DashboardPage() {
         <button
           className="btn"
           type="button"
-          disabled={savingOrganisation}
           onClick={async () => {
-            await saveOrganisationAnswers(true);
+            const projId = activeProject?.id;
+            if (projId) {
+              // Collect duties
+              const logbookDuties = entries
+                .map((e) => (e.t || e.activity_summary || '').trim())
+                .filter((text): text is string => Boolean(text));
+              const finalDuties = [
+                experienceDuties || (logbookDuties.length > 0 ? logbookDuties.slice(0, 5).join('\n') : ''),
+                experienceAdditional.trim(),
+              ].filter(Boolean).join('\n');
+
+              if (finalDuties.trim()) {
+                await projectsApi.saveGuidedIntakeAnswer(projId, 'duties', finalDuties.trim()).catch(() => {});
+              }
+              if (experienceTools.length > 0) {
+                await updateActiveProject(projId, { tools_used: experienceTools.join(', ') }).catch(() => {});
+              }
+              if (challengesNone) {
+                await projectsApi.saveGuidedIntakeAnswer(projId, 'challenge_pairs', { none: true }).catch(() => {});
+              } else if (challengeText.trim()) {
+                await projectsApi.saveGuidedIntakeAnswer(projId, 'challenge_pairs', {
+                  pairs: [{ challenge: challengeText.trim(), solution: solutionText.trim() || 'Addressed with supervisor guidance.' }]
+                }).catch(() => {});
+              }
+              const allRecs = [...selectedRecommendations, customRecommendation.trim()].filter(Boolean);
+              if (allRecs.length > 0) {
+                await projectsApi.saveGuidedIntakeAnswer(projId, 'recommendations', allRecs.join('\n')).catch(() => {});
+              }
+            }
+            trackWizardEvent('step5_experience', 'experience_overview', 'step_completed');
+            setStep(6);
+            if (scrRef.current) scrRef.current.scrollTop = 0;
           }}
           style={{ flex: 1 }}
         >
-          {savingOrganisation ? (
-            <>
-              <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
-              Saving answers…
-            </>
-          ) : (
-            <>
-              Next
-              <span className="ms" aria-hidden="true">arrow_forward</span>
-            </>
-          )}
+          Continue to Extras
+          <span className="ms" aria-hidden="true">arrow_forward</span>
         </button>
       );
     }
@@ -6121,7 +6107,7 @@ export default function DashboardPage() {
               {step === 2 && renderStep2()}
               {step === 3 && renderStep3()}
               {step === 4 && renderStepOrganisation()}
-              {step === 5 && renderStep4()}
+              {step === 5 && renderStepExperience()}
               {step === 6 && renderStepImages()}
               {step === 7 && renderStep7()}
             </>
