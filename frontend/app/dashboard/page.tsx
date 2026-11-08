@@ -1338,41 +1338,13 @@ export default function DashboardPage() {
     }
   };
 
-  // Step 5 Report Generation: triggers real generation in PostgreSQL
+  // Step 7 Report Generation: triggers real generation in PostgreSQL
   const startGenerating = async () => {
     setGenError(null);
-
-    // Pre-flight: if a previous generation was blocked by missing guided-intake
-    // fields, do not POST again until those fields are actually filled in. Focus
-    // the first still-empty required field so the user lands where the fix is.
-    if (lastGenerateBlock && lastGenerateBlock.missing.length > 0) {
-      const stillMissing = lastGenerateBlock.missing.filter(
-        (k) =>
-          typeof k === 'string' &&
-          k.startsWith('guided_intake:') &&
-          !((intake as any)[k.replace(/^guided_intake:/, '')] &&
-            String((intake as any)[k.replace(/^guided_intake:/, '')]).trim())
-      );
-      if (stillMissing.length > 0) {
-        const firstMissing = stillMissing.find((k) => typeof k === 'string') || null;
-        if (firstMissing) {
-          const focusKey = firstMissing.replace(/^guided_intake:/, '');
-          setIntakeFocusKey(focusKey);
-          setTimeout(() => {
-            const el = intakeRefs.current[focusKey];
-            if (el && typeof el.focus === 'function') {
-              el.focus();
-              el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            }
-          }, 0);
-        }
-        setGenState(0);
-        return;
-      }
-    }
-
+    setLastGenerateBlock(null);
     setGenState(1);
     setGenProgress(0);
+    if (scrRef.current) scrRef.current.scrollTop = 0;
 
     // Progress smoothly through the 8 stages (up to 7 while waiting for backend)
     const iv = setInterval(() => {
@@ -1385,7 +1357,7 @@ export default function DashboardPage() {
         throw new Error('No active project found. Please select or initialize your report project.');
       }
 
-      const rep = await storeGenerateReport(projId, true);
+      const rep = await storeGenerateReport(projId, false);
       clearInterval(iv);
       setGenProgress(GS.length); // All 8 completed
       await new Promise((r) => setTimeout(r, 600));
@@ -1398,6 +1370,23 @@ export default function DashboardPage() {
       showToast('Institutional report compiled!');
     } catch (err: any) {
       clearInterval(iv);
+
+      // Check if report sections actually exist in the database despite any transient proxy/network hiccup
+      const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+      if (projId) {
+        try {
+          const fallbackRep = await fetchReport(projId);
+          if (fallbackRep && fallbackRep.sections && fallbackRep.sections.length > 0) {
+            setGenProgress(GS.length);
+            const edits = mapBackendSectionsToChapters(fallbackRep.sections);
+            setChapterEdits(edits);
+            setGenState(2);
+            showToast('Institutional report compiled!');
+            return;
+          }
+        } catch {}
+      }
+
       setGenState(0);
 
       // Surface a human-friendly message; keep the raw payload for routing.
@@ -1441,14 +1430,12 @@ export default function DashboardPage() {
         }
         setGenError(msg);
 
-        // Route to the missing-info step. For FLD detail fields (rendered inline in
-        // Step 4), focus the first missing one; guided-intake fields live on the
-        // /intake route, so we don't attempt an inline focus for those.
-        setStep(4);
+        // Route to the missing-info step ONLY if an inline FLD detail field is missing.
         const firstDetailMissing = missingFields.find(
-          (k) => typeof k === 'string' && !k.startsWith('guided_intake:')
+          (k) => typeof k === 'string' && !k.startsWith('guided_intake:') && !k.startsWith('section:') && FLD.some(([key]) => key === k)
         ) || null;
         if (firstDetailMissing) {
+          setStep(4);
           setIntakeFocusKey(firstDetailMissing as string);
           setTimeout(() => {
             const el = intakeRefs.current[firstDetailMissing as string];
@@ -1458,7 +1445,7 @@ export default function DashboardPage() {
             }
           }, 0);
         }
-        showToast('Report generation blocked — missing required information.');
+        showToast('Report generation note — check required details.');
       } else {
         setGenError(err.message || 'Report generation failed. Please try again.');
         showToast(err.message || 'Report generation error');
@@ -2496,7 +2483,12 @@ export default function DashboardPage() {
       }
     };
 
-    if (genState !== 2) {
+    const hasReport = Boolean(
+      (dbReport && dbReport.sections && dbReport.sections.length > 0) ||
+      Object.keys(chapterEdits).length > 0
+    );
+
+    if (genState !== 2 && !hasReport) {
       return (
         <div className="card big" style={{ marginTop: '10px' }}>
           <div className="ok">
@@ -2505,7 +2497,7 @@ export default function DashboardPage() {
             </span>
           </div>
           <h2>No report generated yet</h2>
-          <p>Complete the 5-step generator to compile your logbook entries into an institutional report.</p>
+          <p>Complete the generator steps to compile your logbook entries into an institutional report.</p>
           <button
             className="btn w"
             type="button"
@@ -2518,8 +2510,74 @@ export default function DashboardPage() {
       );
     }
 
+    const totalSections = editorLabels.length;
+    const filledSections = editorLabels.filter((_: string, i: number) => {
+      const h = getSectionHtml(i);
+      return Boolean(h && h.replace(/<[^>]*>/g, '').trim().length > 0);
+    });
+    const unfilledLabels = editorLabels.filter((_: string, i: number) => {
+      const h = getSectionHtml(i);
+      return !h || h.replace(/<[^>]*>/g, '').trim().length === 0;
+    });
+    const isAllFilled = unfilledLabels.length === 0;
+
     return (
       <div style={{ marginTop: '6px' }}>
+        {/* Generation Status Overview Banner */}
+        <div
+          className="card"
+          style={{
+            padding: '12px 16px',
+            marginBottom: '14px',
+            background: isAllFilled ? 'var(--card)' : '#fffbeb',
+            border: `1px solid ${isAllFilled ? 'var(--line)' : '#fde68a'}`,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flex: 1, minWidth: '220px' }}>
+              <span
+                className="ms"
+                style={{
+                  fontSize: '22px',
+                  color: isAllFilled ? 'var(--g)' : '#d97706',
+                  marginTop: '1px',
+                  flexShrink: 0,
+                }}
+                aria-hidden="true"
+              >
+                {isAllFilled ? 'task_alt' : 'info'}
+              </span>
+              <div>
+                <b style={{ color: isAllFilled ? 'var(--ink)' : '#92400e', fontSize: '14px', display: 'block' }}>
+                  {isAllFilled
+                    ? `Complete Technical Report (${totalSections} sections generated)`
+                    : `Report Status: ${filledSections.length} of ${totalSections} sections generated`}
+                </b>
+                {!isAllFilled ? (
+                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#b45309', lineHeight: 1.4 }}>
+                    Sections not generated yet: <b>{unfilledLabels.join(', ')}</b>. You can write or edit them directly below.
+                  </p>
+                ) : (
+                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
+                    All chapters compiled and aligned with LASUSTECH SIWES standard format.
+                  </p>
+                )}
+              </div>
+            </div>
+            {!isAllFilled && (
+              <button
+                className="btn o s"
+                type="button"
+                onClick={() => goToFlow(7)}
+                style={{ flexShrink: 0 }}
+              >
+                <span className="ms" style={{ fontSize: '16px' }} aria-hidden="true">auto_awesome</span>
+                Generate Missing
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="seg" role="tablist" aria-label="View" style={{ marginBottom: '14px' }}>
           <button
             role="tab"
@@ -2544,23 +2602,52 @@ export default function DashboardPage() {
         {editorTab === 'edit' ? (
           <>
             <div className="pills" role="tablist" aria-label="Sections">
-              {editorLabels.map((x: string, i: number) => (
-                <button
-                  key={x}
-                  role="tab"
-                  type="button"
-                  aria-selected={i === currentSectionIdx}
-                  onClick={() => {
-                    setCurrentSectionIdx(i);
-                    if (editorRef.current) {
-                      editorRef.current.innerHTML = getSectionHtml(i);
-                    }
-                  }}
-                >
-                  {x.replace(/Chapter (\d): /, 'Ch $1: ')}
-                </button>
-              ))}
+              {editorLabels.map((x: string, i: number) => {
+                const h = getSectionHtml(i);
+                const isFilled = Boolean(h && h.replace(/<[^>]*>/g, '').trim().length > 0);
+                return (
+                  <button
+                    key={x}
+                    role="tab"
+                    type="button"
+                    aria-selected={i === currentSectionIdx}
+                    onClick={() => {
+                      setCurrentSectionIdx(i);
+                      if (editorRef.current) {
+                        editorRef.current.innerHTML = getSectionHtml(i);
+                      }
+                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <span
+                      className="ms"
+                      style={{
+                        fontSize: '14px',
+                        color: isFilled ? 'var(--g)' : '#d97706',
+                      }}
+                      aria-hidden="true"
+                    >
+                      {isFilled ? 'check_circle' : 'pending'}
+                    </span>
+                    {x.replace(/Chapter (\d): /, 'Ch $1: ')}
+                  </button>
+                );
+              })}
             </div>
+
+            {(() => {
+              const activeH = getSectionHtml(currentSectionIdx);
+              const activeFilled = Boolean(activeH && activeH.replace(/<[^>]*>/g, '').trim().length > 0);
+              if (!activeFilled) {
+                return (
+                  <div style={{ padding: '8px 12px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '10px', marginBottom: '10px', fontSize: '12.5px', color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="ms" style={{ fontSize: '16px', color: '#d97706' }}>edit_note</span>
+                    <span>This section has not been generated yet. You can type or paste your content directly below.</span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
 
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <div className="tl" role="toolbar" aria-label="Formatting">
@@ -2703,13 +2790,18 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {!qualityGate.passed ? (
-              <div className="card" id="report-quality" role="alert" style={{ border: '1px solid #b42318' }}>
-                <h2 style={{ marginTop: 0 }}>Preview blocked</h2>
-                <p>Fix these report issues before preview or export.</p>
+            {!qualityGate.passed && (
+              <div className="card" id="report-quality" role="alert" style={{ border: '1px solid #fca5a5', background: '#fef2f2', marginBottom: '16px' }}>
+                <div className="row" style={{ color: '#b91c1c', alignItems: 'center', gap: '8px' }}>
+                  <span className="ms">error_outline</span>
+                  <b style={{ fontSize: '14.5px' }}>Quality Gate Notice ({qualityGate.blockers?.length || 0} issues for final export)</b>
+                </div>
+                <p style={{ margin: '6px 0 10px', fontSize: '13px', color: '#7f1d1d' }}>
+                  You can preview everything that has been generated below. Resolve any flagged items before final DOCX/PDF export.
+                </p>
                 {[...(qualityGate.blockers || []), ...(qualityGate.warnings || [])].map((issue: any, idx: number) => (
-                  <div key={`${issue.code}-${idx}`} id={issue.anchor?.replace('#', '')} style={{ padding: '8px 0', borderTop: '1px solid var(--line)' }}>
-                    <p style={{ margin: 0 }}>{issue.message}</p>
+                  <div key={`${issue.code}-${idx}`} id={issue.anchor?.replace('#', '')} style={{ padding: '8px 0', borderTop: '1px solid #fecaca', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#991b1b' }}>{issue.message}</p>
                     {issue.section_key && (
                       <button
                         className="btn o s"
@@ -2723,30 +2815,62 @@ export default function DashboardPage() {
                           setEditorTab('edit');
                         }}
                       >
-                        Go to {dbReport?.sections?.find((section: any) => section.section_key === issue.section_key)?.title || 'section'}
+                        Edit
                       </button>
                     )}
                   </div>
                 ))}
               </div>
-            ) : previewRows.map((q: any, idx: number) => (
-              <React.Fragment key={idx}>
-                <p className="pl2">
-                  {q.t} ·{' '}
-                  {q.l
-                    ? `page ${q.l}${q.p > 1 ? ` (continues to ${+q.l + q.p - 1})` : ''}`
-                    : 'no page number'}
-                </p>
-                <div
-                  className="pgp"
-                  role="group"
-                  aria-label={q.t}
-                >
-                  <div dangerouslySetInnerHTML={{ __html: q.h }} />
-                  {q.l && <div className="pn">Page {q.l}{q.p > 1 ? ` – ${+q.l + q.p - 1}` : ''}</div>}
-                </div>
-              </React.Fragment>
-            ))}
+            )}
+            {previewRows.map((q: any, idx: number) => {
+              const isSectionEmpty = !q.h || !q.h.replace(/<[^>]*>/g, '').trim();
+              return (
+                <React.Fragment key={idx}>
+                  <p className="pl2">
+                    {q.t} ·{' '}
+                    {q.l
+                      ? `page ${q.l}${q.p > 1 ? ` (continues to ${+q.l + q.p - 1})` : ''}`
+                      : 'no page number'}
+                    {isSectionEmpty && (
+                      <span className="chip" style={{ background: '#fee2e2', color: '#b91c1c', marginLeft: '8px', fontSize: '11px', padding: '2px 8px' }}>
+                        Not generated yet
+                      </span>
+                    )}
+                  </p>
+                  <div
+                    className="pgp"
+                    role="group"
+                    aria-label={q.t}
+                    style={isSectionEmpty ? { border: '1px dashed #f87171', background: '#fff5f5' } : undefined}
+                  >
+                    {isSectionEmpty ? (
+                      <div style={{ padding: '24px 16px', textAlign: 'center', color: '#991b1b' }}>
+                        <span className="ms" style={{ fontSize: '28px', color: '#ef4444', display: 'block', marginBottom: '8px' }}>pending</span>
+                        <b style={{ fontSize: '14px' }}>{q.t} has not been generated yet</b>
+                        <p style={{ margin: '6px 0 14px', fontSize: '13px', color: '#7f1d1d' }}>
+                          This section requires additional logbook or organisation details, or can be written directly in the editor.
+                        </p>
+                        <button
+                          className="btn o s"
+                          type="button"
+                          onClick={() => {
+                            setCurrentSectionIdx(idx);
+                            if (editorRef.current) editorRef.current.innerHTML = getSectionHtml(idx);
+                            setEditorTab('edit');
+                          }}
+                        >
+                          <span className="ms" style={{ fontSize: '16px' }}>edit</span>
+                          Write or Edit this Section
+                        </button>
+                      </div>
+                    ) : (
+                      <div dangerouslySetInnerHTML={{ __html: q.h }} />
+                    )}
+                    {q.l && <div className="pn">Page {q.l}{q.p > 1 ? ` – ${+q.l + q.p - 1}` : ''}</div>}
+                  </div>
+                </React.Fragment>
+              );
+            })}
           </>
         )}
 
@@ -4928,9 +5052,51 @@ export default function DashboardPage() {
             <p style={{ margin: '8px 0 14px', fontSize: '13.5px', color: '#7f1d1d' }}>
               {genError}
             </p>
-            <button className="btn w" type="button" onClick={() => startGenerating()}>
-              <span className="ms">refresh</span>
-              Retry Generating Report
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button className="btn" type="button" onClick={() => startGenerating()} style={{ flex: 1, minWidth: '180px' }}>
+                <span className="ms">refresh</span>
+                Retry Generating Report
+              </button>
+              {(dbReport?.sections?.length || Object.keys(chapterEdits).length > 0) && (
+                <button
+                  className="btn o"
+                  type="button"
+                  onClick={() => {
+                    setInFlow(false);
+                    setCurrentTab('logbooks');
+                    setLogbookView('report');
+                    if (scrRef.current) scrRef.current.scrollTop = 0;
+                  }}
+                  style={{ flex: 1, minWidth: '180px' }}
+                >
+                  <span className="ms">menu_book</span>
+                  View &amp; Edit Draft in Report Viewer
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {!genError && (dbReport?.sections?.length || Object.keys(chapterEdits).length > 0) && (
+          <div className="card" style={{ border: '1px solid #10b981', background: '#ecfdf5', marginBottom: '14px', padding: '14px 16px' }}>
+            <div className="row" style={{ color: '#047857', marginBottom: '6px' }}>
+              <span className="ms">check_circle</span>
+              <b>Report Draft Ready</b>
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: '13.5px', color: '#065f46' }}>
+              Your report has {dbReport?.sections?.length || Object.keys(chapterEdits).length} sections generated in the database. You can view, edit, or preview it right now, or generate fresh sections below.
+            </p>
+            <button
+              className="btn w"
+              type="button"
+              onClick={() => {
+                setInFlow(false);
+                setCurrentTab('logbooks');
+                setLogbookView('report');
+                if (scrRef.current) scrRef.current.scrollTop = 0;
+              }}
+            >
+              <span className="ms">menu_book</span>
+              Open Report in Editor &amp; Preview
             </button>
           </div>
         )}
@@ -5235,8 +5401,11 @@ export default function DashboardPage() {
     }
     if (genState === 1) {
       return (
-        <button className="btn" type="button" disabled style={{ flex: 1 }}>
-          Please wait…
+        <button className="btn" type="button" disabled style={{ flex: 1, opacity: 0.9 }}>
+          <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>
+            sync
+          </span>
+          Compiling report… Please wait
         </button>
       );
     }

@@ -235,7 +235,10 @@ def check_project_completeness(project) -> Dict[str, Any]:
     end_date = getattr(project, 'training_end_date', None)
     date_val_result = validate_training_dates(start_date, end_date, list(entries))
 
-    can_generate = len(missing_required) == 0 and date_val_result["is_valid"] and (
+    # Input prerequisites block report generation (profile, guided intake, entries, material).
+    # Narrative sections are outputs of generation and must not block their own creation.
+    missing_inputs = [k for k in missing_required if not k.startswith("section:")]
+    can_generate = len(missing_inputs) == 0 and date_val_result["is_valid"] and (
         material is None or material["status"] == "material_available"
     )
 
@@ -243,6 +246,7 @@ def check_project_completeness(project) -> Dict[str, Any]:
         "can_generate": can_generate,
         "missing_required_count": len(missing_required),
         "missing_required_fields": missing_required,
+        "missing_input_fields": missing_inputs,
         "uncertain_fields": uncertain_fields,
         "date_validation": date_val_result,
         "fields": field_reports,

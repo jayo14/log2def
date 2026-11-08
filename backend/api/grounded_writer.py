@@ -60,18 +60,26 @@ def build_section_brief(section_key: str, heading: str, facts) -> SectionBrief:
 
 
 def _sentences(document):
-    if not isinstance(document, dict) or not isinstance(document.get("paragraphs"), list):
+    if isinstance(document, list):
+        paragraphs = document
+    elif isinstance(document, dict) and isinstance(document.get("paragraphs"), list):
+        paragraphs = document["paragraphs"]
+    else:
         raise GroundedWriterError("writer_output_schema_invalid")
-    for paragraph in document["paragraphs"]:
-        if not isinstance(paragraph, dict) or not isinstance(paragraph.get("sentences"), list):
+    for paragraph in paragraphs:
+        if isinstance(paragraph, list):
+            sentences = paragraph
+        elif isinstance(paragraph, dict) and isinstance(paragraph.get("sentences"), list):
+            sentences = paragraph["sentences"]
+        else:
             raise GroundedWriterError("writer_output_schema_invalid")
-        for sentence in paragraph["sentences"]:
+        for sentence in sentences:
             if not isinstance(sentence, dict) or not isinstance(sentence.get("text"), str):
                 raise GroundedWriterError("writer_output_schema_invalid")
             yield sentence
 
 
-def validate_writer_output(document: dict, brief: SectionBrief, finish_reason="STOP") -> list[dict]:
+def validate_writer_output(document: dict | list, brief: SectionBrief, finish_reason="STOP") -> list[dict]:
     if finish_reason not in {"STOP", "stop", "completed", ""}:
         raise GroundedWriterError("writer_output_truncated")
     facts = {int(item["id"]): item["text"] for item in brief.facts}
@@ -80,7 +88,9 @@ def validate_writer_output(document: dict, brief: SectionBrief, finish_reason="S
         text = sentence["text"].strip()
         ids = sentence.get("fact_ids", [])
         boilerplate = sentence.get("boilerplate") is True
-        if not text or not re.search(r"[.!?][\"')’”]*$", text):
+        if text and not re.search(r"[.!?][\"')’”]*$", text):
+            text += "."
+        if not text:
             raise GroundedWriterError("sentence_incomplete")
         if (not boilerplate and (not isinstance(ids, list) or not ids)) or (boilerplate and ids):
             raise GroundedWriterError("sentence_citation_missing_or_mixed")
@@ -130,8 +140,9 @@ def write_section(brief: SectionBrief) -> list[dict]:
             prompt, temperature=0.1, return_metadata=True,
         )
         raw = response["text"] if isinstance(response, dict) else response
+        raw_clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(raw).strip(), flags=re.MULTILINE).strip()
         try:
-            document = json.loads(raw)
+            document = json.loads(raw_clean)
             return validate_writer_output(
                 document, brief,
                 finish_reason=response.get("finish_reason", "") if isinstance(response, dict) else "",

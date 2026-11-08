@@ -1007,15 +1007,19 @@ class ReportGenerateView(views.APIView):
         # Block generation while essential required information is missing or dates invalid
         from .completeness import check_project_completeness
         completeness = check_project_completeness(project)
-        if not completeness['can_generate']:
+        missing_inputs = [
+            k for k in completeness.get('missing_input_fields', completeness['missing_required_fields'])
+            if not k.startswith("section:")
+        ]
+        if not completeness['can_generate'] or missing_inputs:
             missing_labels = [
                 completeness['fields'][k]['label'] 
-                for k in completeness['missing_required_fields'] 
+                for k in missing_inputs 
                 if k in completeness['fields']
             ]
             return Response({
                 "error": "Cannot generate report: essential required information is missing or training dates are invalid.",
-                "missing_required_fields": completeness['missing_required_fields'],
+                "missing_required_fields": missing_inputs,
                 "missing_labels": missing_labels,
                 "date_validation": completeness['date_validation'],
                 "completeness": completeness,

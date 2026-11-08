@@ -29,7 +29,7 @@ if raw_allowed_hosts == '*':
 else:
     parsed_hosts = [h.strip() for h in raw_allowed_hosts.split(',') if h.strip()]
     # Ensure critical production domains are always permitted even if envvar was incomplete
-    for default_domain in ['.vercel.app', 'log2def.vercel.app', '.onrender.com', 'localhost', '127.0.0.1']:
+    for default_domain in ['.vercel.app', 'log2def.vercel.app', '.onrender.com', 'localhost', '127.0.0.1', 'testserver']:
         if default_domain not in parsed_hosts:
             parsed_hosts.append(default_domain)
     ALLOWED_HOSTS = parsed_hosts
