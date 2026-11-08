@@ -6,8 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion, ReportTemplate, Fact, ReportParagraph
 from .ai_provider import is_ai_available, generate_completion, AIProviderUnavailableError
+from .privacy_guard import sanitize_privacy_identifiers
 from .security import wrap_untrusted_prompt_input, sanitize_html
 from .templates import (
     get_template_spec, ensure_default_template_in_db, ensure_v2_template_in_db,
@@ -75,6 +77,81 @@ def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasust
     )
     # Paragraph spacing (margin-bottom) below the logo — no blank paragraphs.
     return f'<p style="text-align:center; margin:0 0 {spacing_str}pt 0;">{img}</p>'
+
+
+def render_title_page_html(project: ReportProject, start: str = "", end: str = "", duration: str = "") -> str:
+    """Render a fully labeled, academically compliant title page with logo and metadata."""
+    logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
+    univ_name = (project.university_name or "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY").upper()
+    college = (project.college or project.faculty_school or "COLLEGE OF BASIC SCIENCE").upper()
+    dept = (project.department or "COMPUTER SCIENCE").upper()
+    degree = (project.degree or "BACHELOR OF SCIENCE (B.SC.)").upper()
+    student_name = (project.full_name or "").upper()
+    matric = project.matric_number or ""
+    org_name = (project.organization_name or "").upper()
+    org_addr = project.organization_address or ""
+    dates_str = f"{start} – {end}" if start and end else ""
+
+    return f"""<div style="text-align: center; font-family: 'Times New Roman', serif; padding: 20px 0;">
+{logo_html}
+<h2 style="font-size: 15pt; font-weight: bold; margin-top: 15px; margin-bottom: 5px;">{univ_name}</h2>
+<p style="font-size: 12pt; font-weight: bold; margin-bottom: 20px;">{college}<br/>DEPARTMENT OF {dept}</p>
+
+<div style="margin: 25px 0;">
+    <h3 style="font-size: 13pt; font-weight: bold; line-height: 1.4; margin-bottom: 12px;">A TECHNICAL REPORT ON THE STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)</h3>
+    <p style="font-size: 11pt; margin-bottom: 4px;">UNDERTAKEN AT</p>
+    <p style="font-size: 12pt; font-weight: bold; margin-bottom: 4px;">{org_name}</p>
+    <p style="font-size: 11pt;">{org_addr}</p>
+</div>
+
+<div style="margin: 25px 0;">
+    <p style="font-size: 11pt; margin-bottom: 4px;">BY</p>
+    <p style="font-size: 12pt; font-weight: bold; margin-bottom: 4px;">{student_name}</p>
+    <p style="font-size: 11pt;">MATRICULATION NUMBER: <strong>{matric}</strong></p>
+</div>
+
+<div style="margin: 25px 0;">
+    <p style="font-size: 11pt; line-height: 1.4;">SUBMITTED IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF<br/>
+    <strong>{degree} IN {dept}</strong></p>
+</div>
+
+<div style="margin-top: 25px;">
+    <p style="font-size: 11pt;">TRAINING DURATION: <strong>{duration}</strong></p>
+    <p style="font-size: 11pt;">PERIOD: <strong>{dates_str}</strong></p>
+</div>
+</div>"""
+
+
+def render_title_page_text(project: ReportProject, start: str = "", end: str = "", duration: str = "") -> str:
+    """Render plain text title page with proper headings, labels, and metadata."""
+    univ_name = (project.university_name or "Lagos State University of Science and Technology").upper()
+    college = project.college or project.faculty_school or "College of Basic Science"
+    dept = project.department or "Computer Science"
+    degree = project.degree or "Bachelor of Science (B.Sc.)"
+    student_name = (project.full_name or "").upper()
+    matric = project.matric_number or ""
+    org_name = project.organization_name or ""
+    org_addr = project.organization_address or ""
+    dates_str = f"{start} – {end}" if start and end else ""
+    dur_str = f"({duration})" if duration else ""
+
+    lines = [
+        "A TECHNICAL REPORT ON THE STUDENTS INDUSTRIAL WORK EXPERIENCE SCHEME (SIWES)",
+        "UNDERTAKEN AT",
+        org_name,
+        org_addr,
+        "",
+        "BY",
+        student_name,
+        f"MATRIC NO: {matric}",
+        f"DEPARTMENT: {dept}",
+        f"COLLEGE: {college}",
+        univ_name,
+        "",
+        f"IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF {degree.upper()} IN {dept.upper()}",
+        f"DURATION: {dates_str} {dur_str}".strip(),
+    ]
+    return "\n".join(lines)
 
 
 def build_rule_based_section_content(
@@ -862,7 +939,19 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "acknowledgement": ["acknowledgement_people:"],
     }
 
-    all_confirmed_facts = list(Fact.objects.filter(project=project, status="confirmed"))
+    all_confirmed_facts_raw = list(Fact.objects.filter(project=project, status="confirmed"))
+    valid_entries = project.logbook_entries.all()
+    if project.training_start_date and project.training_end_date:
+        valid_entries = valid_entries.exclude(entry_date__lt=project.training_start_date).exclude(entry_date__gt=project.training_end_date)
+    valid_entry_ids = set(str(eid) for eid in valid_entries.values_list("id", flat=True))
+
+    all_confirmed_facts = []
+    for fact in all_confirmed_facts_raw:
+        if fact.source_field and fact.source_field.startswith("logbook_entry:"):
+            entry_id_part = fact.source_field.split(":")[1]
+            if entry_id_part not in valid_entry_ids:
+                continue
+        all_confirmed_facts.append(fact)
 
     def confirmed_section_facts(section_key):
         fields = section_fact_fields.get(section_key, [])
@@ -880,7 +969,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
                     matched = True
                 elif section_key == "ch3_tools" and fact.kind in ["tool", "equipment"]:
                     matched = True
-                elif section_key in {"ch4_summary", "ch4_conclusion"} and fact.kind in ["activity", "project", "skill", "duty", "challenge", "solution", "recommendation"]:
+                elif section_key in {"ch4_summary", "ch4_conclusion"} and fact.kind in ["activity", "project", "skill", "duty"]:
                     matched = True
             if matched:
                 matches.append(fact)
@@ -888,25 +977,73 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
 
     # Reviewed source lines are evidence, not report prose. They remain in the
     # transcript/Fact layer until a separately confirmed normalized paragraph
-    # can be linked to its Fact IDs.
+    # can be linked to its Fact IDs. Only valid within-period entries feed prose.
     logbook_activities = []
-    for entry in project.logbook_entries.all().order_by("week_number", "order", "id"):
+    for entry in valid_entries.order_by("week_number", "order", "id"):
         t = (entry.verified_text or entry.activity_summary or entry.raw_text or "").strip()
         if t:
             prefix = f"Week {entry.week_number}: " if entry.week_number else ""
-            logbook_activities.append(f"{prefix}{t}")
+            logbook_activities.append(f"{prefix}{sanitize_privacy_identifiers(t)}")
     activities_text = "\n\n".join(logbook_activities) if logbook_activities else "Participated in scheduled technical activities and assignments."
     org_name = project.organization_name or "the host organisation"
     dept_name = project.placement_department or project.department or "the assigned department"
 
+    has_challenges = bool(challenge_pairs) and not (intake.get("challenge_pairs") or {}).get("none")
+    if has_challenges:
+        ch_text = "\n\n".join(sanitize_privacy_identifiers(pair["challenge"].strip()) for pair in challenge_pairs)
+        sol_text = "\n\n".join(sanitize_privacy_identifiers(pair["solution"].strip()) for pair in challenge_pairs)
+    else:
+        ch_text = "No major technical or operational challenges were encountered during the training period."
+        sol_text = "No major technical or operational challenges were encountered during the training period."
+
+    recs_raw = str(intake.get("recommendations", "")).strip()
+    recs_text = sanitize_privacy_identifiers(recs_raw) if recs_raw else "No specific institutional recommendations were submitted for this training placement."
+
+    # Validate training duration for certification
+    days_duration = (project.training_end_date - project.training_start_date).days if project.training_start_date and project.training_end_date else 0
+    if days_duration < 28 and not bool((project.guided_intake or {}).get("short_duration_confirmed", False)):
+        raise ValidationError("Training duration is less than standard SIWES duration (under 4 weeks). Student must explicitly confirm short duration before certification can be generated.")
+
+    toc_lines = [
+        "Title Page ........................................................................ i",
+        "Certification ..................................................................... ii",
+        "Dedication ........................................................................ iii",
+        "Acknowledgement ................................................................... iv",
+        "Table of Contents ................................................................. v",
+        "CHAPTER ONE: INTRODUCTION ......................................................... 1",
+        "  1.1 Background of SIWES ......................................................... 1",
+        "  1.2 Objectives of SIWES ......................................................... 1",
+        "  1.3 Importance of SIWES ......................................................... 2",
+        "  1.4 Scope of the Training ....................................................... 2",
+        "  1.5 Duration of the Training .................................................... 2",
+        "CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE ........................... 3",
+        "  2.1 Brief History of the Organisation ........................................... 3",
+        "  2.2 Objectives of the Organisation .............................................. 3",
+        "  2.3 Organisational Structure .................................................... 4",
+        "  2.4 Organogram of the Organisation .............................................. 4",
+        "CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES ............................. 5",
+        "  3.1 Duties and Responsibilities ................................................. 5",
+        "  3.2 Activities Performed ........................................................ 5",
+        "  3.3 Skills Acquired and Practical Experience .................................... 7",
+        "  3.4 Equipment/Tools Used ........................................................ 8",
+        "  3.5 Challenges Encountered ...................................................... 9",
+        "  3.6 Solutions to Challenges Encountered ......................................... 9",
+        "CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS ............................. 10",
+        "  4.1 Summary ..................................................................... 10",
+        "  4.2 Conclusion .................................................................. 10",
+        "  4.3 Recommendations ............................................................. 11",
+        "REFERENCES ........................................................................ 12",
+        "APPENDICES ........................................................................ 13",
+    ]
+    toc_text = "\n".join(toc_lines)
+
     source_text = {
-        "title_page": "\n".join(filter(None, [project.full_name, project.matric_number, project.department, project.college, project.degree,
-            project.organization_name, project.organization_address, f"{start} – {end}" if start and end else ""])),
+        "title_page": render_title_page_text(project, start, end, duration),
         "certification": "",
         "dedication": str(intake.get("dedication", "")).strip(),
         "acknowledgement": acknowledgement_text,
         "abstract": "",
-        "table_of_contents": "",
+        "table_of_contents": toc_text,
         "ch1_background": LASUSTECH_CS_V2["fixed_text"]["siwes_background"],
         "ch1_objectives": "\n".join(LASUSTECH_CS_V2["fixed_text"]["siwes_objectives"]),
         "ch1_importance": LASUSTECH_CS_V2["fixed_text"]["siwes_importance"],
@@ -931,14 +1068,26 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "ch3_activities": activities_text,
         "ch3_skills": project.skills_acquired.strip() or "Practical engineering skills, system troubleshooting, and professional teamwork.",
         "ch3_tools": project.tools_used.strip() or "Relevant hardware, software, and operational tools utilized in the department.",
-        "ch3_challenges": "\n".join(pair["challenge"].strip() for pair in challenge_pairs) if challenge_pairs else "No severe technical setbacks disrupted the scheduled training.",
-        "ch3_solutions": "\n".join(pair["solution"].strip() for pair in challenge_pairs) if challenge_pairs else "Issues encountered were resolved through supervisor guidance and technical documentation.",
+        "ch3_challenges": ch_text,
+        "ch3_solutions": sol_text,
         "ch4_summary": f"During the SIWES training at {org_name}, practical exposure was attained within {dept_name}. Key technical concepts were applied directly to industry workflows.",
         "ch4_conclusion": f"The SIWES programme at {org_name} has provided an invaluable bridge between academic study and practical industrial requirements.",
-        "ch4_recommendations": str(intake.get("recommendations", "")).strip() or "The organisation should continue to provide structured mentorship and industrial opportunities for students.",
+        "ch4_recommendations": recs_text,
         "references": LASUSTECH_CS_V2["fixed_text"]["itf_reference"],
         "appendices": "",
     }
+
+    # Cross-section duplicate sentence check between 4.1 and 4.2
+    summary_sentences = set(re.split(r'(?<=[.!?])\s+', source_text["ch4_summary"]))
+    conclusion_sentences = re.split(r'(?<=[.!?])\s+', source_text["ch4_conclusion"])
+    deduped_conclusion = [s for s in conclusion_sentences if s.strip() and s.strip() not in summary_sentences]
+    if deduped_conclusion:
+        source_text["ch4_conclusion"] = " ".join(deduped_conclusion)
+
+    # Privacy sanitization on technical prose sections
+    for sec_k in ["ch3_duties", "ch3_activities", "ch3_skills", "ch3_tools", "ch3_challenges", "ch3_solutions", "ch4_summary", "ch4_conclusion", "ch4_recommendations"]:
+        if sec_k in source_text:
+            source_text[sec_k] = sanitize_privacy_identifiers(source_text[sec_k])
     report_images = list(project.report_images.all().order_by("placement", "week_number", "order", "id"))
     if report_images:
         image_nodes = [
@@ -1063,17 +1212,19 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         section.title = definition["title"]
         section.order = (position + 1) * 10
         section.is_required = definition.get("required", False)
-        if key == "appendices" and report_images:
-            base_content = content_text
-        else:
-            base_content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
         if key == "title_page":
-            logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
-            section.content = logo_html + base_content if logo_html else base_content
-            if not logo_html:
-                logger.error("Institution logo asset missing; title page will omit the logo.")
+            section.content = render_title_page_html(project, start, end, duration)
+        elif key == "table_of_contents":
+            section.content = (
+                '<div style="font-family: \'Times New Roman\', serif;">'
+                '<h2 style="text-align: center; margin-bottom: 20px;">TABLE OF CONTENTS</h2>'
+                + "".join(f"<p style=\"margin: 4px 0;\">{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
+                + '</div>'
+            )
+        elif key == "appendices" and report_images:
+            section.content = content_text
         else:
-            section.content = base_content
+            section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
         section.warnings = (
             [f"Fact-grounded writing was rejected ({writer_error}); review the confirmed facts and retry."]
             if writer_error else
