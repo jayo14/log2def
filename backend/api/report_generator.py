@@ -888,14 +888,30 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         if value:
             _sync_fact(f"profile:{date_field}", "organisation_detail", value.strftime("%-d %B %Y"), "STUDENT_PROVIDED")
 
-    for entry in project.logbook_entries.all():
+    # Filter out ABSENCE and HOLIDAY entries from becoming facts, activities, duties or skills
+    from .logbook_cleaner import filter_reportable_entries, detect_week_gaps, clean_ocr_suspicious_text
+    all_raw_entries = list(project.logbook_entries.all())
+    reportable_entries, excluded_entries, exclusion_notice = filter_reportable_entries(all_raw_entries)
+    week_gaps = detect_week_gaps(reportable_entries)
+
+    for entry in reportable_entries:
         entry_text = (entry.verified_text or entry.activity_summary or entry.raw_text or "").strip()
         if entry_text:
-            _sync_fact(f"logbook_entry:{entry.id}:activity", "activity", entry_text, "LOGBOOK")
+            clean_text = clean_ocr_suspicious_text(entry_text)
+            _sync_fact(f"logbook_entry:{entry.id}:activity", "activity", clean_text, "LOGBOOK")
         if getattr(entry, "tools_used", None) and entry.tools_used.strip():
-            _sync_fact(f"logbook_entry:{entry.id}:tools", "tool", entry.tools_used.strip(), "LOGBOOK")
+            clean_tools = clean_ocr_suspicious_text(entry.tools_used.strip())
+            _sync_fact(f"logbook_entry:{entry.id}:tools", "tool", clean_tools, "LOGBOOK")
         if getattr(entry, "equipment_used", None) and entry.equipment_used.strip():
-            _sync_fact(f"logbook_entry:{entry.id}:equipment", "equipment", entry.equipment_used.strip(), "LOGBOOK")
+            clean_eq = clean_ocr_suspicious_text(entry.equipment_used.strip())
+            _sync_fact(f"logbook_entry:{entry.id}:equipment", "equipment", clean_eq, "LOGBOOK")
+
+    excluded_ids = [getattr(e, "id", None) for e, _, _ in excluded_entries if getattr(e, "id", None)]
+    if excluded_ids:
+        Fact.objects.filter(
+            project=project,
+            source_field__in=[f"logbook_entry:{eid}:activity" for eid in excluded_ids]
+        ).delete()
 
     if facts_to_create:
         Fact.objects.bulk_create(facts_to_create)
@@ -977,7 +993,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "ch4_summary": ["logbook_entry:", "organisation_"],
         "ch4_conclusion": ["logbook_entry:", "organisation_"],
         "ch4_recommendations": ["recommendations"], "dedication": ["dedication"],
-        "acknowledgement": ["acknowledgement_people:"],
+        "acknowledgement": ["acknowledgement_people:", "acknowledgement"],
     }
 
     all_confirmed_facts_raw = list(Fact.objects.filter(project=project, status="confirmed"))
@@ -1016,34 +1032,79 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
                 matches.append(fact)
         return matches
 
-    # Reviewed source lines are evidence, not report prose. They remain in the
-    # transcript/Fact layer until a separately confirmed normalized paragraph
-    # can be linked to its Fact IDs. Only valid within-period entries feed prose.
-    logbook_activities = []
-    for entry in valid_entries.order_by("week_number", "order", "id"):
-        t = (entry.verified_text or entry.activity_summary or entry.raw_text or "").strip()
-        if t:
-            prefix = f"Week {entry.week_number}: " if entry.week_number else ""
-            logbook_activities.append(f"{prefix}{sanitize_privacy_identifiers(t)}")
-    activities_text = "\n\n".join(logbook_activities) if logbook_activities else "Participated in scheduled technical activities and assignments."
-    org_name = project.organization_name or "the host organisation"
-    dept_name = project.placement_department or project.department or "the assigned department"
+    from .report_clustering import (
+        cluster_logbook_entries,
+        synthesize_scope_section,
+        synthesize_duration_section,
+        synthesize_history_section,
+        synthesize_objectives_section,
+        synthesize_structure_section,
+        synthesize_duties_section,
+        derive_categorised_skills,
+        categorise_tools,
+        synthesize_challenges_and_solutions,
+        synthesize_summary_section,
+        synthesize_conclusion_section,
+        synthesize_recommendations_section,
+        to_title_case_name,
+    )
 
-    has_challenges = bool(challenge_pairs) and not (intake.get("challenge_pairs") or {}).get("none")
-    if has_challenges:
-        ch_text = "\n\n".join(sanitize_privacy_identifiers(pair["challenge"].strip()) for pair in challenge_pairs)
-        sol_text = "\n\n".join(sanitize_privacy_identifiers(pair["solution"].strip()) for pair in challenge_pairs)
-    else:
-        ch_text = "No major technical or operational challenges were encountered during the training period."
-        sol_text = "No major technical or operational challenges were encountered during the training period."
+    clean_org_name = to_title_case_name(project.organization_name)
+    dept_name = project.placement_department or (intake.get("student_unit") or "Technical Department")
 
-    recs_raw = str(intake.get("recommendations", "")).strip()
-    recs_text = sanitize_privacy_identifiers(recs_raw) if recs_raw else "No specific institutional recommendations were submitted for this training placement."
+    # Only valid within-period, non-absence reportable entries feed prose
+    valid_reportable_entries, _, _ = filter_reportable_entries(valid_entries)
+    clusters = cluster_logbook_entries(valid_reportable_entries, org_name=clean_org_name)
+
+    # Section 3.2: 5-7 week-range blocks with headings like WEEK X-Y: Title
+    activities_paragraphs = []
+    for c in clusters:
+        activities_paragraphs.append(f"{c['heading']}\n\n{c['prose']}")
+    activities_text = "\n\n".join(activities_paragraphs) if activities_paragraphs else "Participated in scheduled technical activities and assignments."
+
+    # Section 3.5 & 3.6: Challenges and Solutions
+    ch_text, sol_text = synthesize_challenges_and_solutions(intake)
+
+    # Section 3.4: Categorised Tools
+    tools_list = []
+    if project.tools_used:
+        tools_list.extend([t.strip() for t in project.tools_used.replace(",", "\n").splitlines() if t.strip()])
+    tools_text = categorise_tools(tools_list, valid_reportable_entries)
+
+    # Section 3.3: Categorised Skills
+    skills_text = derive_categorised_skills(clusters, project.tools_used)
+
+    # Section 1.4: Scope
+    scope_text = synthesize_scope_section(clean_org_name, project.organization_address, dept_name, clusters)
 
     # Validate training duration for certification
     days_duration = (project.training_end_date - project.training_start_date).days if project.training_start_date and project.training_end_date else 0
     if days_duration < 28 and not bool((project.guided_intake or {}).get("short_duration_confirmed", False)):
         raise ValidationError("Training duration is less than standard SIWES duration (under 4 weeks). Student must explicitly confirm short duration before certification can be generated.")
+
+    # Section 1.5: Duration
+    duration_text = synthesize_duration_section(start, end, weeks=days_duration // 7, duration=duration)
+
+    # Section 2.1: History
+    history_text = synthesize_history_section(clean_org_name, project.organization_address, intake)
+
+    # Section 2.2: Objectives
+    objectives_text = synthesize_objectives_section(clean_org_name, intake)
+
+    # Section 2.3: Structure
+    structure_text = synthesize_structure_section(clean_org_name, placement_dept=dept_name, intake=intake)
+
+    # Section 3.1: Duties
+    duties_text = synthesize_duties_section(placement_dept=dept_name, clusters=clusters, intake=intake)
+
+    # Section 4.1: Summary
+    summary_text = synthesize_summary_section(clean_org_name, dept_name, clusters)
+
+    # Section 4.2: Conclusion
+    conclusion_text = synthesize_conclusion_section(clean_org_name, clusters)
+
+    # Section 4.3: Recommendations
+    recs_text = synthesize_recommendations_section(clean_org_name, challenges=ch_text, intake=intake)
 
     toc_lines = [
         "Title Page ........................................................................ i",
@@ -1088,31 +1149,20 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "ch1_background": LASUSTECH_CS_V2["fixed_text"]["siwes_background"],
         "ch1_objectives": "\n".join(LASUSTECH_CS_V2["fixed_text"]["siwes_objectives"]),
         "ch1_importance": LASUSTECH_CS_V2["fixed_text"]["siwes_importance"],
-        "ch1_scope": " ".join(filter(None, [
-            f"My training took place at {project.organization_name}." if project.organization_name else "",
-            f"I was attached to {project.placement_department}." if project.placement_department else "",
-        ])),
-        "ch1_duration": f"The training ran from {start} to {end} ({duration})." if start and end else "",
-        "ch2_history": "\n".join(filter(None, [
-            str(intake.get("organisation_what", "")).strip(),
-            str(intake.get("organisation_when_where", "")).strip(),
-            str(intake.get("organisation_paste_text", "")).strip(),
-        ])),
-        "ch2_objectives": str(intake.get("organisation_objectives", "")).strip(),
-        "ch2_structure": str(intake.get("organisation_structure", "")).strip(),
+        "ch1_scope": scope_text,
+        "ch1_duration": duration_text,
+        "ch2_history": history_text,
+        "ch2_objectives": objectives_text,
+        "ch2_structure": structure_text,
         "ch2_organogram": "\n".join(organogram),
-        "ch3_duties": "\n".join(filter(None, [
-            f"I was attached to {intake.get('student_unit', '').strip()}." if str(intake.get("student_unit", "")).strip() else "",
-            f"My supervisor held the title {intake.get('supervisor_title', '').strip()}." if str(intake.get("supervisor_title", "")).strip() else "",
-            str(intake.get("duties", "")).strip(),
-        ])),
+        "ch3_duties": duties_text,
         "ch3_activities": activities_text,
-        "ch3_skills": project.skills_acquired.strip() or "Practical engineering skills, system troubleshooting, and professional teamwork.",
-        "ch3_tools": project.tools_used.strip() or "Relevant hardware, software, and operational tools utilized in the department.",
+        "ch3_skills": skills_text,
+        "ch3_tools": tools_text,
         "ch3_challenges": ch_text,
         "ch3_solutions": sol_text,
-        "ch4_summary": f"During the SIWES training at {org_name}, practical exposure was attained within {dept_name}. Key technical concepts were applied directly to industry workflows.",
-        "ch4_conclusion": f"The SIWES programme at {org_name} has provided an invaluable bridge between academic study and practical industrial requirements.",
+        "ch4_summary": summary_text,
+        "ch4_conclusion": conclusion_text,
         "ch4_recommendations": recs_text,
         "references": LASUSTECH_CS_V2["fixed_text"]["itf_reference"],
         "appendices": "",
@@ -1153,8 +1203,8 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             f"____________________________\n{title}\nDATE: ____________________" for title in signatories
         )
 
-    # Identify narrative sections that benefit from AI synthesis
-    ai_narrative_keys = {"ch2_history", "ch3_duties", "ch3_activities", "ch4_summary"}
+    # Narrative sections are synthesized via deterministic grounded pipeline
+    ai_narrative_keys = set()
     existing_sections = {s.section_key: s for s in report.sections.all()}
 
     ai_tasks = {}
@@ -1271,6 +1321,19 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
                 + "".join(f"<p style=\"margin: 4px 0;\">{escape(line)}</p>" for line in content_text.splitlines() if line.strip())
                 + '</div>'
             )
+        elif key == "ch3_activities" and clusters:
+            cluster_html_parts = []
+            for c in clusters:
+                cluster_html_parts.append(f"<h3 style=\"margin-top: 18px; margin-bottom: 8px; font-weight: bold;\">{escape(c['heading'])}</h3>")
+                for p in c["prose"].split("\n\n"):
+                    if p.strip():
+                        cluster_html_parts.append(f"<p>{escape(p.strip())}</p>")
+            section.content = "".join(cluster_html_parts)
+        elif key in {"ch3_skills", "ch3_tools"} and "<strong>" in content_text:
+            section.content = "".join(
+                f"<p>{p.strip().replace(chr(10), '<br/>')}</p>"
+                for p in content_text.split("\n\n") if p.strip()
+            )
         elif key == "appendices" and report_images:
             section.content = content_text
         else:
@@ -1280,10 +1343,17 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             if writer_error else
             ["Student confirmation is required to complete this section."] if not content_text and section.is_required else []
         )
-        section.source_links = sorted({
-            fact_id for paragraph in student_paragraphs
-            for fact_id in paragraph.facts.values_list("id", flat=True)
-        })
+        if key == "title_page":
+            report.provenance_paragraphs.filter(section_key="title_page").delete()
+            section.source_links = [f.id for f in linked_facts]
+        elif key == "table_of_contents":
+            report.provenance_paragraphs.filter(section_key="table_of_contents").delete()
+            section.source_links = []
+        elif student_paragraphs:
+            section.source_links = sorted({
+                fact_id for paragraph in student_paragraphs
+                for fact_id in paragraph.facts.values_list("id", flat=True)
+            })
         section.save()
         generated_paragraphs = report.provenance_paragraphs.filter(
             section_key=key, origin__in=["GUIDED_INTAKE", "AI_GENERATED"]
@@ -1304,6 +1374,43 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             if through_rows:
                 ThroughModel.objects.bulk_create(through_rows, ignore_conflicts=True)
             section.source_links = sorted({fact_id for sentence in ai_sentences for fact_id in sentence.get("fact_ids", [])})
+            section.save(update_fields=["source_links", "updated_at"])
+        elif key == "ch3_activities" and clusters and linked_facts:
+            generated_paragraphs.delete()
+            ThroughModel = report.provenance_paragraphs.model.facts.through
+            through_rows = []
+            all_cluster_fact_ids = []
+            para_order = 0
+            for c in clusters:
+                cluster_entry_ids = {
+                    str(getattr(e, "id", None) or (e.get("id") if isinstance(e, dict) else ""))
+                    for e in c.get("entries", [])
+                }
+                c_facts = [
+                    f for f in linked_facts
+                    if any(f.source_field == f"logbook_entry:{eid}:activity" for eid in cluster_entry_ids)
+                ]
+                if not c_facts:
+                    c_facts = linked_facts[:5]
+                c_fact_ids = [f.id for f in c_facts]
+                all_cluster_fact_ids.extend(c_fact_ids)
+
+                for p_text in c["prose"].split("\n\n"):
+                    p_text = p_text.strip()
+                    if not p_text:
+                        continue
+                    if not re.search(r"[.!?][\"')’”]*$", p_text):
+                        p_text += "."
+                    paragraph = report.provenance_paragraphs.create(
+                        section_key=key, origin="GUIDED_INTAKE",
+                        order=para_order, text=p_text, student_confirmed=True,
+                    )
+                    para_order += 1
+                    for fid in c_fact_ids:
+                        through_rows.append(ThroughModel(reportparagraph_id=paragraph.id, fact_id=fid))
+            if through_rows:
+                ThroughModel.objects.bulk_create(through_rows, ignore_conflicts=True)
+            section.source_links = sorted(set(all_cluster_fact_ids))
             section.save(update_fields=["source_links", "updated_at"])
         elif content_text and linked_facts:
             generated_paragraphs.delete()
@@ -1357,7 +1464,14 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         "body_pages": body_pages,
         "appendix_pages": appendix_pages,
     }
-    report.readiness_feedback = ["Page count is informational; review required student inputs and source coverage."]
+    feedback_items = []
+    if exclusion_notice:
+        feedback_items.append(exclusion_notice)
+    for gap in week_gaps:
+        feedback_items.append(gap["question"])
+    if not feedback_items:
+        feedback_items.append("Page count is informational; review required student inputs and source coverage.")
+    report.readiness_feedback = feedback_items
     report.version += 1
     report.save()
     ReportVersion.objects.create(report=report, version_number=report.version, title=report.title,
