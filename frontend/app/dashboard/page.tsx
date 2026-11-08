@@ -2672,20 +2672,27 @@ export default function DashboardPage() {
                 {isAllFilled ? 'task_alt' : 'info'}
               </span>
               <div>
-                <b style={{ color: isAllFilled ? 'var(--ink)' : '#92400e', fontSize: '14px', display: 'block' }}>
-                  {isAllFilled
-                    ? `Complete Technical Report (${totalSections} sections generated)`
-                    : `Report Status: ${filledSections.length} of ${totalSections} sections generated`}
-                </b>
-                {!isAllFilled ? (
-                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#b45309', lineHeight: 1.4 }}>
-                    Sections not generated yet: <b>{unfilledLabels.join(', ')}</b>. You can write or edit them directly below.
-                  </p>
-                ) : (
-                  <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
-                    All chapters compiled and aligned with LASUSTECH SIWES standard format.
-                  </p>
-                )}
+                {(() => {
+                  const isReadyToDownload = Boolean(qualityGate.passed && (!qualityGate.blockers || qualityGate.blockers.length === 0));
+                  return (
+                    <>
+                      <b style={{ color: isReadyToDownload ? 'var(--g)' : '#92400e', fontSize: '14.5px', display: 'block' }}>
+                        {isReadyToDownload ? 'Ready to download' : 'A few things to finish'}
+                      </b>
+                      {isReadyToDownload ? (
+                        <p style={{ margin: '2px 0 0', fontSize: '12px', color: 'var(--mut)' }}>
+                          All chapters compiled and aligned with institutional guidelines.
+                        </p>
+                      ) : (
+                        <p style={{ margin: '2px 0 0', fontSize: '12.5px', color: '#b45309' }}>
+                          {qualityGate.blockers?.length
+                            ? `${qualityGate.blockers.length} item${qualityGate.blockers.length > 1 ? 's' : ''} to review before final export.`
+                            : 'Review and polish remaining sections below.'}
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
             {!isAllFilled && (
@@ -2914,16 +2921,24 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            {!qualityGate.passed && (
-              <div className="card" id="report-quality" role="alert" style={{ border: '1px solid #fca5a5', background: '#fef2f2', marginBottom: '16px' }}>
+            {/* Blockers: Grouped and capped at max 5 */}
+            {!qualityGate.passed && qualityGate.blockers && qualityGate.blockers.length > 0 && (
+              <div className="card" id="report-quality" role="alert" style={{ border: '1px solid #fca5a5', background: '#fef2f2', marginBottom: '16px', padding: '14px 16px' }}>
                 <div className="row" style={{ color: '#b91c1c', alignItems: 'center', gap: '8px' }}>
                   <span className="ms">error_outline</span>
-                  <b style={{ fontSize: '14.5px' }}>Quality Gate Notice ({qualityGate.blockers?.length || 0} issues for final export)</b>
+                  <b style={{ fontSize: '14.5px' }}>
+                    A few things to finish before download ({Math.min(qualityGate.blockers.length, 5)} item{qualityGate.blockers.length > 1 ? 's' : ''})
+                  </b>
+                  {((qualityGate.hidden_blocker_count || 0) > 0 || qualityGate.blockers.length > 5) && (
+                    <span className="chip" style={{ background: '#fee2e2', color: '#991b1b', fontSize: '11px', padding: '2px 8px' }}>
+                      and {(qualityGate.hidden_blocker_count || 0) + Math.max(0, qualityGate.blockers.length - 5)} more
+                    </span>
+                  )}
                 </div>
                 <p style={{ margin: '6px 0 10px', fontSize: '13px', color: '#7f1d1d' }}>
-                  You can preview everything that has been generated below. Resolve any flagged items before final DOCX/PDF export.
+                  Review these items before final DOCX/PDF export.
                 </p>
-                {[...(qualityGate.blockers || []), ...(qualityGate.warnings || [])].map((issue: any, idx: number) => (
+                {qualityGate.blockers.slice(0, 5).map((issue: any, idx: number) => (
                   <div key={`${issue.code}-${idx}`} id={issue.anchor?.replace('#', '')} style={{ padding: '8px 0', borderTop: '1px solid #fecaca', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                     <p style={{ margin: 0, fontSize: '13px', color: '#991b1b' }}>{issue.message}</p>
                     {issue.section_key && (
@@ -2944,6 +2959,51 @@ export default function DashboardPage() {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Needs More Detail: Capped at max 3 items, opens guided steps */}
+            {qualityGate.needs_more_detail && qualityGate.needs_more_detail.length > 0 && (
+              <div className="card" style={{ border: '1px solid #fdba74', background: '#fff7ed', marginBottom: '16px', padding: '14px 16px' }}>
+                <div className="row" style={{ color: '#c2410c', alignItems: 'center', gap: '8px' }}>
+                  <span className="ms">lightbulb</span>
+                  <b style={{ fontSize: '14px' }}>Needs more detail (optional expansion)</b>
+                </div>
+                <p style={{ margin: '4px 0 10px', fontSize: '12.5px', color: '#9a3412' }}>
+                  These sections are below recommended word counts. Tap to answer quick guided questions:
+                </p>
+                {qualityGate.needs_more_detail.slice(0, 3).map((item: any, idx: number) => {
+                  const targetStep = item.section_key?.startsWith('ch2') ? 4 : (item.section_key?.startsWith('ch3') || item.section_key?.startsWith('ch4')) ? 5 : null;
+                  return (
+                    <div key={idx} style={{ padding: '8px 0', borderTop: '1px solid #fed7aa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <p style={{ margin: 0, fontSize: '12.5px', color: '#7c2d12' }}>{item.message}</p>
+                      {targetStep ? (
+                        <button
+                          className="btn o s"
+                          type="button"
+                          onClick={() => goToFlow(targetStep)}
+                        >
+                          Add detail →
+                        </button>
+                      ) : (
+                        <button
+                          className="btn o s"
+                          type="button"
+                          onClick={() => {
+                            const sectionIndex = (dbReport?.sections || []).findIndex((section: any) => section.section_key === item.section_key);
+                            if (sectionIndex >= 0) {
+                              setCurrentSectionIdx(sectionIndex);
+                              if (editorRef.current) editorRef.current.innerHTML = getSectionHtml(sectionIndex);
+                            }
+                            setEditorTab('edit');
+                          }}
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
             {previewRows.map((q: any, idx: number) => {
