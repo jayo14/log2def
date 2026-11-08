@@ -60,6 +60,130 @@ SCHEME_NAME_VARIANTS = (
 SECOND_PERSON = re.compile(r"\b(?:you|your|you're|you've|yourself)\b", re.I)
 UNSUPPORTED_CLAIM = re.compile(r"\b(?:verified|successfully achieved|objectives were successfully|skills were significantly enhanced)\b", re.I)
 US_SPELLING = re.compile(r"\b(?:organization|organizations|organize|organized|organizing|analyze|analyzed|center|centers|color|colors|labor|laboring|catalog|catalogs|traveling|canceled)\b", re.I)
+US_TO_GB_MAP = {
+    "organization": "organisation",
+    "organizations": "organisations",
+    "organize": "organise",
+    "organized": "organised",
+    "organizing": "organising",
+    "analyze": "analyse",
+    "analyzed": "analysed",
+    "analyzing": "analysing",
+    "center": "centre",
+    "centers": "centres",
+    "color": "colour",
+    "colors": "colours",
+    "labor": "labour",
+    "laboring": "labouring",
+    "catalog": "catalogue",
+    "catalogs": "catalogues",
+    "traveling": "travelling",
+    "canceled": "cancelled",
+}
+SCHEME_NORMALIZE_RE = re.compile(r"\b(?:s\.i\.w\.e\.s\.?|siwes)\b", re.I)
+
+def _match_case(source: str, target: str) -> str:
+    """Preserve casing when replacing words."""
+    if source.isupper():
+        return target.upper()
+    if source and source[0].isupper():
+        return target.capitalize()
+    return target.lower()
+
+def autofix_text(text: str, is_body_paragraph: bool = False, section_key: str = None) -> str:
+    """Silently auto-fix safe text issues: double spaces, final punctuation, US spellings, scheme name."""
+    if not text or not isinstance(text, str):
+        return text
+
+    # 1. Double spaces and excess tabs
+    fixed = re.sub(r"[ \t]{2,}", " ", text)
+
+    # 2. Scheme-name spelling (normalize to SIWES), except references section
+    if section_key != "references":
+        fixed = SCHEME_NORMALIZE_RE.sub("SIWES", fixed)
+
+    # 3. Spelling variants: US to en-GB
+    def _replace_spelling(match):
+        raw = match.group(0)
+        lower = raw.lower()
+        if lower in US_TO_GB_MAP:
+            return _match_case(raw, US_TO_GB_MAP[lower])
+        return raw
+
+    fixed = US_SPELLING.sub(_replace_spelling, fixed)
+
+    # 4. Final punctuation on body paragraphs
+    if is_body_paragraph and fixed.strip():
+        stripped = fixed.strip()
+        # Exclude specific non-prose sections or signature lines
+        if section_key not in {"title_page", "ch2_organogram", "ch3_tools"}:
+            if stripped.endswith((",", ";", ":")):
+                stripped = stripped[:-1].rstrip() + "."
+                fixed = stripped
+            elif not TERMINAL.search(stripped):
+                fixed = stripped + "."
+
+    return fixed
+
+def autofix_document_model(model: dict) -> bool:
+    """Silently auto-fix text nodes inside document_model in-place. Returns True if modified."""
+    if not isinstance(model, dict) or not isinstance(model.get("sections"), list):
+        return False
+    modified = False
+    for section in model.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        sec_key = section.get("key", "")
+        # Section title and chapter title
+        if "title" in section and isinstance(section["title"], str):
+            fixed_title = autofix_text(section["title"], is_body_paragraph=False, section_key=sec_key)
+            if fixed_title != section["title"]:
+                section["title"] = fixed_title
+                modified = True
+        nodes = section.get("nodes", [])
+        if not isinstance(nodes, list):
+            continue
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_type = node.get("type")
+            is_para = (node_type == "paragraph")
+            raw_text = node.get("text")
+            if raw_text and isinstance(raw_text, str):
+                fixed = autofix_text(raw_text, is_body_paragraph=is_para, section_key=sec_key)
+                if fixed != raw_text:
+                    node["text"] = fixed
+                    modified = True
+            # Also check children if any
+            for child in node.get("children", []):
+                if isinstance(child, dict) and isinstance(child.get("text"), str):
+                    child_fixed = autofix_text(child["text"], is_body_paragraph=is_para, section_key=sec_key)
+                    if child_fixed != child["text"]:
+                        child["text"] = child_fixed
+                        modified = True
+    return modified
+
+def autofix_report_content(report, save: bool = True) -> bool:
+    """Silently auto-fix safe quality issues in a report's document_model and provenance paragraphs."""
+    if not report or not report.document_model:
+        return False
+    modified = autofix_document_model(report.document_model)
+    # Also update provenance paragraphs if they exist
+    try:
+        from .models import ReportParagraph
+        for paragraph in report.provenance_paragraphs.all():
+            fixed_text = autofix_text(paragraph.text, is_body_paragraph=True, section_key=paragraph.section_key)
+            if fixed_text != paragraph.text:
+                paragraph.text = fixed_text
+                if save:
+                    paragraph.save(update_fields=["text"])
+                modified = True
+    except Exception:
+        pass
+
+    if modified and save:
+        report.save(update_fields=["document_model"])
+    return modified
 TECHNICAL_ALLOWLIST = {
     "program", "programming", "centerpiece", "center", "centers", "catalog",
     "catalogs", "analyzed", "analyze", "license", "licenses", "licensed",

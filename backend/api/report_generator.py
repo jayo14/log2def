@@ -1279,7 +1279,9 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
     allowed_keys = {item["key"] for item in LASUSTECH_CS_V2["sections"]}
     report.sections.exclude(section_key__in=allowed_keys).delete()
     from .document_model import model_from_sections
+    from .document_quality import autofix_document_model
     report.document_model = model_from_sections(report, LASUSTECH_CS_V2).to_dict()
+    autofix_document_model(report.document_model)
     source_by_key = {item["key"]: item["source"] for item in LASUSTECH_CS_V2["sections"]}
     fixed_words = student_words = 0
     for item in report.sections.exclude(chapter_number=0):
@@ -1481,6 +1483,8 @@ def generate_full_report(project: ReportProject, force_all: bool = False) -> Rep
     from .document_model import model_from_sections
     model_spec = report.template_snapshot or LASUSTECH_STANDARD_V1
     report.document_model = model_from_sections(report, model_spec).to_dict()
+    from .document_quality import autofix_document_model
+    autofix_document_model(report.document_model)
 
     # Calculate estimated page count and feedback
     page_estimate = calculate_report_estimated_pages(report)
@@ -1557,6 +1561,8 @@ def regenerate_single_section(section: ReportSection) -> ReportSection:
         report = section.report
         from .document_model import model_from_sections
         report.document_model = model_from_sections(report, report.template_snapshot or LASUSTECH_CS_V2).to_dict()
+        from .document_quality import autofix_document_model
+        autofix_document_model(report.document_model)
         report.version += 1
         report.save(update_fields=["document_model", "version", "updated_at"])
         return section

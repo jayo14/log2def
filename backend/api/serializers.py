@@ -190,7 +190,8 @@ class ReportSerializer(serializers.ModelSerializer):
     quality_gate = serializers.SerializerMethodField()
 
     def get_quality_gate(self, report):
-        from .document_quality import evaluate_report_quality
+        from .document_quality import evaluate_report_quality, autofix_report_content
+        autofix_report_content(report, save=True)
         return evaluate_report_quality(report)
 
     class Meta:

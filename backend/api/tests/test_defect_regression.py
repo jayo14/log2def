@@ -305,3 +305,50 @@ def test_acceptance_g_title_page_layout_and_labels():
     assert "<h2" in title_html
     assert "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY" in title_html
     assert "ADAOBI NKEM" in title_html
+
+
+# =========================================================================
+# TEST H: Silent Auto-Fixes for Text Quality
+# =========================================================================
+def test_autofix_safe_text_issues():
+    from api.document_quality import autofix_text, autofix_document_model
+
+    # 1. Double spaces and trailing punctuation
+    sample = "This is a sentence  with  double spaces and no terminal period"
+    fixed = autofix_text(sample, is_body_paragraph=True, section_key="ch1_background")
+    assert "  " not in fixed
+    assert fixed.endswith(".")
+
+    # 2. US to en-GB spelling
+    us_text = "The organization will analyze the color and center of the system"
+    fixed_spelling = autofix_text(us_text, is_body_paragraph=True, section_key="ch2_history")
+    assert "organisation" in fixed_spelling
+    assert "analyse" in fixed_spelling
+    assert "colour" in fixed_spelling
+    assert "centre" in fixed_spelling
+
+    # 3. Scheme name normalization
+    scheme_text = "During the siwes training, the s.i.w.e.s coordinator monitored activities"
+    fixed_scheme = autofix_text(scheme_text, is_body_paragraph=True, section_key="ch1_background")
+    assert "SIWES" in fixed_scheme
+    assert "siwes" not in fixed_scheme.lower() or "SIWES" in fixed_scheme
+
+    # 4. Document model auto-fix in place
+    mock_model = {
+        "sections": [
+            {
+                "key": "ch2_history",
+                "title": "2.1 Brief History of the Organization",
+                "nodes": [
+                    {"type": "paragraph", "text": "This organization was established in 2010  to analyze data"}
+                ]
+            }
+        ]
+    }
+    modified = autofix_document_model(mock_model)
+    assert modified is True
+    assert "Organisation" in mock_model["sections"][0]["title"]
+    assert "organisation" in mock_model["sections"][0]["nodes"][0]["text"]
+    assert "analyse" in mock_model["sections"][0]["nodes"][0]["text"]
+    assert mock_model["sections"][0]["nodes"][0]["text"].endswith(".")
+

@@ -57,6 +57,13 @@ def _mock_django_for_exporter():
         sys.modules["api"] = pkg
 
 
+@pytest.fixture(autouse=True, scope="module")
+def cleanup_mock_modules():
+    yield
+    for name in ["api.document_quality", "api.models", "django", "django.conf", "django.utils", "django.utils.timezone"]:
+        sys.modules.pop(name, None)
+
+
 def _make_logo(path: Path, size=(400, 400)) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGBA", size, (10, 40, 120, 255)).save(path, format="PNG")
