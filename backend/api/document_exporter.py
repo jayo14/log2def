@@ -364,11 +364,41 @@ def render_table_of_contents_section(doc, prelim_sections: list, body_sections: 
     r_fld = fld_p.add_run()
     r_fld._r.append(parse_xml(r'<w:fldSimple %s w:instr="TOC \o &quot;1-3&quot; \h \z \u"/>' % nsdecls('w')))
 
-    if v2:
-        return
-
     # Add realistic pre-rendered TOC entry items with dot leaders and page numbers
-    toc_entries = [
+    if v2:
+        toc_entries = [
+            ("Title Page", "i", False),
+            ("Certification", "ii", False),
+            ("Dedication", "iii", False),
+            ("Acknowledgement", "iv", False),
+            ("Table of Contents", "v", False),
+            ("CHAPTER ONE: INTRODUCTION", "1", True),
+            ("  1.1 Background of SIWES", "1", False),
+            ("  1.2 Objectives of SIWES", "1", False),
+            ("  1.3 Importance of SIWES", "2", False),
+            ("  1.4 Scope of the Training", "2", False),
+            ("  1.5 Duration of the Training", "2", False),
+            ("CHAPTER TWO: BRIEF HISTORY AND ORGANISATIONAL STRUCTURE", "3", True),
+            ("  2.1 Brief History of the Organisation", "3", False),
+            ("  2.2 Objectives of the Organisation", "3", False),
+            ("  2.3 Organisational Structure", "4", False),
+            ("  2.4 Organogram of the Organisation", "4", False),
+            ("CHAPTER THREE: ACTIVITIES AND EXPERIENCE DURING SIWES", "5", True),
+            ("  3.1 Duties and Responsibilities", "5", False),
+            ("  3.2 Activities Performed", "5", False),
+            ("  3.3 Skills Acquired and Practical Experience", "7", False),
+            ("  3.4 Equipment/Tools Used", "8", False),
+            ("  3.5 Challenges Encountered", "9", False),
+            ("  3.6 Solutions to Challenges Encountered", "9", False),
+            ("CHAPTER FOUR: SUMMARY, CONCLUSION AND RECOMMENDATIONS", "10", True),
+            ("  4.1 Summary", "10", False),
+            ("  4.2 Conclusion", "10", False),
+            ("  4.3 Recommendations", "11", False),
+            ("REFERENCES", "12", True),
+            ("APPENDICES", "13", True),
+        ]
+    else:
+        toc_entries = [
         ("Title Page", "ii", False),
         ("Declaration", "iii", False),
         ("Certification & Approval", "iv", False),
