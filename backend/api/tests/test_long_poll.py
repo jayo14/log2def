@@ -11,6 +11,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 import django
 django.setup()
 
+import uuid
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from api.models import ReportProject, SourceDocument
@@ -18,7 +19,7 @@ from api.models import ReportProject, SourceDocument
 
 @pytest.mark.django_db
 def test_project_long_poll_initial_snapshot():
-    user = User.objects.create_user(username='testpolluser', password='password123')
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
     project = ReportProject.objects.create(
         user=user,
         title='SIWES Report',
@@ -38,7 +39,7 @@ def test_project_long_poll_initial_snapshot():
 
 @pytest.mark.django_db
 def test_project_long_poll_timeout_no_changes():
-    user = User.objects.create_user(username='testpolluser2', password='password123')
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
     project = ReportProject.objects.create(
         user=user,
         title='SIWES Report 2',
@@ -62,7 +63,7 @@ def test_project_long_poll_timeout_no_changes():
 
 @pytest.mark.django_db
 def test_project_long_poll_detects_document_change():
-    user = User.objects.create_user(username='testpolluser3', password='password123')
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
     project = ReportProject.objects.create(
         user=user,
         title='SIWES Report 3',

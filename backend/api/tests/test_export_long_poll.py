@@ -11,6 +11,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 import django
 django.setup()
 
+import uuid
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from api.models import ReportProject, Report
@@ -18,7 +19,7 @@ from api.models import ReportProject, Report
 
 @pytest.mark.django_db
 def test_export_status_no_report():
-    user = User.objects.create_user(username='testexportuser', password='password123')
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
     project = ReportProject.objects.create(
         user=user,
         title='SIWES Report',
@@ -34,7 +35,7 @@ def test_export_status_no_report():
 
 @pytest.mark.django_db
 def test_export_status_invalid_format():
-    user = User.objects.create_user(username='testexportuser2', password='password123')
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
     project = ReportProject.objects.create(
         user=user,
         title='SIWES Report 2',
@@ -51,7 +52,7 @@ def test_export_status_invalid_format():
 
 @pytest.mark.django_db
 def test_export_status_timeout_handling():
-    user = User.objects.create_user(username='testexportuser3', password='password123')
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
     project = ReportProject.objects.create(
         user=user,
         title='SIWES Report 3',
