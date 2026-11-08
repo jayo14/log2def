@@ -4509,7 +4509,7 @@ export default function DashboardPage() {
       }
       const refreshed = await projectsApi.getGuidedIntake<Record<string, any>>(pid);
       setIntake(refreshed);
-      if (advanceOnComplete && refreshed?.intake_complete) {
+      if (advanceOnComplete) {
         setStep(6);
         if (scrRef.current) scrRef.current.scrollTop = 0;
       }
@@ -4525,11 +4525,7 @@ export default function DashboardPage() {
   // ==========================================
   // WIZARD FLOW: STEP 5 (READY TO GENERATE) — ENHANCED UI
   const renderStepOrganisation = () => {
-    const intakeComplete = Boolean((intake as any).intake_complete);
     const currentAnswers = ((intake as any).answers || {}) as Record<string, string>;
-    const saveOrganisation = async () => {
-      await saveOrganisationAnswers(true);
-    };
     return (
       <div className="view" id="step-5">
         <h1 className="wt" id="wh" tabIndex={-1}>About your organisation</h1>
@@ -4559,10 +4555,6 @@ export default function DashboardPage() {
             </div>
           ))}
           {organisationError && <p className="err" role="alert">{organisationError}</p>}
-          <button className="btn w" type="button" disabled={savingOrganisation} style={{ marginTop: '18px' }} onClick={saveOrganisation}>
-            {savingOrganisation ? 'Saving organisation answers…' : intakeComplete ? 'Save and continue to images' : 'Save organisation answers'}
-            <span className="ms">arrow_forward</span>
-          </button>
         </div>
       </div>
     );
@@ -5034,19 +5026,13 @@ export default function DashboardPage() {
       );
     }
     if (step === 5) {
-      const intakeComplete = Boolean((intake as any)?.intake_complete);
       return (
         <button
           className="btn"
           type="button"
           disabled={savingOrganisation}
           onClick={async () => {
-            if (intakeComplete) {
-              setStep(6);
-              if (scrRef.current) scrRef.current.scrollTop = 0;
-            } else {
-              await saveOrganisationAnswers(true);
-            }
+            await saveOrganisationAnswers(true);
           }}
           style={{ flex: 1 }}
         >
@@ -5055,14 +5041,9 @@ export default function DashboardPage() {
               <span className="ms" aria-hidden="true" style={{ animation: 'spin 1s linear infinite' }}>sync</span>
               Saving answers…
             </>
-          ) : intakeComplete ? (
-            <>
-              Continue to images
-              <span className="ms" aria-hidden="true">arrow_forward</span>
-            </>
           ) : (
             <>
-              Save and continue
+              Next
               <span className="ms" aria-hidden="true">arrow_forward</span>
             </>
           )}
