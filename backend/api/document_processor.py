@@ -10,6 +10,8 @@ from docx import Document as DocxDocument
 from django.conf import settings
 from .models import SourceDocument, ExtractedPage, LogbookEntry
 from .ai_provider import is_ai_available, generate_vision_completion, AIProviderUnavailableError
+from .page_classifier import classify_page
+from .privacy_guard import sanitize_privacy_identifiers
 
 
 def detect_low_confidence_segments(text: str, base_confidence: float = 0.90) -> list:
@@ -487,7 +489,12 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
     
     # Check if a week header exists
     detected_week = extract_week_from_string(text)
-    current_week = detected_week if detected_week else fallback_week
+    if detected_week:
+        current_week = detected_week
+    elif parsed_date and project.training_start_date:
+        current_week = max(1, ((parsed_date - project.training_start_date).days // 7) + 1)
+    else:
+        current_week = fallback_week
 
     # Extract date if mentioned e.g. 2024-06-10 or 10/06/2024 or June 10, 2024
     parsed_date = None
@@ -552,22 +559,28 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
                 page_num=page_instance.page_number
             )
 
+            entry_date = validated.get('entry_date')
+            is_flagged = validated.get('is_flagged', False)
+            if entry_date and project.training_start_date and project.training_end_date:
+                if entry_date < project.training_start_date or entry_date > project.training_end_date:
+                    is_flagged = True
+
             LogbookEntry.objects.create(
                 project=project,
                 source_page=page_instance,
                 week_number=current_week,
-                entry_date=validated['entry_date'],
+                entry_date=entry_date,
                 day_of_week=validated['day_of_week'],
-                raw_text=validated['raw_text'],
-                verified_text=validated['verified_text'],
-                activity_summary=validated['activity_summary'],
-                tools_used=validated['tools_used'],
-                equipment_used=validated['equipment_used'],
+                raw_text=sanitize_privacy_identifiers(validated['raw_text']),
+                verified_text=sanitize_privacy_identifiers(validated['verified_text']),
+                activity_summary=sanitize_privacy_identifiers(validated['activity_summary']),
+                tools_used=sanitize_privacy_identifiers(validated['tools_used']),
+                equipment_used=sanitize_privacy_identifiers(validated['equipment_used']),
                 technical_area=validated['technical_area'],
                 has_supervisor_signature=validated['has_supervisor_signature'],
                 confidence_scores=validated['confidence_scores'],
                 field_provenance=validated['field_provenance'],
-                is_flagged=validated['is_flagged'],
+                is_flagged=is_flagged,
                 is_verified=False,
                 order=i
             )
@@ -589,22 +602,28 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
             page_id=page_instance.id,
             page_num=page_instance.page_number
         )
+        entry_date = validated.get('entry_date')
+        is_flagged = validated.get('is_flagged', False)
+        if entry_date and project.training_start_date and project.training_end_date:
+            if entry_date < project.training_start_date or entry_date > project.training_end_date:
+                is_flagged = True
+
         LogbookEntry.objects.create(
             project=project,
             source_page=page_instance,
             week_number=current_week,
-            entry_date=validated['entry_date'],
+            entry_date=entry_date,
             day_of_week="",
-            raw_text=validated['raw_text'],
-            verified_text=validated['verified_text'],
-            activity_summary=validated['activity_summary'],
-            tools_used=validated['tools_used'],
-            equipment_used=validated['equipment_used'],
+            raw_text=sanitize_privacy_identifiers(validated['raw_text']),
+            verified_text=sanitize_privacy_identifiers(validated['verified_text']),
+            activity_summary=sanitize_privacy_identifiers(validated['activity_summary']),
+            tools_used=sanitize_privacy_identifiers(validated['tools_used']),
+            equipment_used=sanitize_privacy_identifiers(validated['equipment_used']),
             technical_area=validated['technical_area'],
             has_supervisor_signature=validated['has_supervisor_signature'],
             confidence_scores=validated['confidence_scores'],
             field_provenance=validated['field_provenance'],
-            is_flagged=validated['is_flagged'],
+            is_flagged=is_flagged,
             is_verified=False,
             order=LogbookEntry.objects.filter(project=project, week_number=current_week).count()
         )
@@ -672,7 +691,7 @@ def process_source_document(doc_id: int):
                 vision_entries = []
                 vision_data = {}
                 trace_ocr_captured = False
-                page_fallback_week = filename_week or page_num
+                page_fallback_week = filename_week or 1
 
                 # If text is too short or doesn't have structure, rasterize and run multimodal vision
                 if len(text) < 50:
@@ -732,32 +751,62 @@ def process_source_document(doc_id: int):
                     'status', 'notes'
                 ])
 
+                # Step 2.5: Classify page (logbook vs cover vs CV/certificate/other)
+                classification = classify_page(text, vision_data)
+                page_type = classification.get("page_type")
+                page_label = classification.get("detected_label", "Page")
+                extracted_page.notes = f"{notes} ({page_label})" if notes else page_label
+
+                if page_type == "other":
+                    extracted_page.status = 'completed'
+                    extracted_page.save(update_fields=['status', 'notes'])
+                    continue
+                elif page_type == "cover_or_details":
+                    if vision_data.get('cover_details'):
+                        apply_cover_details_to_project(doc.project, vision_data.get('cover_details'))
+                    extracted_page.status = 'completed'
+                    extracted_page.save(update_fields=['status', 'notes'])
+                    continue
+
                 # Step 3: Structuring with anti-fabrication
                 if vision_entries:
                     for idx, raw_entry in enumerate(vision_entries):
-                        entry_week = raw_entry.get('week_number') or page_fallback_week
                         validated = validate_structured_entry_anti_fabrication(
                             source_text=text,
                             entry_data=raw_entry,
                             page_id=extracted_page.id,
                             page_num=page_num
                         )
+                        entry_date = validated.get('entry_date')
+                        entry_week = raw_entry.get('week_number')
+                        if not entry_week and entry_date and doc.project.training_start_date:
+                            entry_week = max(1, ((entry_date - doc.project.training_start_date).days // 7) + 1)
+                        if not entry_week:
+                            entry_week = page_fallback_week
+
+                        is_flagged = validated.get('is_flagged', False)
+                        start_d = doc.project.training_start_date
+                        end_d = doc.project.training_end_date
+                        if entry_date and start_d and end_d:
+                            if entry_date < start_d or entry_date > end_d:
+                                is_flagged = True
+
                         LogbookEntry.objects.create(
                             project=doc.project,
                             source_page=extracted_page,
-                            week_number=validated.get('week_number', entry_week),
-                            entry_date=validated.get('entry_date'),
+                            week_number=entry_week,
+                            entry_date=entry_date,
                             day_of_week=validated.get('day_of_week', f'Day {idx+1}'),
-                            raw_text=validated.get('raw_text', ''),
-                            verified_text=validated.get('verified_text', ''),
-                            activity_summary=validated.get('activity_summary', '')[:500],
-                            tools_used=validated.get('tools_used', '')[:500],
-                            equipment_used=validated.get('equipment_used', '')[:500],
+                            raw_text=sanitize_privacy_identifiers(validated.get('raw_text', '')),
+                            verified_text=sanitize_privacy_identifiers(validated.get('verified_text', '')),
+                            activity_summary=sanitize_privacy_identifiers(validated.get('activity_summary', ''))[:500],
+                            tools_used=sanitize_privacy_identifiers(validated.get('tools_used', ''))[:500],
+                            equipment_used=sanitize_privacy_identifiers(validated.get('equipment_used', ''))[:500],
                             technical_area=validated.get('technical_area', '')[:255],
                             has_supervisor_signature=validated.get('has_supervisor_signature', False),
                             confidence_scores=validated.get('confidence_scores', {}),
                             field_provenance=validated.get('field_provenance', {}),
-                            is_flagged=validated.get('is_flagged', False),
+                            is_flagged=is_flagged,
                             order=idx + 1,
                             is_verified=True
                         )
@@ -829,7 +878,7 @@ def process_source_document(doc_id: int):
                 is_reviewed=False
             )
 
-            fallback_week = filename_week or (doc.page_index + 1 if doc.page_index is not None and doc.page_index > 0 else 1)
+            fallback_week = filename_week or 1
 
             vision_text, vision_conf, vision_data = run_multimodal_vision_analysis(
                 file_path,
@@ -876,39 +925,67 @@ def process_source_document(doc_id: int):
                 'status', 'notes'
             ])
 
-            # Step 3: Structuring with anti-fabrication
-            if vision_data and vision_data.get('entries'):
-                detected_week = vision_data.get('week_number')
-                week_num = detected_week if (detected_week and isinstance(detected_week, int) and detected_week > 0) else fallback_week
-                for idx, entry in enumerate(vision_data.get('entries', [])):
-                    entry_week = entry.get('week_number') or week_num
-                    validated = validate_structured_entry_anti_fabrication(
-                        source_text=text,
-                        entry_data=entry,
-                        page_id=extracted_page.id,
-                        page_num=1
-                    )
-                    LogbookEntry.objects.create(
-                        project=doc.project,
-                        source_page=extracted_page,
-                        week_number=validated.get('week_number', entry_week),
-                        entry_date=validated.get('entry_date'),
-                        day_of_week=validated.get('day_of_week', f'Day {idx+1}'),
-                        raw_text=validated.get('raw_text', ''),
-                        verified_text=validated.get('verified_text', ''),
-                        activity_summary=validated.get('activity_summary', '')[:500],
-                        tools_used=validated.get('tools_used', '')[:500],
-                        equipment_used=validated.get('equipment_used', '')[:500],
-                        technical_area=validated.get('technical_area', '')[:255],
-                        has_supervisor_signature=validated.get('has_supervisor_signature', False),
-                        confidence_scores=validated.get('confidence_scores', {}),
-                        field_provenance=validated.get('field_provenance', {}),
-                        is_flagged=validated.get('is_flagged', False),
-                        order=idx + 1,
-                        is_verified=True
-                    )
-            elif text:
-                extract_logbook_entries_from_text(doc.project, extracted_page, text, fallback_week=fallback_week)
+            # Step 2.5: Classify page (logbook vs cover vs CV/certificate/other)
+            classification = classify_page(text, vision_data)
+            page_type = classification.get("page_type")
+            page_label = classification.get("detected_label", "Page")
+            extracted_page.notes = f"{notes} ({page_label})" if notes else page_label
+
+            if page_type == "other":
+                extracted_page.status = 'completed'
+                extracted_page.save(update_fields=['status', 'notes'])
+            elif page_type == "cover_or_details":
+                if vision_data.get('cover_details'):
+                    apply_cover_details_to_project(doc.project, vision_data.get('cover_details'))
+                extracted_page.status = 'completed'
+                extracted_page.save(update_fields=['status', 'notes'])
+            else:
+                # Step 3: Structuring with anti-fabrication
+                if vision_data and vision_data.get('entries'):
+                    detected_week = vision_data.get('week_number')
+                    week_num = detected_week if (detected_week and isinstance(detected_week, int) and detected_week > 0) else fallback_week
+                    for idx, entry in enumerate(vision_data.get('entries', [])):
+                        validated = validate_structured_entry_anti_fabrication(
+                            source_text=text,
+                            entry_data=entry,
+                            page_id=extracted_page.id,
+                            page_num=1
+                        )
+                        entry_date = validated.get('entry_date')
+                        entry_week = entry.get('week_number')
+                        if not entry_week and entry_date and doc.project.training_start_date:
+                            entry_week = max(1, ((entry_date - doc.project.training_start_date).days // 7) + 1)
+                        if not entry_week:
+                            entry_week = week_num
+
+                        is_flagged = validated.get('is_flagged', False)
+                        start_d = doc.project.training_start_date
+                        end_d = doc.project.training_end_date
+                        if entry_date and start_d and end_d:
+                            if entry_date < start_d or entry_date > end_d:
+                                is_flagged = True
+
+                        LogbookEntry.objects.create(
+                            project=doc.project,
+                            source_page=extracted_page,
+                            week_number=entry_week,
+                            entry_date=entry_date,
+                            day_of_week=validated.get('day_of_week', f'Day {idx+1}'),
+                            raw_text=sanitize_privacy_identifiers(validated.get('raw_text', '')),
+                            verified_text=sanitize_privacy_identifiers(validated.get('verified_text', '')),
+                            activity_summary=sanitize_privacy_identifiers(validated.get('activity_summary', ''))[:500],
+                            tools_used=sanitize_privacy_identifiers(validated.get('tools_used', ''))[:500],
+                            equipment_used=sanitize_privacy_identifiers(validated.get('equipment_used', ''))[:500],
+                            technical_area=validated.get('technical_area', '')[:255],
+                            has_supervisor_signature=validated.get('has_supervisor_signature', False),
+                            confidence_scores=validated.get('confidence_scores', {}),
+                            field_provenance=validated.get('field_provenance', {}),
+                            is_flagged=is_flagged,
+                            order=idx + 1,
+                            is_verified=True
+                        )
+                elif text:
+                    extract_logbook_entries_from_text(doc.project, extracted_page, text, fallback_week=fallback_week)
             else:
                 LogbookEntry.objects.create(
                     project=doc.project,
