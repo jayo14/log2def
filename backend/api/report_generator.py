@@ -82,14 +82,14 @@ def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasust
 def render_title_page_html(project: ReportProject, start: str = "", end: str = "", duration: str = "") -> str:
     """Render a fully labeled, academically compliant title page with logo and metadata."""
     logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
-    univ_name = (project.university_name or "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY").upper()
-    college = (project.college or project.faculty_school or "COLLEGE OF BASIC SCIENCE").upper()
-    dept = (project.department or "COMPUTER SCIENCE").upper()
-    degree = (project.degree or "BACHELOR OF SCIENCE (B.SC.)").upper()
-    student_name = (project.full_name or "").upper()
-    matric = project.matric_number or ""
-    org_name = (project.organization_name or "").upper()
-    org_addr = project.organization_address or ""
+    univ_name = (getattr(project, "university_name", "") or getattr(project, "institution_name", "") or "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY").upper()
+    college = (getattr(project, "college", "") or getattr(project, "faculty_school", "") or getattr(project, "faculty_or_college", "") or "COLLEGE OF BASIC SCIENCE").upper()
+    dept = (getattr(project, "department", "") or "COMPUTER SCIENCE").upper()
+    degree = (getattr(project, "degree", "") or getattr(project, "programme", "") or "BACHELOR OF SCIENCE (B.SC.)").upper()
+    student_name = (getattr(project, "full_name", "") or "").upper()
+    matric = getattr(project, "matric_number", "") or ""
+    org_name = (getattr(project, "organization_name", "") or getattr(project, "company_name", "") or "").upper()
+    org_addr = getattr(project, "organization_address", "") or getattr(project, "company_address", "") or ""
     dates_str = f"{start} – {end}" if start and end else ""
 
     return f"""<div style="text-align: center; font-family: 'Times New Roman', serif; padding: 20px 0;">
@@ -171,22 +171,22 @@ def build_rule_based_section_content(
     warnings: List[str] = []
     source_ids = [e.id for e in verified_entries]
 
-    student_name = project.full_name or "[Student Full Name]"
-    matric = project.matric_number or "[Matriculation Number]"
-    dept = project.department or "[Department Name]"
-    prog = project.programme or project.department or "[Programme Name]"
-    level = project.level or "400"
-    univ = project.university_name or "Lagos State University of Science and Technology (LASUSTECH)"
-    faculty = project.faculty_school or "College of Basic Science"
-    company = project.organization_name or "[Host Organization Name]"
-    address = project.organization_address or "[Host Organization Address]"
-    unit = project.placement_department or "Engineering / IT Unit"
-    ind_sup = project.industry_supervisor_name or "[Industry Supervisor Name]"
-    ind_title = project.industry_supervisor_title or "[Industry Supervisor Title]"
-    acad_sup = project.academic_supervisor_name or "[Institution Based Supervisor Name]"
-    start_str = project.training_start_date.strftime("%B %d, %Y") if project.training_start_date else "[Start Date]"
-    end_str = project.training_end_date.strftime("%B %d, %Y") if project.training_end_date else "[End Date]"
-    year_str = str(project.training_end_date.year) if project.training_end_date else str(datetime.now().year)
+    student_name = getattr(project, "full_name", "") or "[Student Full Name]"
+    matric = getattr(project, "matric_number", "") or "[Matriculation Number]"
+    dept = getattr(project, "department", "") or "[Department Name]"
+    prog = getattr(project, "programme", "") or getattr(project, "degree", "") or getattr(project, "department", "") or "[Programme Name]"
+    level = getattr(project, "level", "") or "400"
+    univ = getattr(project, "university_name", "") or getattr(project, "institution_name", "") or "Lagos State University of Science and Technology (LASUSTECH)"
+    faculty = getattr(project, "faculty_school", "") or getattr(project, "faculty_or_college", "") or getattr(project, "college", "") or "College of Basic Science"
+    company = getattr(project, "organization_name", "") or getattr(project, "company_name", "") or "[Host Organization Name]"
+    address = getattr(project, "organization_address", "") or getattr(project, "company_address", "") or "[Host Organization Address]"
+    unit = getattr(project, "placement_department", "") or "Engineering / IT Unit"
+    ind_sup = getattr(project, "industry_supervisor_name", "") or "[Industry Supervisor Name]"
+    ind_title = getattr(project, "industry_supervisor_title", "") or "[Industry Supervisor Title]"
+    acad_sup = getattr(project, "academic_supervisor_name", "") or getattr(project, "institution_supervisor_name", "") or "[Institution Based Supervisor Name]"
+    start_str = project.training_start_date.strftime("%B %d, %Y") if getattr(project, "training_start_date", None) else "[Start Date]"
+    end_str = project.training_end_date.strftime("%B %d, %Y") if getattr(project, "training_end_date", None) else "[End Date]"
+    year_str = str(project.training_end_date.year) if getattr(project, "training_end_date", None) else str(datetime.now().year)
 
     if not project.full_name:
         warnings.append("Student full name is missing.")
@@ -288,11 +288,19 @@ def build_rule_based_section_content(
 </table>
 """
     elif section_key == "dedication":
-        content = f"""
+        intake_ded = (getattr(project, "guided_intake", {}) or {}).get("dedication", "")
+        if intake_ded and intake_ded.strip():
+            content = f"<p>{intake_ded.strip()}</p>"
+        else:
+            content = f"""
 <p>This report is dedicated to the Almighty God for His divine wisdom, grace, strength, and protection throughout the course of my industrial attachment. It is also dedicated to my beloved family, lecturers, and mentors whose unwavering encouragement and guidance continue to inspire my academic and professional pursuits.</p>
 """
     elif section_key == "acknowledgements":
-        content = f"""
+        intake_ack = (getattr(project, "guided_intake", {}) or {}).get("acknowledgement", "")
+        if intake_ack and intake_ack.strip():
+            content = f"<p>{intake_ack.strip()}</p>"
+        else:
+            content = f"""
 <p>My sincere gratitude goes first to the Almighty God for granting me good health, understanding, and safety during my industrial attachment.</p>
 <p>I express my profound appreciation to the management and staff of <strong>{company}</strong> for granting me the privilege to carry out my Students Industrial Work Experience Scheme (SIWES) in their reputable organization. Special thanks go to my Industry-Based Supervisor, <strong>{ind_sup}</strong> ({ind_title}), and colleagues in the <strong>{unit}</strong> for their patient mentorship, technical coaching, and hands-on guidance.</p>
 <p>I also extend heartfelt gratitude to the Vice-Chancellor, the Dean of {faculty}, the Head of Department of <strong>{dept}</strong>, and my Institution-Based Supervisor, <strong>{acad_sup}</strong>, alongside all lecturers in the department at <strong>{univ}</strong>, for providing the foundational academic training that prepared me for industry demands.</p>
@@ -421,10 +429,10 @@ def build_rule_based_section_content(
             for wk in sorted_weeks:
                 entries_in_wk = weeks_dict[wk]
                 days_summary = "<br/>".join([
-                    f"<strong>{e.day_of_week or 'Entry'}:</strong> {e.activity_summary or e.verified_text[:100]}"
+                    f"<strong>{getattr(e, 'day_of_week', None) or 'Entry'}:</strong> {getattr(e, 'activity_summary', None) or (getattr(e, 'verified_text', '')[:100])}"
                     for e in entries_in_wk
                 ])
-                tools_in_wk = ", ".join(filter(None, [e.tools_used for e in entries_in_wk])) or "Standard toolkit"
+                tools_in_wk = ", ".join(filter(None, [getattr(e, 'tools_used', None) for e in entries_in_wk])) or "Standard toolkit"
                 table_rows.append(f"""
     <tr>
         <td style="border: 1px solid #ccc; padding: 8px; text-align: center;"><strong>Week {wk}</strong></td>

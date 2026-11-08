@@ -268,13 +268,15 @@ def _american_spellings_in_text(text, names):
 
 def evaluate_report_quality(report, model=None):
     """Return student-readable blockers and warnings with section anchors."""
-    if not report.template_version.startswith("lasustech_cs:2."):
-        return {"passed": True, "blockers": [], "warnings": [], "summary": {"total_pages": report.estimated_pages, "student_derived_pages": 0}}
-    model = model or report.document_model or {}
+    template_version = getattr(report, "template_version", None) or (report.get("template_version") if isinstance(report, dict) else "")
+    estimated_pages = getattr(report, "estimated_pages", None) or (report.get("estimated_pages", 0) if isinstance(report, dict) else 0)
+    if not str(template_version).startswith("lasustech_cs:2."):
+        return {"passed": True, "blockers": [], "warnings": [], "summary": {"total_pages": estimated_pages, "student_derived_pages": 0}}
+    model = model or getattr(report, "document_model", None) or (report.get("document_model") if isinstance(report, dict) else {})
     if not isinstance(model, dict):
         blocker = _issue("invalid_document_model", "The report document model is malformed. Regenerate the report before preview or export.")
         return {"passed": False, "blockers": [blocker], "warnings": [], "summary": {
-            "total_pages": report.estimated_pages or 0, "student_derived_pages": 0,
+            "total_pages": estimated_pages or 0, "student_derived_pages": 0,
             "blocker_count": 1, "warning_count": 0,
         }}
     raw_sections = model.get("sections", [])
@@ -289,17 +291,23 @@ def evaluate_report_quality(report, model=None):
     by_key = {section.get("key"): section for section in sections}
     blockers, warnings = [], []
     from .models import Fact
-    facts_by_id = {fact.id: fact for fact in Fact.objects.filter(project=report.project)}
-    name_allowlist = {
-        word.casefold() for value in (report.project.organization_name, report.project.department)
-        if value for word in re.findall(r"[A-Za-z]+", value)
-    }
-    for fact_text in Fact.objects.filter(project=report.project, status="confirmed").values_list("text", flat=True):
-        name_allowlist.update(
-            word.casefold() for word in re.findall(r"\b[A-Z][A-Za-z0-9]{2,}\b", fact_text)
-            if word not in {"The", "This", "That", "During", "After", "Before", "Organization", "Organizations", "Organized", "Organizing", "Analyze", "Analyzed", "Center", "Centers", "Color", "Colors", "Labor", "Catalog", "Catalogs", "Traveling", "Canceled"}
-        )
-    sidecars = list(report.provenance_paragraphs.all().prefetch_related("facts"))
+    report_proj = getattr(report, "project", None) or (report.get("project") if isinstance(report, dict) else None)
+    if report_proj:
+        facts_by_id = {fact.id: fact for fact in Fact.objects.filter(project=report_proj)}
+        name_allowlist = {
+            word.casefold() for value in (report_proj.organization_name, report_proj.department)
+            if value for word in re.findall(r"[A-Za-z]+", value)
+        }
+        for fact_text in Fact.objects.filter(project=report_proj, status="confirmed").values_list("text", flat=True):
+            name_allowlist.update(
+                word.casefold() for word in re.findall(r"\b[A-Z][A-Za-z0-9]{2,}\b", fact_text)
+                if word not in {"The", "This", "That", "During", "After", "Before", "Organization", "Organizations", "Organized", "Organizing", "Analyze", "Analyzed", "Center", "Centers", "Color", "Colors", "Labor", "Catalog", "Catalogs", "Traveling", "Canceled"}
+            )
+        sidecars = list(getattr(report, "provenance_paragraphs", []).all().prefetch_related("facts")) if hasattr(report, "provenance_paragraphs") else []
+    else:
+        facts_by_id = {}
+        name_allowlist = set()
+        sidecars = []
     edited_texts = {}
     for paragraph in sidecars:
         if paragraph.origin == "STUDENT_EDITED":
@@ -310,9 +318,12 @@ def evaluate_report_quality(report, model=None):
 
     if model_error or invalid_entries:
         add(blockers, "invalid_document_sections", "The report has malformed sections. Regenerate it before preview or export.", None)
-    options = report.template_options if isinstance(report.template_options, dict) else {}
-    template_snapshot = report.template_snapshot if isinstance(report.template_snapshot, dict) else {}
-    page_breakdown = report.page_estimate_breakdown if isinstance(report.page_estimate_breakdown, dict) else {}
+    template_opts = getattr(report, "template_options", None) or (report.get("template_options") if isinstance(report, dict) else {})
+    options = template_opts if isinstance(template_opts, dict) else {}
+    tmpl_snap = getattr(report, "template_snapshot", None) or (report.get("template_snapshot") if isinstance(report, dict) else {})
+    template_snapshot = tmpl_snap if isinstance(tmpl_snap, dict) else {}
+    p_breakdown = getattr(report, "page_estimate_breakdown", None) or (report.get("page_estimate_breakdown") if isinstance(report, dict) else {})
+    page_breakdown = p_breakdown if isinstance(p_breakdown, dict) else {}
 
     seen_titles = {}
     found_dates = {}
@@ -372,10 +383,10 @@ def evaluate_report_quality(report, model=None):
                     if supported:
                         break
             else:
-                supported = Fact.objects.filter(
-                    project=report.project, status="confirmed",
+                supported = bool(report_proj and Fact.objects.filter(
+                    project=report_proj, status="confirmed",
                     text__icontains=claim.group(0),
-                ).exists()
+                ).exists())
             if not supported:
                 add(blockers, "unsupported_success_claim", "Remove this verification or success claim unless a confirmed Fact or supervisor signature supports it.", key)
 
@@ -388,9 +399,10 @@ def evaluate_report_quality(report, model=None):
             paragraph_text = _node_text(node)
             if not paragraph_text:
                 continue
+            dept_name = getattr(report_proj, "department", "") if report_proj else ""
             signature_or_label = key == "certification" and (
                 paragraph_text.startswith("_") or paragraph_text.upper().startswith("DATE:")
-                or paragraph_text in {"Industrial-Based Supervisor", "SIWES Coordinator - " + report.project.department, "HOD, " + report.project.department}
+                or paragraph_text in {"Industrial-Based Supervisor", f"SIWES Coordinator - {dept_name}", f"HOD, {dept_name}"}
             )
             requires_terminal = key not in {"title_page", "ch2_organogram", "ch3_tools"} and not signature_or_label
             if requires_terminal and not TERMINAL.search(paragraph_text):
@@ -445,8 +457,9 @@ def evaluate_report_quality(report, model=None):
     if len(scheme_variants_by_section) > 1:
         add(blockers, "scheme_name_inconsistent", "The scheme name is spelled inconsistently across sections; use one spelling everywhere.", None)
 
-    project = report.project
-    start, end = project.training_start_date, project.training_end_date
+    project = report_proj
+    start = getattr(project, "training_start_date", None) if project else None
+    end = getattr(project, "training_end_date", None) if project else None
     if start and end and start > end:
         add(blockers, "training_date_order", "The training start date is after the end date.", "ch1_duration")
     if start and end:
@@ -505,7 +518,7 @@ def evaluate_report_quality(report, model=None):
     if inferred.exists() and not any(issue["code"] == "unconfirmed_inference" for issue in warnings):
         add(warnings, "unconfirmed_inference", "Unconfirmed inferred Facts remain in the project; confirm or remove them before relying on them.", None, severity="warning")
 
-    total_pages = report.estimated_pages or 0
+    total_pages = getattr(report, "estimated_pages", None) or (report.get("estimated_pages", 0) if isinstance(report, dict) else 0) or 0
     student_words = page_breakdown.get("student_derived_words", 0)
     if student_words < 100:
         add(warnings, "low_student_content", "The report contains very little student-derived content; add confirmed detail where available.", None, severity="warning")
@@ -574,6 +587,7 @@ def evaluate_report_quality(report, model=None):
         "raw_blockers": raw_blockers,
         "total_blockers_count": total_blocker_count,
         "more_blockers_count": more_blockers_count,
+        "hidden_blocker_count": more_blockers_count,
         "warnings": deduped_warnings[:10],
         "needs_more_detail": needs_more_detail,
         "ways_to_improve": ways_to_improve,
@@ -583,6 +597,7 @@ def evaluate_report_quality(report, model=None):
             "student_derived_words": student_words,
             "blocker_count": total_blocker_count,
             "more_blockers_count": more_blockers_count,
+            "hidden_blocker_count": more_blockers_count,
             "warning_count": len(deduped_warnings),
         },
     }
