@@ -40,6 +40,7 @@ Thumbs.db
 .idea/
 *.log
 screenshots/
+scratch/
 .neon
 
 # Institution logo assets (do not commit to public repo)
