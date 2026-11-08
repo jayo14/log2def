@@ -11,6 +11,8 @@ Enforces Section 2.A and Section 2.D of docs/MVP_SCOPE.md:
 from datetime import date
 from typing import Dict, Any, List
 import re
+from .page_classifier import evaluate_project_pages
+from .answer_validator import validate_answer_text
 
 
 REQUIRED_STUDENT_FIELDS = [
@@ -38,9 +40,12 @@ def validate_training_dates(
     Validates SIWES training date constraints:
     1. start_date < end_date
     2. Logbook entry dates fall within [start_date, end_date]
+    3. Requires explicit confirmation if duration < 4 weeks (28 days).
     """
     errors: List[str] = []
     warnings: List[str] = []
+    requires_short_duration_confirmation = False
+    out_of_period_entries: List[Dict[str, Any]] = []
 
     if start_date and end_date:
         if start_date >= end_date:
@@ -50,11 +55,11 @@ def validate_training_dates(
         days = (end_date - start_date).days
         if days < 28:
             warnings.append(f"Training duration ({days} days) is less than standard SIWES duration (usually 8-24 weeks).")
+            requires_short_duration_confirmation = True
         elif days > 366:
             warnings.append(f"Training duration ({days} days) exceeds one year.")
 
     if logbook_entries and start_date and end_date:
-        out_of_bounds = []
         for entry in logbook_entries:
             ed = getattr(entry, 'entry_date', None) or (entry.get('entry_date') if isinstance(entry, dict) else None)
             if ed:
@@ -64,16 +69,27 @@ def validate_training_dates(
                     except ValueError:
                         continue
                 if ed < start_date or ed > end_date:
-                    out_of_bounds.append(str(ed))
+                    eid = getattr(entry, 'id', None) or (entry.get('id') if isinstance(entry, dict) else None)
+                    summary = str(getattr(entry, 'activity_summary', '') or (entry.get('activity_summary') if isinstance(entry, dict) else ''))
+                    out_of_period_entries.append({
+                        "id": eid,
+                        "date": str(ed),
+                        "summary": summary[:80]
+                    })
 
-        if out_of_bounds:
-            sample = ", ".join(out_of_bounds[:3])
-            warnings.append(f"Some logbook entries ({sample}...) have dates outside the official training period.")
+        if out_of_period_entries:
+            sample = ", ".join(e["date"] for e in out_of_period_entries[:3])
+            warnings.append(
+                f"Found {len(out_of_period_entries)} logbook entry/entries with dates outside the confirmed training period "
+                f"({sample}...). These will be excluded from the report."
+            )
 
     return {
         "is_valid": len(errors) == 0,
         "errors": errors,
         "warnings": warnings,
+        "requires_short_duration_confirmation": requires_short_duration_confirmation,
+        "out_of_period_entries": out_of_period_entries,
     }
 
 
@@ -185,6 +201,11 @@ def check_project_completeness(project) -> Dict[str, Any]:
                 continue
             key = f"guided_intake:{step['key']}"
             found = intake_answer_complete(step, answers)
+            ans_val = answers.get(step['key'])
+            if found and isinstance(ans_val, str) and step.get("type") in ["long_text", "short_text"]:
+                v_res = validate_answer_text(ans_val, field_label=step["title"])
+                if not v_res["is_valid"]:
+                    found = False
             field_reports[key] = {
                 "key": key, "label": step["title"], "required": True,
                 "status": "Found" if found else "Missing",
@@ -215,6 +236,22 @@ def check_project_completeness(project) -> Dict[str, Any]:
         "confidence": 1.0 if entries_count > 0 else 0.0,
     }
 
+    # 2.5 Check Page Classification
+    page_eval = evaluate_project_pages(project)
+    if page_eval["has_pages"] and not page_eval["is_acceptable"]:
+        allow_non_logbook = bool((project.guided_intake or {}).get("allow_non_logbook_pages", False))
+        if not allow_non_logbook:
+            classification_key = "logbook_page_classification"
+            missing_required.append(classification_key)
+            field_reports[classification_key] = {
+                "key": classification_key,
+                "label": "Logbook page verification",
+                "required": True,
+                "status": "Missing",
+                "value": page_eval["message"],
+                "confidence": 0.0,
+            }
+
     material = None
     if not is_v1:
         from .extraction import material_sufficiency
@@ -235,9 +272,27 @@ def check_project_completeness(project) -> Dict[str, Any]:
     end_date = getattr(project, 'training_end_date', None)
     date_val_result = validate_training_dates(start_date, end_date, list(entries))
 
+    # Check if short duration requires confirmation
+    if date_val_result.get("requires_short_duration_confirmation"):
+        short_dur_confirmed = bool((project.guided_intake or {}).get("short_duration_confirmed", False))
+        if not short_dur_confirmed:
+            short_dur_key = "short_duration_confirmation"
+            missing_required.append(short_dur_key)
+            field_reports[short_dur_key] = {
+                "key": short_dur_key,
+                "label": "Short training duration confirmation (under 4 weeks)",
+                "required": True,
+                "status": "Missing",
+                "value": "Training duration is under 4 weeks; requires explicit student confirmation.",
+                "confidence": 0.0,
+            }
+
     # Input prerequisites block report generation (profile, guided intake, entries, material).
-    # Narrative sections are outputs of generation and must not block their own creation.
-    missing_inputs = [k for k in missing_required if not k.startswith("section:")]
+    # Narrative sections and table of contents are outputs of generation and must not block their own creation.
+    missing_inputs = [
+        k for k in missing_required 
+        if not k.startswith("section:") and k != "table_of_contents" and k != "section:table_of_contents"
+    ]
     can_generate = len(missing_inputs) == 0 and date_val_result["is_valid"] and (
         material is None or material["status"] == "material_available"
     )
@@ -249,6 +304,7 @@ def check_project_completeness(project) -> Dict[str, Any]:
         "missing_input_fields": missing_inputs,
         "uncertain_fields": uncertain_fields,
         "date_validation": date_val_result,
+        "page_evaluation": page_eval,
         "fields": field_reports,
         "material_sufficiency": material,
     }
