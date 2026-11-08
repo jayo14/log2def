@@ -985,31 +985,13 @@ class ReportGenerateView(views.APIView):
     )
     def post(self, request, project_id):
         project = get_user_project(request.user, project_id)
-        
-        # Auto-heal defaultable guided intake fields if missing
-        guided = dict(project.guided_intake or {})
-        updated_guided = False
-        if not guided.get("challenge_pairs"):
-            guided["challenge_pairs"] = {"none": True, "pairs": []}
-            updated_guided = True
-        if not str(guided.get("recommendations", "")).strip():
-            guided["recommendations"] = (
-                "The organisation should continue to provide students with hands-on exposure to practical technical projects. "
-                "The university should organize pre-internship workshops to prepare students with relevant industrial tools."
-            )
-            updated_guided = True
-        if updated_guided:
-            project.guided_intake = guided
-            project.save(update_fields=["guided_intake", "updated_at"])
-            save_intake_facts(project, "challenge_pairs", guided["challenge_pairs"])
-            save_intake_facts(project, "recommendations", guided["recommendations"])
 
         # Block generation while essential required information is missing or dates invalid
         from .completeness import check_project_completeness
         completeness = check_project_completeness(project)
         missing_inputs = [
             k for k in completeness.get('missing_input_fields', completeness['missing_required_fields'])
-            if not k.startswith("section:")
+            if not k.startswith("section:") and k != "table_of_contents" and k != "section:table_of_contents"
         ]
         if not completeness['can_generate'] or missing_inputs:
             missing_labels = [
@@ -1022,6 +1004,7 @@ class ReportGenerateView(views.APIView):
                 "missing_required_fields": missing_inputs,
                 "missing_labels": missing_labels,
                 "date_validation": completeness['date_validation'],
+                "page_evaluation": completeness.get('page_evaluation'),
                 "completeness": completeness,
             }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1140,6 +1123,8 @@ class GuidedIntakeView(views.APIView):
 
 
 def validate_intake_answer(key, answer, required=False):
+    from .answer_validator import validate_answer_text
+
     if key == "challenge_pairs":
         if not isinstance(answer, dict):
             return "Choose ‘I had none’ or provide two or three challenge and solution pairs."
@@ -1150,6 +1135,13 @@ def validate_intake_answer(key, answer, required=False):
             return "Provide two or three real challenge and solution pairs, or select ‘I had none’."
         if any(not str(pair.get("challenge", "")).strip() or not str(pair.get("solution", "")).strip() for pair in pairs):
             return "Each challenge needs its own solution. Complete both fields in every pair."
+        for idx, pair in enumerate(pairs, start=1):
+            c_val = validate_answer_text(str(pair.get("challenge", "")), field_label=f"Challenge {idx}")
+            if not c_val["is_valid"]:
+                return c_val["message"]
+            s_val = validate_answer_text(str(pair.get("solution", "")), field_label=f"Solution {idx}")
+            if not s_val["is_valid"]:
+                return s_val["message"]
         return ""
     if key == "acknowledgement_people":
         if not isinstance(answer, dict):
@@ -1169,15 +1161,22 @@ def validate_intake_answer(key, answer, required=False):
             if "\t" in line or indent % 2 or (index == 0 and depth != 0) or depth > 4 or depth > previous_depth + 1:
                 return "Use a root line, then indent each child by two spaces, up to five levels."
             previous_depth = depth
-    if key in {"include_dedication", "thank_god", "thank_family"}:
+    if key in {"include_dedication", "thank_god", "thank_family", "allow_non_logbook_pages", "short_duration_confirmed"}:
         return "" if isinstance(answer, bool) else "Choose yes or no."
     if key not in {"challenge_pairs", "acknowledgement_people"} and not isinstance(answer, str):
         return "Enter a text answer for this question."
     if answer is None or not str(answer).strip():
         return "Please enter an answer." if required else ""
-    if key == "organisation_what" and len(str(answer).split()) < 4:
+
+    # Answer validation: reject keyboard-mash, gibberish, stray leading characters
+    ans_str = str(answer).strip()
+    ans_check = validate_answer_text(ans_str, field_label=key.replace('_', ' ').capitalize())
+    if not ans_check["is_valid"]:
+        return ans_check["message"]
+
+    if key == "organisation_what" and len(ans_str.split()) < 4:
         return "Write at least one short, true sentence about the organisation's products or services."
-    if key == "organisation_objectives" and len(str(answer).split()) < 3:
+    if key == "organisation_objectives" and len(ans_str.split()) < 3:
         return "Write a short, true answer about the organisation's mission, vision or objectives."
     return ""
 
