@@ -3,7 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     RegisterView, LoginView, CurrentUserView, AIStatusView, FeatureFlagsView,
     PasswordResetRequestView, PasswordResetConfirmView,
-    ProjectListCreateView, ProjectDetailView, ProjectCompletenessView, MissingInfoUpdateView, GuidedIntakeView, GuidelineUploadView,
+    ProjectListCreateView, ProjectDetailView, ProjectCompletenessView, ProjectLongPollView, MissingInfoUpdateView, GuidedIntakeView, GuidelineUploadView,
     DocumentListUploadView, DocumentReorderView, DocumentDetailView, DocumentDownloadView, DocumentReprocessView, PageUpdateView,
     ReportImageListView, ReportImageDetailView, ReportImageReorderView,
     LogbookEntryListCreateView, LogbookEntryDetailView, LogbookBulkVerifyView, FactListView, FactReviewView, ReportParagraphView,
@@ -51,6 +51,8 @@ urlpatterns = [
     path('projects/<int:project_id>/missing-info', MissingInfoUpdateView.as_view()),
     path('projects/<int:project_id>/intake/', GuidedIntakeView.as_view(), name='guided-intake'),
     path('projects/<int:project_id>/intake', GuidedIntakeView.as_view()),
+    path('projects/<int:project_id>/poll/', ProjectLongPollView.as_view(), name='project-poll'),
+    path('projects/<int:project_id>/poll', ProjectLongPollView.as_view()),
     path('projects/<int:project_id>/events/', AnalyticsEventView.as_view(), name='project-events'),
     path('projects/<int:project_id>/events', AnalyticsEventView.as_view()),
     path('events/', AnalyticsEventView.as_view(), name='global-events'),

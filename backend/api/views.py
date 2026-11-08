@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import time
+import hashlib
 import threading
 from io import BytesIO
 from html import escape, unescape
@@ -1023,6 +1024,82 @@ class ReportGenerateView(views.APIView):
                 {"error": f"Report generation failed: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class ProjectLongPollView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    @extend_schema(
+        tags=['Projects'],
+        summary='Long-poll project status for background processing updates',
+        description='Holds HTTP connection open up to timeout seconds until document processing, entries, or report changes occur.',
+        responses={200: OpenApiResponse(response=OpenApiTypes.OBJECT)}
+    )
+    def get(self, request, project_id):
+        project = get_user_project(request.user, project_id)
+        raw_timeout = request.query_params.get('timeout') or request.query_params.get('wait')
+        timeout = 0
+        if raw_timeout:
+            try:
+                timeout = max(0, min(int(raw_timeout), 25))
+            except (ValueError, TypeError):
+                timeout = 0
+
+        since_hash = request.query_params.get('since', '')
+
+        def compute_snapshot():
+            docs = list(project.source_documents.values('id', 'status'))
+            docs_total = len(docs)
+            docs_processed = sum(1 for d in docs if d['status'] == 'processed')
+            docs_errors = sum(1 for d in docs if d['status'] == 'error')
+            all_docs_done = docs_total > 0 and (docs_processed + docs_errors == docs_total)
+
+            entries_count = project.logbook_entries.count()
+            verified_count = project.logbook_entries.filter(is_verified=True).count()
+
+            has_report = hasattr(project, 'report')
+            report_version = project.report.version if has_report else 0
+            report_sections = project.report.sections.count() if has_report else 0
+
+            raw_sig = f"{docs_total}:{docs_processed}:{docs_errors}:{entries_count}:{verified_count}:{report_version}:{report_sections}"
+            state_hash = hashlib.md5(raw_sig.encode('utf-8')).hexdigest()[:12]
+
+            return {
+                "state_hash": state_hash,
+                "docs": {
+                    "total": docs_total,
+                    "processed": docs_processed,
+                    "errors": docs_errors,
+                    "all_done": all_docs_done,
+                },
+                "entries": {
+                    "total": entries_count,
+                    "verified": verified_count,
+                },
+                "report": {
+                    "generated": has_report,
+                    "version": report_version,
+                    "sections_count": report_sections,
+                },
+            }
+
+        start_time = time.time()
+        while True:
+            snapshot = compute_snapshot()
+            if not since_hash or snapshot["state_hash"] != since_hash:
+                return Response({
+                    "project_id": project.id,
+                    "has_changes": True,
+                    **snapshot
+                })
+            if timeout <= 0 or (time.time() - start_time) >= timeout:
+                return Response({
+                    "project_id": project.id,
+                    "has_changes": False,
+                    **snapshot
+                })
+            time.sleep(0.5)
+            project.refresh_from_db()
 
 
 class ProjectCompletenessView(views.APIView):
