@@ -42,7 +42,7 @@ BANNED_PHRASES = (
 )
 # Instructions addressed to the student — must never appear in the report body
 INSTRUCTION_TO_STUDENT = (
-    re.compile(r"\b(?:click|tap|press|enter|fill in|fill out|type|select|choose|upload|paste|replace)\b", re.I),
+    re.compile(r"\b(?:click\s+(?:here|on|to)|tap\s+(?:here|on|to)|press\s+(?:the|here)|fill\s+in\s+your|fill\s+out\s+your|paste\s+(?:here|your)|type\s+your|enter\s+your|select\s+an?\s+option|choose\s+an?\s+option)\b", re.I),
     re.compile(r"\b(?:your answer|your response|your input|your details|you may|you should|you can|you must|you need to)\b", re.I),
 )
 # Text that talks about the document / generation system itself — must never appear
@@ -388,9 +388,9 @@ def evaluate_report_quality(report, model=None):
         # Scheme name consistency: track SIWES spelling variants used in this section
         # Task 9: Exclude references section from scheme-name consistency check
         if key != "references":
-            scheme_variants_found = [p.pattern for p in SCHEME_NAME_VARIANTS if p.search(text)]
-            if scheme_variants_found:
-                scheme_seen.setdefault(key, []).extend(scheme_variants_found)
+            raw_matches = re.findall(r"\bS\.?I\.?W\.?E\.?S\.?\b", text, re.I)
+            if raw_matches:
+                scheme_seen[key] = set(raw_matches)
         if SECOND_PERSON.search(text):
             add(blockers, "second_person", "Rewrite instructions that address the reader as “you”.", key)
         for found_date in DATE_RE.findall(text):
@@ -477,12 +477,10 @@ def evaluate_report_quality(report, model=None):
         add(blockers, "section_order", "Sections are not in the order required by the selected template.", None)
 
     # Scheme name consistency: SIWES must be spelled identically everywhere
-    scheme_variants_by_section = {}
-    for section_key, variants in scheme_seen.items():
-        for v in variants:
-            normalized = re.sub(r"[\s./]+", "", v).casefold()
-            scheme_variants_by_section.setdefault(normalized, []).append(section_key)
-    if len(scheme_variants_by_section) > 1:
+    distinct_spellings = set()
+    for variants in scheme_seen.values():
+        distinct_spellings.update(variants)
+    if len(distinct_spellings) > 1:
         add(blockers, "scheme_name_inconsistent", "The scheme name is spelled inconsistently across sections; use one spelling everywhere.", None)
 
     project = report_proj
