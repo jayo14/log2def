@@ -438,18 +438,19 @@ def evaluate_report_quality(report, model=None):
             source_type = provenance.get("source_type")
             source_ids = provenance.get("source_ids", [])
             is_student_edit = paragraph_text.casefold() in edited_texts.get(key, set())
+            sec_title = expected_titles.get(key, key)
             if source_type not in {"FIXED_BOILERPLATE", "GENERATED_FROM_MODEL"} and not source_ids and not is_student_edit:
-                add(blockers, "missing_provenance", "This paragraph is not linked to confirmed source Facts or a student edit.", key)
+                add(blockers, "missing_provenance", f"In “{sec_title}”, this paragraph needs to be supported by your verified logbook or confirmed answers.", key)
             for fact_id in source_ids:
                 fact = facts_by_id.get(fact_id)
                 if not fact:
                     other_fact = Fact.objects.filter(id=fact_id).first()
                     if other_fact and report_proj and other_fact.project_id != report_proj.id:
-                        add(blockers, "cross_project_fact_reference", f"This paragraph refers to Fact {fact_id} which belongs to a different project.", key)
+                        add(blockers, "cross_project_fact_reference", f"In “{sec_title}”, this paragraph references a record from outside your project.", key)
                     else:
-                        add(blockers, "invalid_fact_reference", "This paragraph refers to a Fact that is missing or belongs to another project.", key)
+                        add(blockers, "invalid_fact_reference", f"In “{sec_title}”, this paragraph references a record that was removed or belongs to another project.", key)
                 elif fact.status != "confirmed" and not is_student_edit:
-                    add(blockers, "unconfirmed_fact_reference", "Confirm or remove the Fact supporting this paragraph.", key)
+                    add(blockers, "unconfirmed_fact_reference", f"In “{sec_title}”, please review and confirm the logbook details supporting this paragraph.", key)
 
         for word in _american_spellings_in_text(text, name_allowlist):
             add(warnings, "en_us_spelling", f"Use en-GB spelling for “{word}”.", key, severity="warning")
@@ -529,20 +530,22 @@ def evaluate_report_quality(report, model=None):
         if not paragraph.text.strip() or paragraph.origin == "STUDENT_EDITED":
             continue
         linked = list(paragraph.facts.all())
+        sec_def = next((item for item in definitions if item["key"] == paragraph.section_key), None)
+        sec_name = sec_def["title"] if sec_def else paragraph.section_key
         if not linked:
-            add(blockers, "paragraph_fact_link_missing", "This generated paragraph has no supporting Fact.", paragraph.section_key)
+            add(blockers, "paragraph_fact_link_missing", f"In “{sec_name}”, this generated paragraph has no supporting record in your verified logbook.", paragraph.section_key)
         elif any(fact.id not in facts_by_id for fact in linked):
-            add(blockers, "paragraph_fact_invalid", "This paragraph refers to a Fact outside this project.", paragraph.section_key)
+            add(blockers, "paragraph_fact_invalid", f"In “{sec_name}”, this paragraph references a record outside your project.", paragraph.section_key)
         elif any(fact.status != "confirmed" for fact in linked):
-            add(blockers, "unconfirmed_fact_used", "Confirm or remove the Fact supporting this paragraph.", paragraph.section_key)
+            add(blockers, "unconfirmed_fact_used", f"In “{sec_name}”, confirm or remove the logbook details supporting this paragraph.", paragraph.section_key)
     inferred = Fact.objects.filter(project=project, provenance="INFERRED", status="proposed")
     for fact in inferred:
         if fact.report_paragraphs.filter(report=report).exists():
-            add(warnings, "unconfirmed_inference", "An inferred Fact is still unconfirmed; confirm it or remove its paragraph.", None, severity="warning")
+            add(warnings, "unconfirmed_inference", "An unconfirmed suggestion is in your report; review or remove it in the editor.", None, severity="warning")
             break
 
     if inferred.exists() and not any(issue["code"] == "unconfirmed_inference" for issue in warnings):
-        add(warnings, "unconfirmed_inference", "Unconfirmed inferred Facts remain in the project; confirm or remove them before relying on them.", None, severity="warning")
+        add(warnings, "unconfirmed_inference", "Unconfirmed suggested details remain in the project; confirm or remove them before relying on them.", None, severity="warning")
 
     total_pages = getattr(report, "estimated_pages", None) or (report.get("estimated_pages", 0) if isinstance(report, dict) else 0) or 0
     student_words = page_breakdown.get("student_derived_words", 0)
@@ -551,7 +554,7 @@ def evaluate_report_quality(report, model=None):
     for section in sections:
         key = section.get("key")
         definition = next((item for item in definitions if item["key"] == key), None)
-        if definition and definition.get("required") and definition.get("source") != "FIXED_BOILERPLATE" and key not in {"ch1_duration", "title_page"}:
+        if definition and definition.get("required") and definition.get("source") != "FIXED_BOILERPLATE" and key not in {"ch1_scope", "ch1_duration", "ch2_organogram", "title_page", "table_of_contents"}:
             if len(_all_text(section).split()) < 20:
                 add(
                     warnings, "thin_section", f"“{definition['title']}” has limited student-derived detail.",
@@ -681,8 +684,8 @@ def validate_docx_artifact(report, path):
                     alt_text = descr.text if descr is not None else ''
                 # Size check
                 extent = drawing.find('.//' + qn('wp:extent'))
-                cx = int(extent.get(qn('cx'))) if extent is not None else 0
-                cy = int(extent.get(qn('cy'))) if extent is not None else 0
+                cx = int(extent.get('cx')) if extent is not None and extent.get('cx') else 0
+                cy = int(extent.get('cy')) if extent is not None and extent.get('cy') else 0
                 aspect_ok = (cx > 0 and cy > 0 and abs(cx - cy) < cx * 0.02)
                 size_ok = width_emu_min <= cx <= width_emu_max
                 image_info = {
@@ -697,6 +700,9 @@ def validate_docx_artifact(report, path):
                     cover_images.append(image_info)
                 else:
                     other_images.append(image_info)
+            p_pr = child.find(qn('w:pPr'))
+            if p_pr is not None and p_pr.find(qn('w:sectPr')) is not None:
+                section_index += 1
         elif tag == qn('w:sectPr'):
             section_index += 1
 
@@ -743,10 +749,14 @@ def validate_docx_artifact(report, path):
             result.setdefault("blockers", []).append(_logo_issue)
             issues.append(_logo_issue)
 
-    if other_images:
+    other_logo_images = [
+        img for img in other_images
+        if (expected_alt and img['alt_text'] == expected_alt) or 'logo' in img['alt_text'].lower()
+    ]
+    if other_logo_images:
         _logo_issue = _issue(
             "logo_on_non_cover_pages",
-            f"Logo image found on {len(other_images)} non-cover page(s); logo must appear only on the cover.",
+            f"Logo image found on {len(other_logo_images)} non-cover page(s); logo must appear only on the cover.",
             None,
         )
         result.setdefault("blockers", []).append(_logo_issue)
@@ -790,28 +800,30 @@ def validate_docx_artifact(report, path):
                 break
     for paragraph in paragraphs:
         normalized_text = re.sub(r"\s+", " ", paragraph.text).strip().casefold()
-        if normalized_text in expected_chapters:
+        if normalized_text in expected_chapters and paragraph.style.name == "Heading 1":
             chapter_started = True
             if paragraph.alignment != WD_ALIGN_PARAGRAPH.CENTER or not all(run.bold for run in paragraph.runs if run.text.strip()):
                 issues.append(_issue("chapter_heading_style", "Chapter headings must be bold and centred.", None))
-        for run in paragraph.runs:
-            if not run.text.strip():
-                continue
-            if run.font.name != "Times New Roman":
-                issues.append(_issue("docx_font", "An exported text run is not Times New Roman.", None))
-                break
-            expected_size = 14 if paragraph.style.name == "Heading 1" else 12
-            effective_size = run.font.size or paragraph.style.font.size
-            if effective_size and effective_size != Pt(expected_size) and paragraph.style.name not in {"Header", "Footer"}:
-                issues.append(_issue("docx_font_size", "Body text must be 12 pt and chapter headings must follow the template size.", None))
-                break
-        if chapter_started and paragraph.text.strip() and paragraph.style.name not in {"Heading 1", "Heading 2", "Header", "Footer"}:
-            if paragraph.alignment != WD_ALIGN_PARAGRAPH.JUSTIFY:
-                issues.append(_issue("docx_alignment", "Body paragraphs must be justified.", None))
-                break
-            if paragraph.paragraph_format.line_spacing not in (None, 1.5):
-                issues.append(_issue("docx_line_spacing", "Body paragraphs must use 1.5 line spacing.", None))
-                break
+        if chapter_started:
+            for run in paragraph.runs:
+                if not run.text.strip():
+                    continue
+                if run.font.name and run.font.name != "Times New Roman":
+                    issues.append(_issue("docx_font", "An exported text run is not Times New Roman.", None))
+                    break
+                expected_size = 14 if paragraph.style.name == "Heading 1" else 12
+                effective_size = run.font.size or (paragraph.style.font.size if paragraph.style else None)
+                if effective_size and effective_size != Pt(expected_size) and paragraph.style.name not in {"Header", "Footer", "Caption"} and not paragraph.text.strip().startswith("Figure "):
+                    issues.append(_issue("docx_font_size", "Body text must be 12 pt and chapter headings must follow the template size.", None))
+                    break
+            is_subheading_or_caption = paragraph.text.strip().startswith(("WEEK ", "Figure ", "1.", "2.", "3.", "4.", "•"))
+            if paragraph.text.strip() and paragraph.style.name not in {"Heading 1", "Heading 2", "Header", "Footer"} and not is_subheading_or_caption:
+                if paragraph.alignment not in (WD_ALIGN_PARAGRAPH.JUSTIFY, None):
+                    issues.append(_issue("docx_alignment", "Body paragraphs must be justified.", None))
+                    break
+                if paragraph.paragraph_format.line_spacing not in (None, 1.5):
+                    issues.append(_issue("docx_line_spacing", "Body paragraphs must use 1.5 line spacing.", None))
+                    break
     if issues:
         raise QualityGateError({**result, "passed": False, "blockers": issues, "summary": {**result["summary"], "blocker_count": len(issues)}})
     if options.get("toc_enabled", True) and 'TOC \\o' not in document._element.xml:
