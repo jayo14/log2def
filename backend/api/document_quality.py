@@ -518,16 +518,72 @@ def evaluate_report_quality(report, model=None):
                     warnings, "thin_section", f"“{definition['title']}” has limited student-derived detail.",
                     key, severity="warning", question=ENRICHMENT_QUESTIONS.get(key),
                 )
+
+    # Deduplicate and group blockers: max 5 grouped blockers shown at once
+    raw_blockers = blockers
+    seen_blockers = set()
+    deduped_blockers = []
+    for b in raw_blockers:
+        b_key = (b.get("code"), b.get("section_key"), b.get("message"))
+        if b_key not in seen_blockers:
+            seen_blockers.add(b_key)
+            deduped_blockers.append(b)
+
+    blocker_groups = {}
+    for b in deduped_blockers:
+        code = b.get("code")
+        if code not in blocker_groups:
+            blocker_groups[code] = {
+                "code": code,
+                "message": b.get("message"),
+                "section_key": b.get("section_key"),
+                "severity": b.get("severity", "blocker"),
+                "anchor": b.get("anchor"),
+                "count": 1,
+                "occurrences": [b],
+            }
+        else:
+            blocker_groups[code]["count"] += 1
+            blocker_groups[code]["occurrences"].append(b)
+
+    grouped_blockers = []
+    for code, group in blocker_groups.items():
+        if group["count"] > 1:
+            group["message"] = f"{group['message']} ({group['count']} places)"
+        grouped_blockers.append(group)
+
+    total_blocker_count = len(grouped_blockers)
+    capped_blockers = grouped_blockers[:5]
+    more_blockers_count = max(0, total_blocker_count - 5)
+
+    # Deduplicate and organize warnings
+    seen_warnings = set()
+    deduped_warnings = []
+    for w in warnings:
+        w_key = (w.get("code"), w.get("section_key"), w.get("message"))
+        if w_key not in seen_warnings:
+            seen_warnings.add(w_key)
+            deduped_warnings.append(w)
+
+    needs_more_detail = [w for w in deduped_warnings if w.get("code") == "thin_section"][:3]
+    ways_to_improve = [w for w in deduped_warnings if w.get("code") != "thin_section"]
+
     return {
-        "passed": not blockers,
-        "blockers": blockers,
-        "warnings": warnings,
+        "passed": not raw_blockers,
+        "blockers": capped_blockers,
+        "raw_blockers": raw_blockers,
+        "total_blockers_count": total_blocker_count,
+        "more_blockers_count": more_blockers_count,
+        "warnings": deduped_warnings[:10],
+        "needs_more_detail": needs_more_detail,
+        "ways_to_improve": ways_to_improve,
         "summary": {
             "total_pages": total_pages,
             "student_derived_pages": round(student_words / 350, 1),
             "student_derived_words": student_words,
-            "blocker_count": len(blockers),
-            "warning_count": len(warnings),
+            "blocker_count": total_blocker_count,
+            "more_blockers_count": more_blockers_count,
+            "warning_count": len(deduped_warnings),
         },
     }
 
