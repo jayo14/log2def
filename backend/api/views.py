@@ -1126,7 +1126,11 @@ class GuidedIntakeView(views.APIView):
         from .templates import get_section_requirements
         from .completeness import check_project_completeness
         steps = get_section_requirements()["guided_intake"]["steps"]
-        answers = project.guided_intake or {}
+        answers = dict(project.guided_intake or {})
+        if not answers.get("student_unit"):
+            fallback_unit = project.placement_department or project.industry_department or ""
+            if fallback_unit:
+                answers["student_unit"] = fallback_unit
         required_steps = [step for step in steps if step.get("required") and not intake_answer_complete(step, answers)]
         optional_steps = [step for step in steps if not step.get("required")]
         prefill = "\n".join(
@@ -1168,7 +1172,9 @@ class GuidedIntakeView(views.APIView):
             # Auto-synthesize structure narrative and organogram if head and units exist
             head = answers.get("head_title") or project.industry_supervisor_title or ""
             units = answers.get("organisation_units") or []
-            student_unit = answers.get("student_unit") or project.placement_department or ""
+            student_unit = answers.get("student_unit") or project.placement_department or project.industry_department or ""
+            if not answers.get("student_unit") and student_unit:
+                answers["student_unit"] = student_unit
             supervisor = answers.get("supervisor_title") or ""
             if head and (units or student_unit):
                 from .organogram_builder import build_structure_narrative, build_organogram_from_structure
@@ -1219,7 +1225,9 @@ class GuidedIntakeView(views.APIView):
         # Auto-synthesize structure narrative and organogram if head and units exist
         head = answers.get("head_title") or project.industry_supervisor_title or ""
         units = answers.get("organisation_units") or []
-        student_unit = answers.get("student_unit") or project.placement_department or ""
+        student_unit = answers.get("student_unit") or project.placement_department or project.industry_department or ""
+        if not answers.get("student_unit") and student_unit:
+            answers["student_unit"] = student_unit
         supervisor = answers.get("supervisor_title") or ""
         if head and (units or student_unit):
             from .organogram_builder import build_structure_narrative, build_organogram_from_structure

@@ -194,7 +194,11 @@ def check_project_completeness(project) -> Dict[str, Any]:
     if not is_v1:
         from .templates import get_section_requirements
         from .guided_intake import intake_answer_complete
-        answers = project.guided_intake or {}
+        answers = dict(project.guided_intake or {})
+        if not answers.get("student_unit"):
+            fallback_unit = project.placement_department or project.industry_department or ""
+            if fallback_unit:
+                answers["student_unit"] = fallback_unit
         intake_steps = get_section_requirements()["guided_intake"]["steps"]
         for step in intake_steps:
             if not step.get("required"):
