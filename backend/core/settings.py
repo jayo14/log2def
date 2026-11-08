@@ -191,10 +191,11 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_THROTTLE_RATES': {
         'anon': '120/minute',
-        'user': '2000/day',
+        'user': '300/minute',
         'auth': '30/minute',
         'heavy_generation': '60/minute',
         'uploads': '120/minute',
+        'poll': '120/minute',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
