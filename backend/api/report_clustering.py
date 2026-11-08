@@ -180,16 +180,18 @@ def synthesize_scope_section(org_name: str, org_address: str, placement_dept: st
     )
 
 
-def synthesize_duration_section(start_str: str, end_str: str, weeks: int = 12) -> str:
+def synthesize_duration_section(start_str: str, end_str: str, weeks: int = 12, duration: str = "") -> str:
     """Builds Section 1.5 (Duration of the Training) cleanly."""
     start = start_str or "27 July 2026"
     end = end_str or "16 October 2026"
-    return f"The industrial training commenced on {start} and concluded on {end}, spanning a cumulative duration of {weeks} weeks."
+    dur_phrase = f" ({duration})" if duration else ""
+    return f"The industrial training commenced on {start} and concluded on {end}{dur_phrase}, spanning a cumulative duration of {weeks} weeks."
 
 
-def synthesize_history_section(org_name: str, org_address: str, intake: dict) -> str:
+def synthesize_history_section(org_name: str, org_address: str = "", intake: dict | None = None) -> str:
     """Composes Section 2.1 (Brief History) into coherent sentences without field concatenation."""
     clean_org = to_title_case_name(org_name)
+    intake = intake or {}
     addr = (org_address or "").strip() or "Lagos, Nigeria"
     what = str(intake.get("organisation_what", "")).strip()
     when_where = str(intake.get("organisation_when_where", "")).strip()
@@ -228,14 +230,27 @@ def synthesize_objectives_section(org_name: str, intake: dict) -> str:
     )
 
 
-def synthesize_structure_section(org_name: str, head_title: str, units: list, placement_dept: str, supervisor_title: str) -> str:
+def synthesize_structure_section(
+    org_name: str,
+    head_title: str = "Managing Director",
+    units: list | None = None,
+    placement_dept: str = "Technical Department",
+    supervisor_title: str = "Technical Lead",
+    intake: dict | None = None,
+) -> str:
     """Composes Section 2.3 (Structure) in prose with consistent capitalisation."""
+    if intake:
+        head_title = intake.get("head_title") or head_title
+        units = intake.get("organisation_units") or units
+        placement_dept = intake.get("student_unit") or placement_dept
+        supervisor_title = intake.get("supervisor_title") or supervisor_title
+
     clean_org = to_title_case_name(org_name)
     head = (head_title or "").strip() or "Chief Technology Officer"
     sup = (supervisor_title or "").strip() or head
     unit = (placement_dept or "").strip() or "Technical Department"
 
-    units_list = [u.strip() for u in units if str(u).strip()]
+    units_list = [u.strip() for u in (units or []) if str(u).strip()]
     if not units_list:
         units_list = ["Technical Department", "Operations Unit", "Administration"]
 
@@ -253,11 +268,22 @@ def synthesize_structure_section(org_name: str, head_title: str, units: list, pl
 # Chapter 3 Synthesis
 # =========================================================================
 
-def synthesize_duties_section(placement_dept: str, supervisor_title: str, clusters: list, user_duties: str = "") -> str:
+def synthesize_duties_section(
+    placement_dept: str = "Technical Department",
+    supervisor_title: str = "Technical Lead",
+    clusters: list | None = None,
+    user_duties: str = "",
+    intake: dict | None = None,
+) -> str:
     """
     Builds Section 3.1: role statement + 5-8 responsibilities summarised by theme.
     Does NOT copy raw 3.2 daily logbook lines.
     """
+    if intake:
+        placement_dept = intake.get("student_unit") or placement_dept
+        supervisor_title = intake.get("supervisor_title") or supervisor_title
+        user_duties = str(intake.get("duties") or "") or user_duties
+
     dept = (placement_dept or "").strip() or "Technical Department"
     sup = (supervisor_title or "").strip() or "Chief Technology Officer"
 
@@ -454,7 +480,7 @@ def synthesize_summary_section(org_name: str, placement_dept: str, clusters: lis
     return f"{p1}\n\n{p2}"
 
 
-def synthesize_conclusion_section(org_name: str, clusters: list) -> str:
+def synthesize_conclusion_section(org_name: str, clusters: list | None = None) -> str:
     """
     Builds Section 4.2 (Conclusion): exactly one paragraph on what the record shows was learned.
     NO superlatives (e.g. 'invaluable' is strictly forbidden).
@@ -470,7 +496,7 @@ def synthesize_conclusion_section(org_name: str, clusters: list) -> str:
     )
 
 
-def synthesize_recommendations_section(org_name: str, challenges: str, recs_list: list) -> str:
+def synthesize_recommendations_section(org_name: str, challenges: str = "", recs_list: list | None = None, intake: dict | None = None) -> str:
     """
     Builds Section 4.3 (Recommendations): exactly three structured suggestions addressed to:
     1. The Host Organisation
