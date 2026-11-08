@@ -241,6 +241,10 @@ export default function DashboardPage() {
   const [selectedRecommendations, setSelectedRecommendations] = useState<string[]>([]);
   const [customRecommendation, setCustomRecommendation] = useState<string>('');
 
+  // Step 6: Extras state (all optional)
+  const [dedicationText, setDedicationText] = useState<string>('');
+  const [acknowledgementText, setAcknowledgementText] = useState<string>('');
+
   const [pages, setPages] = useState<LogPage[]>([]);
   const [reading, setReading] = useState<boolean>(false);
   const [readProgress, setReadProgress] = useState<number>(0);
@@ -5015,7 +5019,7 @@ export default function DashboardPage() {
       </div>
     );
   };
-  const renderStepImages = () => {
+  const renderStepExtras = () => {
     const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
     const uploadImage = async (file: File) => {
       if (!pid) return;
@@ -5040,18 +5044,110 @@ export default function DashboardPage() {
         setImageUploading(false);
       }
     };
+
     return (
-      <div className="view" id="step-6">
+      <div className="view" id="step-6-extras">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <h1 className="wt" id="wh" tabIndex={-1} style={{ margin: 0 }}>Images</h1>
-          <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', background: 'var(--card-sub)', color: 'var(--mut)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>Optional</span>
+          <h1 className="wt" id="wh" tabIndex={-1} style={{ margin: 0 }}>Extras</h1>
+          <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', background: 'var(--card-sub)', color: 'var(--mut)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>All Optional</span>
         </div>
-        <p className="wd" style={{ marginBottom: '16px', lineHeight: 1.5 }}>
-          Attach photos of your work, tools, or projects to include in your technical report.
+        <p className="wd" style={{ marginBottom: '16px', lineHeight: 1.5, color: 'var(--mut)', fontSize: '13px' }}>
+          Personalize your report with a dedication, acknowledgements, or workplace photos. All items here are optional — you can fill any or tap <b>Skip all</b> below.
         </p>
 
-        <div className="card" style={{ padding: '20px 18px', borderRadius: '16px' }}>
-          {/* Minimalist Upload Trigger */}
+        {/* 1. Dedication (Optional) */}
+        <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>Dedication</span>
+            <span style={{ fontSize: '11px', color: 'var(--mut)' }}>Optional</span>
+          </div>
+          <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--mut)' }}>
+            Who do you want to dedicate this technical report to?
+          </p>
+          <textarea
+            className="w-full"
+            rows={2}
+            value={dedicationText}
+            onChange={(e) => setDedicationText(e.target.value)}
+            placeholder="e.g. This report is dedicated to Almighty God and to my loving parents for their constant support..."
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--card-sub)',
+              fontSize: '13px',
+              color: 'var(--ink)',
+              resize: 'vertical',
+            }}
+          />
+        </div>
+
+        {/* 2. Acknowledgements (Optional) */}
+        <div className="card" style={{ padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>Acknowledgements</span>
+            <span style={{ fontSize: '11px', color: 'var(--mut)' }}>Optional</span>
+          </div>
+          <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: 'var(--mut)' }}>
+            Who helped you during your training? Quick chips:
+          </p>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+            {['God Almighty', 'My Parents & Family', 'Industry Supervisor', 'Institution Supervisor'].map((chip) => (
+              <button
+                key={chip}
+                type="button"
+                className="chip"
+                onClick={() => {
+                  setAcknowledgementText((prev) => {
+                    const clean = prev.trim();
+                    if (!clean) return `I express special gratitude to ${chip}.`;
+                    return `${clean} Also to ${chip}.`;
+                  });
+                }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '14px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  border: '1px solid var(--line)',
+                  background: 'var(--card-sub)',
+                  color: 'var(--ink)',
+                }}
+              >
+                + {chip}
+              </button>
+            ))}
+          </div>
+          <textarea
+            className="w-full"
+            rows={2}
+            value={acknowledgementText}
+            onChange={(e) => setAcknowledgementText(e.target.value)}
+            placeholder="e.g. My sincere appreciation to my industrial-based supervisor, colleagues, and institution staff..."
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--line)',
+              background: 'var(--card-sub)',
+              fontSize: '13px',
+              color: 'var(--ink)',
+              resize: 'vertical',
+            }}
+          />
+        </div>
+
+        {/* 3. Workplace Photos (Optional, max 6) */}
+        <div className="card" style={{ padding: '16px 18px', borderRadius: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>Workplace Photos</span>
+            <span style={{ fontSize: '11px', color: 'var(--mut)' }}>Max 6 photos</span>
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: '12.5px', color: 'var(--mut)' }}>
+            Attach photos of your work, tools, or projects to include in your technical report.
+          </p>
+
           <div
             onClick={() => {
               if (!imageUploading && reportImages.length < 6) {
@@ -5063,16 +5159,15 @@ export default function DashboardPage() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '24px 16px',
+              padding: '20px 16px',
               borderRadius: '14px',
               border: '1.5px dashed var(--line)',
               background: 'var(--card-sub)',
               cursor: reportImages.length >= 6 ? 'not-allowed' : 'pointer',
               textAlign: 'center',
-              transition: 'background 0.15s ease, border-color 0.15s ease',
             }}
           >
-            <span className="ms" style={{ fontSize: '30px', color: 'var(--g)', marginBottom: '6px' }}>
+            <span className="ms" style={{ fontSize: '28px', color: 'var(--g)', marginBottom: '4px' }}>
               {reportImages.length >= 6 ? 'task_alt' : 'add_photo_alternate'}
             </span>
             <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>
@@ -5112,12 +5207,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Minimal Empty State */}
-          {reportImages.length === 0 ? (
-            <p style={{ margin: '14px 0 0', textAlign: 'center', fontSize: '12px', color: 'var(--mut)' }}>
-              No photos added. You can skip this and tap <b>Next</b>.
-            </p>
-          ) : (
+          {reportImages.length > 0 && (
             <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {reportImages.map((image, index) => {
                 const hasValidCaption = validReportImageCaption(image.caption);
@@ -5246,9 +5336,25 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+
+        {/* Quick Skip All one-tap */}
+        <div style={{ textAlign: 'center', margin: '8px 0 16px' }}>
+          <button
+            type="button"
+            className="tx"
+            onClick={() => {
+              setStep(7);
+              if (scrRef.current) scrRef.current.scrollTop = 0;
+            }}
+            style={{ fontSize: '13px', color: 'var(--mut)', fontWeight: 600 }}
+          >
+            Skip all extras and view summary →
+          </button>
+        </div>
       </div>
     );
   };
+  const renderStepImages = renderStepExtras;
 
   // ==========================================
   const renderStep5 = () => {
@@ -5745,13 +5851,40 @@ export default function DashboardPage() {
     }
     if (step === 6) {
       return (
-        <button className="btn" type="button" onClick={() => {
-          setStep(7);
-          if (scrRef.current) scrRef.current.scrollTop = 0;
-        }} style={{ flex: 1 }}>
-          Next
-          <span className="ms" aria-hidden="true">arrow_forward</span>
-        </button>
+        <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+          <button
+            className="btn s"
+            type="button"
+            style={{ flex: 1 }}
+            onClick={() => {
+              setStep(7);
+              if (scrRef.current) scrRef.current.scrollTop = 0;
+            }}
+          >
+            Skip all
+          </button>
+          <button
+            className="btn"
+            type="button"
+            style={{ flex: 2 }}
+            onClick={async () => {
+              const pid = activeProject?.id;
+              if (pid) {
+                if (dedicationText.trim()) {
+                  await projectsApi.saveGuidedIntakeAnswer(pid, 'dedication', dedicationText.trim()).catch(() => {});
+                }
+                if (acknowledgementText.trim()) {
+                  await projectsApi.saveGuidedIntakeAnswer(pid, 'acknowledgement', acknowledgementText.trim()).catch(() => {});
+                }
+              }
+              setStep(7);
+              if (scrRef.current) scrRef.current.scrollTop = 0;
+            }}
+          >
+            Continue
+            <span className="ms" aria-hidden="true">arrow_forward</span>
+          </button>
+        </div>
       );
     }
     // step === 7

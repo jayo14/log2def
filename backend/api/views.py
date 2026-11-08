@@ -1209,6 +1209,9 @@ def save_intake_facts(project, key, answer):
     elif key == "dedication":
         if str(answer).strip():
             rows.append(("personal_statement", str(answer).strip(), "dedication"))
+    elif key == "acknowledgement":
+        if str(answer).strip():
+            rows.append(("personal_statement", str(answer).strip(), "acknowledgement"))
     else:
         kinds = {
             "organisation_what": "organisation_detail",

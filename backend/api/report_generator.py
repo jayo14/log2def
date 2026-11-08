@@ -901,19 +901,23 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
     intake = project.guided_intake or {}
     acknowledgement = intake.get("acknowledgement_people") or {}
+    acknowledgement_raw = intake.get("acknowledgement")
     acknowledgement_lines = []
-    for person in acknowledgement.get("people", []) if acknowledgement.get("include") else []:
-        name = str(person.get("name", "")).strip()
-        title = str(person.get("title", "")).strip()
-        if name:
-            acknowledgement_lines.append(f"{title} {name}".strip())
-    if acknowledgement.get("thank_god"):
-        acknowledgement_lines.append("God")
-    if acknowledgement.get("thank_family"):
-        acknowledgement_lines.append("my family")
-    acknowledgement_text = ""
-    if acknowledgement_lines:
-        acknowledgement_text = "I acknowledge " + ", ".join(acknowledgement_lines) + " for their support during my training."
+    if isinstance(acknowledgement_raw, str) and acknowledgement_raw.strip():
+        acknowledgement_text = acknowledgement_raw.strip()
+    else:
+        for person in acknowledgement.get("people", []) if isinstance(acknowledgement, dict) and acknowledgement.get("include") else []:
+            name = str(person.get("name", "")).strip()
+            title = str(person.get("title", "")).strip()
+            if name:
+                acknowledgement_lines.append(f"{title} {name}".strip())
+        if isinstance(acknowledgement, dict) and acknowledgement.get("thank_god"):
+            acknowledgement_lines.append("God")
+        if isinstance(acknowledgement, dict) and acknowledgement.get("thank_family"):
+            acknowledgement_lines.append("my family")
+        acknowledgement_text = ""
+        if acknowledgement_lines:
+            acknowledgement_text = "I acknowledge " + ", ".join(acknowledgement_lines) + " for their support during my training."
     challenge_answer = intake.get("challenge_pairs") or {}
     challenge_pairs = challenge_answer.get("pairs", []) if not challenge_answer.get("none") else []
     
