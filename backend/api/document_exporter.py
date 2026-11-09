@@ -158,7 +158,7 @@ class SimpleHTMLDocxParser(HTMLParser):
             project_root = Path(__file__).resolve().parent.parent.parent
             logo_cfg = self.logo_cfg or {}
             configured_path = logo_cfg.get('path', '')
-            if src.startswith('/api/institutions/'):
+            if src.startswith('/api/institutions/') or src.startswith('data:image') or attrs_dict.get('data-src', '').startswith('/api/institutions/'):
                 if configured_path:
                     candidate = (project_root / configured_path).resolve()
                     if candidate.exists():
@@ -170,6 +170,19 @@ class SimpleHTMLDocxParser(HTMLParser):
                         if candidate.exists() and candidate.suffix.lower() != '.svg':
                             abs_path = str(candidate)
                             break
+            if abs_path is None and src.startswith('data:image'):
+                try:
+                    import base64
+                    import io
+                    header, b64_str = src.split(',', 1)
+                    image_stream = io.BytesIO(base64.b64decode(b64_str))
+                    p = self.doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run()
+                    run.add_picture(image_stream, width=Inches(1.26))
+                    return
+                except Exception:
+                    pass
             if abs_path is None:
                 # Fallback: treat src as a direct filesystem path (relative to project root).
                 candidate = (project_root / src.lstrip('/')).resolve()

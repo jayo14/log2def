@@ -45,14 +45,29 @@ def _require_logo_in_ci(project_root: Path, logo_path: Path | None) -> None:
         )
 
 
+import base64
+from functools import lru_cache
+
+
+@lru_cache(maxsize=16)
+def get_cached_logo_data_uri(logo_path_str: str) -> str:
+    """Read and cache institution logo bytes as a base64 data URI for instant offline rendering."""
+    path = Path(logo_path_str)
+    if path.exists():
+        mime = "image/svg+xml" if path.suffix.lower() == ".svg" else "image/png"
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        return f"data:{mime};base64,{encoded}"
+    return ""
+
+
 def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasustech") -> str:
     """Return a centred paragraph containing the institution logo for a report cover.
 
     The logo asset is resolved from template ``institution_asset.logo`` config so
     another institution's logo can be added without code changes. Students cannot
-    replace or remove it. The image ``src`` uses the public InstitutionLogoView so
-    preview, DOCX and PDF render the same asset. Returns ``""`` when the asset is
-    missing (logs an error; CI/build checks fail separately).
+    replace or remove it. The image uses a cached base64 data URI directly embedded
+    into the document for instant rendering with 0 network latency, and also maintains
+    data-src pointing to the public InstitutionLogoView for standard exports.
     """
     from .templates import resolve_institution_logo_path
 
@@ -70,10 +85,16 @@ def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasust
     width_cm = float(logo.get("width_cm", 3.2))
     spacing_pt = float(logo.get("spacing_after_pt", 10))
     spacing_str = str(int(spacing_pt)) if spacing_pt.is_integer() else f"{spacing_pt}"
+
+    data_uri = get_cached_logo_data_uri(str(logo_path))
+    src = data_uri if data_uri else f"/api/institutions/{institution_code}/logo/"
+
     img = (
-        f'<img src="/api/institutions/{institution_code}/logo/" '
+        f'<img src="{src}" '
+        f'data-src="/api/institutions/{institution_code}/logo/" '
         f'alt="{escape(alt)}" '
-        f'style="display:block; margin:0 auto; width:{width_cm}cm; height:auto;" />'
+        f'class="institution-cover-logo" '
+        f'style="display:block; margin:0 auto; width:{width_cm}cm; max-width:180px; height:auto;" />'
     )
     # Paragraph spacing (margin-bottom) below the logo — no blank paragraphs.
     return f'<p style="text-align:center; margin:0 0 {spacing_str}pt 0;">{img}</p>'
