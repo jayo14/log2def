@@ -284,10 +284,22 @@ def detect_suspicious_tokens(entries: list, tools_text: str = "") -> List[Dict[s
 
 def clean_ocr_suspicious_text(text: str) -> str:
     """
-    Cleans known suspicious corrupted OCR tokens from report prose
-    so unconfirmed corrupted artifacts are not passed through to the final report.
+    Cleans known suspicious corrupted OCR tokens, boilerplate questionnaire prompts,
+    and bracketed OCR markers from report prose so unconfirmed corrupted artifacts
+    are not passed through to the final report.
     """
+    if not text:
+        return ""
     cleaned = text
+    # Strip bracketed OCR markers e.g. [Signature], [Stamp], [Page 1], [Signature: ...]
+    cleaned = re.sub(r"\[(?:Signature|Stamp|Sign|Page\s*\d+|Date|Remark|Photo|Picture|Image|Initials?)[^\]]*\]", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\[[^\]]+\]", "", cleaned)
+    # Strip questionnaire / survey prompts leaked into logbooks e.g. "4. Describe how you have applied what you have learnt in the classroom to your training/job"
+    cleaned = re.sub(r"\d+\.\s*(?:Describe how you have applied|What new job technique|State the kind of problems|How do you feel|Supervisor's remarks|Weekly summary|State specific skills|Outline the major assignments)[^.!?\n]*[.!?]?", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\b(?:Describe how you have applied what you have learnt|What new job technique or procedures have you learnt|State the kind of problems you came up with)\b[^.!?\n]*[.!?]?", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\b(?:how you have applied what you have learnt in the classroom to your training/job|technique or procedures have you learnt from your work/training|kind of problems you came up with during this period and how you handled them)\b", "", cleaned, flags=re.I)
     for rule in SUSPICIOUS_TOKEN_RULES:
         cleaned = rule["pattern"].sub(rule["clean_replacement"], cleaned)
+    # Clean whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
