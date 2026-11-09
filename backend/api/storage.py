@@ -2,16 +2,30 @@ import os
 import boto3
 from botocore.config import Config
 from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+def _get_setting(name: str, default=None):
+    """
+    Safely retrieve a setting from Django settings if configured,
+    otherwise falling back to environment variable or default.
+    """
+    if settings.configured:
+        val = getattr(settings, name, None)
+        if val is not None and val != '':
+            return val
+    return os.getenv(name, default)
 
 def get_s3_client():
     """
-    Returns an S3 client configured for Neon Object Storage.
+    Returns an S3 client configured for Object Storage (Rumpty Cloud / Neon / AWS).
     Uses AWS_ENDPOINT_URL_S3, AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY.
     """
-    endpoint = getattr(settings, 'AWS_ENDPOINT_URL_S3', None) or os.getenv('AWS_ENDPOINT_URL_S3')
-    region = getattr(settings, 'AWS_REGION', 'eu-central-1') or os.getenv('AWS_REGION', 'eu-central-1')
-    access_key = getattr(settings, 'AWS_ACCESS_KEY_ID', None) or os.getenv('AWS_ACCESS_KEY_ID')
-    secret_key = getattr(settings, 'AWS_SECRET_ACCESS_KEY', None) or os.getenv('AWS_SECRET_ACCESS_KEY')
+    endpoint = _get_setting('AWS_ENDPOINT_URL_S3')
+    region = _get_setting('AWS_REGION', 'olas-closet')
+    access_key = _get_setting('AWS_ACCESS_KEY_ID')
+    secret_key = _get_setting('AWS_SECRET_ACCESS_KEY')
 
     if not (access_key and secret_key):
         return None
@@ -26,11 +40,20 @@ def get_s3_client():
     )
 
 def get_bucket_name():
-    return getattr(settings, 'S3_BUCKET', 'assets') or os.getenv('S3_BUCKET', 'assets')
+    return _get_setting('S3_BUCKET', 'assets-mika-01a0f86f-84afac')
+
+def get_public_url(key: str) -> str:
+    """
+    Returns public URL for an asset key if a public URL prefix is configured.
+    """
+    public_url_base = _get_setting('S3_PUBLIC_URL', '')
+    if public_url_base:
+        return f"{public_url_base.rstrip('/')}/{key.lstrip('/')}"
+    return get_presigned_url(key)
 
 def upload_object(key: str, body, content_type: str = None) -> bool:
     """
-    Uploads a file body (bytes, string, or file-like object) to the Neon S3 bucket.
+    Uploads a file body (bytes, string, or file-like object) to the S3 bucket.
     """
     s3 = get_s3_client()
     if not s3:
@@ -45,20 +68,64 @@ def upload_object(key: str, body, content_type: str = None) -> bool:
     if content_type:
         params['ContentType'] = content_type
         
-    s3.put_object(**params)
-    return True
+    try:
+        s3.put_object(**params)
+        return True
+    except Exception as e:
+        logger.error(f"Error uploading object {key} to {bucket}: {e}")
+        return False
 
 def get_presigned_url(key: str, expires_in: int = 3600) -> str:
     """
     Generates a presigned URL to view/download an object from the S3 bucket.
+    Falls back to public asset URL if presigning is unavailable.
+    """
+    public_url_base = _get_setting('S3_PUBLIC_URL', '')
+    s3 = get_s3_client()
+    if not s3:
+        if public_url_base:
+            return f"{public_url_base.rstrip('/')}/{key.lstrip('/')}"
+        return None
+        
+    bucket = get_bucket_name()
+    try:
+        return s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': key},
+            ExpiresIn=expires_in
+        )
+    except Exception as e:
+        logger.error(f"Error generating presigned URL for {key}: {e}")
+        if public_url_base:
+            return f"{public_url_base.rstrip('/')}/{key.lstrip('/')}"
+        return None
+
+def download_object(key: str) -> bytes | None:
+    """
+    Downloads an object from the S3 bucket as bytes.
     """
     s3 = get_s3_client()
     if not s3:
         return None
-        
     bucket = get_bucket_name()
-    return s3.generate_presigned_url(
-        'get_object',
-        Params={'Bucket': bucket, 'Key': key},
-        ExpiresIn=expires_in
-    )
+    try:
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        return resp['Body'].read()
+    except Exception as e:
+        logger.error(f"Error downloading object {key} from {bucket}: {e}")
+        return None
+
+def delete_object(key: str) -> bool:
+    """
+    Deletes an object from the S3 bucket.
+    """
+    s3 = get_s3_client()
+    if not s3:
+        return False
+    bucket = get_bucket_name()
+    try:
+        s3.delete_object(Bucket=bucket, Key=key)
+        return True
+    except Exception as e:
+        logger.error(f"Error deleting object {key} from {bucket}: {e}")
+        return False
