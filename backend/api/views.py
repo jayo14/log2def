@@ -922,14 +922,28 @@ class InstitutionLogoView(views.APIView):
     permission_classes = (AllowAny,)
 
     def get(self, request, institution_code="lasustech"):
+        import hashlib
         from .templates import get_template_spec, resolve_institution_logo_path
         spec = get_template_spec(code=institution_code, version="1.0.0")
         project_root = Path(settings.BASE_DIR).parent
         abs_path = resolve_institution_logo_path(spec, project_root)
         if abs_path is None or not abs_path.exists():
             raise Http404("Logo asset not found on disk.")
+        
+        stat_result = abs_path.stat()
+        etag = f'"{hashlib.md5(f"{stat_result.st_mtime}-{stat_result.st_size}".encode()).hexdigest()}"'
+        if request.headers.get('If-None-Match') == etag:
+            from django.http import HttpResponseNotModified
+            resp = HttpResponseNotModified()
+            resp['ETag'] = etag
+            resp['Cache-Control'] = 'public, max-age=31536000, immutable'
+            return resp
+
         content_type = "image/svg+xml" if abs_path.suffix.lower() == ".svg" else "image/png"
-        return FileResponse(abs_path.open("rb"), content_type=content_type)
+        response = FileResponse(abs_path.open("rb"), content_type=content_type)
+        response['Cache-Control'] = 'public, max-age=31536000, immutable'
+        response['ETag'] = etag
+        return response
 
 
 # --- Report & Sections Views ---
