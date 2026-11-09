@@ -89,9 +89,9 @@ import sys
 is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate', 'test', 'evaluate_scorecard', 'shell'])
 
 if is_migration_command:
-    DATABASE_URL = os.getenv('DATABASE_URL_UNPOOLED') or os.getenv('DATABASE_URL', '').replace('-pooler', '').strip()
+    DATABASE_URL = os.getenv('DATABASE_URL_UNPOOLED') or os.getenv('DATABASE_URL_INTERNAL') or os.getenv('DATABASE_URL', '').replace('-pooler', '').strip()
 else:
-    DATABASE_URL = os.getenv('DATABASE_URL_POOLED') or os.getenv('DATABASE_URL', '').strip()
+    DATABASE_URL = os.getenv('DATABASE_URL_POOLED') or os.getenv('DATABASE_URL_INTERNAL') or os.getenv('DATABASE_URL', '').strip()
 
 DB_ENGINE = os.getenv('DB_ENGINE', '').strip().lower()
 
@@ -110,7 +110,7 @@ elif DATABASE_URL:
     db_options = {}
     if 'sslmode' in query_params:
         db_options['sslmode'] = query_params['sslmode']
-    elif 'neon.tech' in (url.hostname or ''):
+    elif 'neon.tech' in (url.hostname or '') or 'rumptycloud.com' in (url.hostname or ''):
         db_options['sslmode'] = 'require'
         
     if 'channel_binding' in query_params:
@@ -120,8 +120,8 @@ elif DATABASE_URL:
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': url.path[1:] if url.path.startswith('/') else url.path,
-            'USER': url.username or '',
-            'PASSWORD': url.password or '',
+            'USER': urlparse.unquote(url.username or ''),
+            'PASSWORD': urlparse.unquote(url.password or ''),
             'HOST': url.hostname or '',
             'PORT': url.port or 5432,
             'OPTIONS': db_options,
@@ -294,12 +294,13 @@ if not DEBUG:
     if 'insecure' in SECRET_KEY:
         raise RuntimeError("DJANGO_SECRET_KEY must be configured with a secure secret in production mode.")
 
-# Neon Object Storage (S3-compatible) Configuration
+# Object Storage (S3-compatible: Rumpty Cloud / Neon / AWS) Configuration
 AWS_ENDPOINT_URL_S3 = os.getenv('AWS_ENDPOINT_URL_S3', '').strip()
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID', '').strip()
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', '').strip()
-AWS_REGION = os.getenv('AWS_REGION', 'eu-central-1').strip()
-S3_BUCKET = os.getenv('S3_BUCKET', 'assets').strip()
+AWS_REGION = os.getenv('AWS_REGION', 'olas-closet').strip()
+S3_BUCKET = os.getenv('S3_BUCKET', 'assets-mika-01a0f86f-84afac').strip()
+S3_PUBLIC_URL = os.getenv('S3_PUBLIC_URL', '').strip()
 
 # --- Squad Payment Gateway Configuration ---
 SQUAD_SECRET_KEY = os.getenv('SQUAD_SECRET_KEY', '').strip()
