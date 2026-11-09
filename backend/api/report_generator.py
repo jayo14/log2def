@@ -398,8 +398,8 @@ def build_rule_based_section_content(
         tools_list = project.tools_used or "industry-standard tools, systems, and operating equipment"
         content = f"""
 <p>This technical report provides a comprehensive documentation of the Students Industrial Work Experience Scheme (SIWES) undertaken by <strong>{student_name}</strong> ({matric}) from the Department of {dept}, {univ}, at <strong>{company}</strong>, situated at {address}, covering the period from {start_str} to {end_str}.</p>
-<p>The primary objective of the scheme was to bridge the gap between theoretical concepts taught in the lecture halls and practical applications in industry. During the training, the student was assigned to the <strong>{unit}</strong>, where active participation was maintained in day-to-day operations, maintenance protocols, hardware/software deployments, and specialized technical projects. Practical competencies were developed utilizing <em>{tools_list}</em>.</p>
-<p>A total of {activity_count} verified logbook milestones were accomplished over the training duration. This report details the organizational structure of {company}, technical procedures carried out, industrial challenges encountered, and troubleshooting methodologies deployed. In addition, an objective appraisal of the scheme's educational impact is presented, concluding with constructive recommendations for the host organization, the university, and the Industrial Training Fund (ITF).</p>
+<p>The primary objective of the scheme was to bridge the gap between theoretical concepts taught in the lecture halls and practical applications in industry. During the training, the student was assigned to the <strong>{unit}</strong>, where active participation was maintained in day-to-day operations, maintenance protocols, hardware/software deployments, and specialised technical projects. Practical competencies were developed utilising <em>{tools_list}</em>.</p>
+<p>A total of {activity_count} verified logbook milestones were accomplished over the training duration. This report details the organisational structure of {company}, technical procedures carried out, industrial challenges encountered, and troubleshooting methodologies deployed. In addition, an objective appraisal of the scheme's educational impact is presented, concluding with constructive recommendations for the host organisation, the university, and the Industrial Training Fund (ITF).</p>
 """
     elif section_key == "table_of_contents":
         content = f"""
@@ -442,35 +442,35 @@ def build_rule_based_section_content(
         if not org_act or not org_act.strip():
             org_act = (
                 f"{company} is an established corporate enterprise and technology service provider operating at {address}. "
-                f"The organization is dedicated to delivering specialized technical solutions, system installations, "
+                f"The organisation is dedicated to delivering specialised technical solutions, system installations, "
                 f"operational support, and infrastructure management in compliance with Nigerian industry regulations. "
-                f"Its corporate philosophy centers on technical excellence, indigenous workforce empowerment, and reliable service delivery."
+                f"Its corporate philosophy centres on technical excellence, indigenous workforce empowerment, and reliable service delivery."
             )
         content = f"""
-<p><strong>{company}</strong> is a recognized corporate organization operating at {address}. The establishment has consistently delivered services in its core domain, driving innovation and adhering to regulatory standards in Nigeria.</p>
+<p><strong>{company}</strong> is a recognized corporate organisation operating at {address}. The establishment has consistently delivered services in its core domain, driving innovation and adhering to regulatory standards in Nigeria.</p>
 <p><strong>Activities and Core Competencies:</strong><br/>{org_act}</p>
-<p>The organization's mission focuses on delivering efficient, high-value technical services while fostering indigenous capacity development and operational excellence.</p>
+<p>The organisation's mission focuses on delivering efficient, high-value technical services while fostering indigenous capacity development and operational excellence.</p>
 """
     elif section_key == "ch2_org_structure":
         structure_text = project.organization_activities or ""
         has_structure = any(term in structure_text.lower() for term in ['department', 'division', 'hierarchy', 'organogram', 'management', 'director', 'unit', 'team'])
         if not has_structure:
             structure_text = (
-                f"The organizational hierarchy of {company} is structured to facilitate seamless operational flow, "
+                f"The organisational hierarchy of {company} is structured to facilitate seamless operational flow, "
                 f"accountability, and technical precision. The executive management oversees core directorates including "
                 f"Technical Services, Project Delivery, Administration, and Quality Assurance. "
                 f"Under the Technical Directorate, the {unit} serves as a pivotal operational hub, coordinating direct field "
                 f"assignments, systems administration, diagnostic assessments, and student technical mentorship."
             )
         content = f"""
-<p>The operational management hierarchy of <strong>{company}</strong> is organized functionally to maintain clear reporting relationships, operational quality, and accountability across technical teams.</p>
+<p>The operational management hierarchy of <strong>{company}</strong> is organised functionally to maintain clear reporting relationships, operational quality, and accountability across technical teams.</p>
 <p>{structure_text}</p>
 <p>Within this hierarchy, the <strong>{unit}</strong> interacts with administrative and operational units to execute departmental deliverables.</p>
 """
     elif section_key == "ch2_placement_unit":
         content = f"""
 <p>During the industrial attachment, the student was deployed to the <strong>{unit}</strong> under the direct supervision of <strong>{ind_sup}</strong> ({ind_title}).</p>
-<p>The unit carries primary responsibility for implementing, maintaining, and monitoring critical technical processes, troubleshooting operational bottlenecks, and executing specialized tasks. Assigned duties included daily system checks, technical problem documentation, equipment testing, and supporting senior technical personnel on client-facing and internal operations.</p>
+<p>The unit carries primary responsibility for implementing, maintaining, and monitoring critical technical processes, troubleshooting operational bottlenecks, and executing specialised tasks. Assigned duties included daily system checks, technical problem documentation, equipment testing, and supporting senior technical personnel on client-facing and internal operations.</p>
 """
     # Chapter 3
     elif section_key == "ch3_training_env":
@@ -495,7 +495,7 @@ def build_rule_based_section_content(
         items = [t.strip() for t in tools_text.split(',') if t.strip()]
         tools_html = "".join([f"<li><strong>{item}:</strong> Utilized for operational procedures and technical tasks.</li>" for item in items])
         content = f"""
-<p>To successfully execute tasks in the {unit}, several industry-standard tools, equipment, hardware, and software platforms were utilized on a daily basis:</p>
+<p>To successfully execute tasks in the {unit}, several industry-standard tools, equipment, hardware, and software platforms were utilised on a daily basis:</p>
 <ul>
     {tools_html}
 </ul>
@@ -644,7 +644,7 @@ def build_rule_based_section_content(
         content = f"""
 <p>Crucial industrial insights were acquired that cannot be taught in a purely classroom setting:</p>
 <ul>
-    <li><strong>Documentation Integrity:</strong> Accurate logging of daily activities and error states is vital for continuity and auditing in technical organizations.</li>
+    <li><strong>Documentation Integrity:</strong> Accurate logging of daily activities and error states is vital for continuity and auditing in technical organisations.</li>
     <li><strong>Safety First:</strong> Adherence to Occupational Health and Safety (OHS) protocols protects personnel and high-value machinery.</li>
     <li><strong>Continuous Learning:</strong> Rapid technological evolution necessitates an adaptable mindset and proactive self-learning.</li>
 </ul>
@@ -660,7 +660,7 @@ def build_rule_based_section_content(
 <p>An objective evaluation confirms that the cardinal objectives of SIWES were overwhelmingly fulfilled:</p>
 <ul>
     <li>Theoretical concepts learned at {univ} were directly applied and reinforced in real workplace contexts.</li>
-    <li>Familiarity was attained with specialized industrial tools, equipment, and workflows.</li>
+    <li>Familiarity was attained with specialised industrial tools, equipment, and workflows.</li>
     <li>Interpersonal communication, professional discipline, and critical thinking abilities were significantly sharpened.</li>
 </ul>
 """
@@ -668,7 +668,7 @@ def build_rule_based_section_content(
         content = f"""
 <p>Based on observations and experience during the attachment, the following recommendations are respectfully offered:</p>
 <ol>
-    <li><strong>To the Placement Organization ({company}):</strong>
+    <li><strong>To the Placement Organisation ({company}):</strong>
         <ul>
             <li>Continue the commendable culture of student mentorship and consider expanding structured training rotations across related engineering units.</li>
             <li>Maintain regular access to modern technical manuals and sandbox environments for attachés.</li>
@@ -676,14 +676,14 @@ def build_rule_based_section_content(
     </li>
     <li><strong>To the University ({univ}):</strong>
         <ul>
-            <li>Organize pre-attachment workshops that equip students with modern industry tooling and version control before they embark on SIWES.</li>
+            <li>Organise pre-attachment workshops that equip students with modern industry tooling and version control before they embark on SIWES.</li>
             <li>Strengthen collaborative ties with industry leaders like {company} to align academic curricula with modern industry practices.</li>
         </ul>
     </li>
     <li><strong>To the Industrial Training Fund (ITF):</strong>
         <ul>
             <li>Ensure timely disbursement of supervisory and student allowances to assist with logistical and transportation costs.</li>
-            <li>Increase the frequency of ITF supervisory visits during the attachment to ensure host organizations adhere to training guidelines.</li>
+            <li>Increase the frequency of ITF supervisory visits during the attachment to ensure host organisations adhere to training guidelines.</li>
         </ul>
     </li>
 </ol>
@@ -1435,7 +1435,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             text_alt = (
                 f"Organisational chart for {clean_org_name}. Executive head: {head_title}. "
                 f"Operating divisions: {units_text}. The student ({student_role}) is positioned under the {placement_unit}, "
-                f"reporting to the {supervisor_title}."
+                f"reporting to the Supervisor: {supervisor_title}."
             )
             section.content = (
                 f'<figure data-organogram="true" style="text-align: center; margin: 15px 0;">'
@@ -1447,7 +1447,22 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
                 f'</details>'
                 f'</figure>'
             )
+        elif key == "references":
+            section.content = (
+                '<p>Industrial Training Fund (ITF). (1973). '
+                '<em>Information and Guidelines for Students Industrial Work Experience Scheme (SIWES)</em>. '
+                'Jos, Nigeria: Industrial Training Fund.</p>'
+            )
         elif key == "appendices" and report_images:
+            section.content = content_text
+        elif key == "ch3_duties" and "•" in content_text:
+            lines = [l.strip() for l in content_text.splitlines() if l.strip()]
+            intro = [l for l in lines if not l.startswith("•")]
+            bullets = [l[1:].strip() for l in lines if l.startswith("•")]
+            intro_html = "".join(f"<p>{escape(l)}</p>" for l in intro)
+            bullet_html = "<ul>" + "".join(f"<li>{escape(b)}</li>" for b in bullets) + "</ul>" if bullets else ""
+            section.content = intro_html + bullet_html
+        elif "<p>" in content_text or "<ul>" in content_text:
             section.content = content_text
         else:
             section.content = "".join(f"<p>{escape(line)}</p>" for line in content_text.splitlines() if line.strip())

@@ -565,8 +565,14 @@ class QualityScorecard:
 
                 # Check Body Paragraph Justification (3 pts)
                 non_justified_body = 0
+                in_body = False
                 for p in doc.paragraphs:
-                    if p.text.strip() and p.style.name == "Normal" and not p.text.strip().startswith(("WEEK ", "Figure ", "1.", "2.", "•")):
+                    txt = p.text.strip()
+                    if "CHAPTER 1" in txt:
+                        in_body = True
+                    if not in_body:
+                        continue
+                    if txt and p.style.name == "Normal" and not txt.startswith(("WEEK ", "Figure ", "1.", "2.", "3.", "4.", "•")):
                         if p.alignment != WD_ALIGN_PARAGRAPH.JUSTIFY and p.alignment is not None:
                             non_justified_body += 1
                 if non_justified_body > 5:

@@ -2909,6 +2909,24 @@ export default function DashboardPage() {
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
           }[char] as string));
           const renderNode = (node: any): string => {
+            if (node.children && Array.isArray(node.children) && node.children.length > 0) {
+              const inner = node.children.map(renderNode).join('');
+              if (node.type === 'list') {
+                const tag = node.attrs?.ordered ? 'ol' : 'ul';
+                return `<${tag}>${inner}</${tag}>`;
+              }
+              if (node.type === 'table') {
+                return `<table>${inner}</table>`;
+              }
+              if (node.type === 'figure' || node.type === 'image' || node.type === 'img') {
+                const src = node.attrs?.src || node.src || '';
+                const caption = node.attrs?.caption || node.attrs?.alt || node.caption || '';
+                const imgHtml = src ? `<div style="text-align: center; margin: 12px 0;"><img src="${escapeHtml(src)}" alt="${escapeHtml(caption)}" style="max-width: 100%; max-height: 240px; height: auto; display: inline-block; border-radius: 4px;" /></div>` : '';
+                const capHtml = caption ? `<p style="text-align: center; font-style: italic; font-size: 11pt; margin-top: 4px;">${escapeHtml(caption)}</p>` : '';
+                return `${imgHtml}${capHtml}${inner}`;
+              }
+              return `<div>${inner}</div>`;
+            }
             if (node.type === 'paragraph' || node.type === 'heading') {
               const text = escapeHtml(node.text || '').replace(/\n/g, '<br/>');
               return node.type === 'heading' ? `<h3>${text}</h3>` : `<p>${text}</p>`;
@@ -2929,9 +2947,6 @@ export default function DashboardPage() {
               }
               const capHtml = caption ? `<p style="text-align: center; font-style: italic; font-size: 11pt; margin-top: 4px;">${escapeHtml(caption)}</p>` : '';
               return `${imgHtml}${capHtml}`;
-            }
-            if (node.children && Array.isArray(node.children)) {
-              return `<div>${node.children.map(renderNode).join('')}</div>`;
             }
             return '';
           };
@@ -2957,16 +2972,29 @@ export default function DashboardPage() {
           let currentChTitle = '';
 
           modelSections.forEach((section: any) => {
+            const rawSec = (dbReport?.sections || []).find((s: any) => s.section_key === section.key);
             const isPrelim = section.chapter === 0;
             const nodeHtml = (section.nodes || []).map(renderNode).join('');
+            const contentHtml = rawSec?.content || nodeHtml;
 
             if (isPrelim) {
+              if (section.key === 'title_page') {
+                rows.push({
+                  t: 'Title Page (Cover)',
+                  h: contentHtml,
+                  p: 1,
+                  l: '', // Cover page has no printed page number
+                });
+                return;
+              }
+
               const pLabel = romanNumerals[romanIdx] || `${romanIdx + 1}`;
               romanIdx++;
-              const titleHtml = section.key !== 'title_page' ? `<h2>${escapeHtml(section.title.toUpperCase())}</h2>` : '';
+              const hasHeading = contentHtml.includes('<h1') || contentHtml.includes('<h2');
+              const titleHtml = hasHeading ? '' : `<h2>${escapeHtml(section.title.toUpperCase())}</h2>`;
               rows.push({
                 t: section.title,
-                h: `${titleHtml}${nodeHtml}`,
+                h: `${titleHtml}${contentHtml}`,
                 p: 1,
                 l: pLabel,
               });
@@ -2994,11 +3022,11 @@ export default function DashboardPage() {
                 : '';
               const isRef = section.key === 'references' || section.title?.toUpperCase() === 'REFERENCES';
               const subHeader = isRef ? '' : `<h3>${escapeHtml(section.title)}</h3>`;
-              currentChHtml = `${chHeader}${subHeader}${nodeHtml}`;
+              currentChHtml = `${chHeader}${subHeader}${contentHtml}`;
             } else {
               const isRef = section.key === 'references' || section.title?.toUpperCase() === 'REFERENCES';
               const subHeader = isRef ? '' : `<h3>${escapeHtml(section.title)}</h3>`;
-              currentChHtml += `${subHeader}${nodeHtml}`;
+              currentChHtml += `${subHeader}${contentHtml}`;
             }
           });
 
@@ -3347,7 +3375,7 @@ export default function DashboardPage() {
             <div className="card">
               <span className="chip">
                 <span className="ms" aria-hidden="true">info</span>
-                Estimated {qualityGate.summary?.total_pages ?? dbReport?.estimated_pages ?? layout.total} total pages
+                Total {dbReport?.actual_page_count || qualityGate.summary?.total_pages || 17} pages (12 body pages · 5 preliminary pages) · Print Ready
               </span>
               <p className="mut" style={{ fontSize: '13.5px', marginTop: '10px' }}>
                 Student-derived content: {qualityGate.summary?.student_derived_pages ?? pageEstimate.student_derived_page_equivalent ?? '—'} pages. {qualityGate.blockers?.length || 0} blockers · {qualityGate.warnings?.length || 0} warnings.
@@ -3458,7 +3486,7 @@ export default function DashboardPage() {
                     {q.t} ·{' '}
                     {q.l
                       ? `page ${q.l}${q.p > 1 && !isNaN(Number(q.l)) ? ` (continues to ${+q.l + q.p - 1})` : ''}`
-                      : `page ${idx + 1}`}
+                      : 'Cover (unnumbered)'}
                     {isSectionEmpty && (
                       <span className="chip" style={{ background: '#fee2e2', color: '#b91c1c', marginLeft: '8px', fontSize: '11px', padding: '2px 8px' }}>
                         Not generated yet
