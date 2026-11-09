@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 # Page budget configuration (settings with defaults, not hardcoded)
 # ---------------------------------------------------------------------------
 
-DEFAULT_MIN_PAGES = 12      # soft: warn
-DEFAULT_MAX_PAGES = 15      # hard: block
-DEFAULT_TARGET_PAGES = 13   # aim for middle of range
+DEFAULT_MIN_PAGES = 12      # soft: warn (12 total pages minimum)
+DEFAULT_MAX_PAGES = 17      # hard: block (12-15 body pages + 5 front matter pages = 17 pages max)
+DEFAULT_TARGET_PAGES = 16   # aim for standard 12 body pages + front matter
 WORDS_PER_PAGE = 350        # TNR 12pt, 1.5 spacing, justified, 2.54cm margins
 
 # Section word budgets (front matter + main matter, including references)
