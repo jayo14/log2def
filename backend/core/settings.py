@@ -86,16 +86,23 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database configuration: pulled strictly from environment / .env
 import sys
 
-is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate', 'test'])
+is_migration_command = any(cmd in sys.argv for cmd in ['migrate', 'makemigrations', 'showmigrations', 'sqlmigrate', 'test', 'evaluate_scorecard', 'shell'])
 
 if is_migration_command:
-    DATABASE_URL = os.getenv('DATABASE_URL_UNPOOLED') or os.getenv('DATABASE_URL', '').strip()
+    DATABASE_URL = os.getenv('DATABASE_URL_UNPOOLED') or os.getenv('DATABASE_URL', '').replace('-pooler', '').strip()
 else:
     DATABASE_URL = os.getenv('DATABASE_URL_POOLED') or os.getenv('DATABASE_URL', '').strip()
 
 DB_ENGINE = os.getenv('DB_ENGINE', '').strip().lower()
 
-if DATABASE_URL:
+if DB_ENGINE == 'sqlite':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / os.getenv('SQLITE_DB_NAME', 'db.sqlite3'),
+        }
+    }
+elif DATABASE_URL:
     import urllib.parse as urlparse
     url = urlparse.urlparse(DATABASE_URL)
     query_params = dict(urlparse.parse_qsl(url.query))
