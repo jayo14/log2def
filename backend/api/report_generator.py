@@ -1000,6 +1000,83 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             source_field__in=[f"logbook_entry:{eid}:activity" for eid in excluded_ids]
         ).delete()
 
+    intake = project.guided_intake or {}
+    clean_org_name = to_title_case_name(project.organization_name)
+    clean_org_addr = clean_address_spacing(project.organization_address or "Lagos, Nigeria")
+
+    # Fallbacks for "I'm not sure" path in organisation history and objectives
+    if intake.get("organisation_not_sure") or not intake.get("organisation_what"):
+        if not intake.get("organisation_what"):
+            intake["organisation_what"] = f"{clean_org_name} is an established organisation based at {clean_org_addr}."
+        if not intake.get("organisation_objectives"):
+            intake["organisation_objectives"] = f"The objectives of {clean_org_name} centre on delivering professional services and technical solutions in its operational domain."
+
+    # Auto-synthesize structure narrative and organogram tree if structured inputs exist
+    if not intake.get("organisation_structure"):
+        from .organogram_builder import build_structure_narrative
+        intake["organisation_structure"] = build_structure_narrative(
+            head_title=intake.get("head_title", ""),
+            units=intake.get("organisation_units", []),
+            placement_unit=intake.get("student_unit") or project.placement_department or "",
+            supervisor_title=intake.get("supervisor_title", ""),
+        )
+
+    if not intake.get("organogram_tree"):
+        from .organogram_builder import build_organogram_from_structure
+        intake["organogram_tree"] = build_organogram_from_structure(
+            head_title=intake.get("head_title", ""),
+            units=intake.get("organisation_units", []),
+            placement_unit=intake.get("student_unit") or project.placement_department or "",
+            supervisor_title=intake.get("supervisor_title", ""),
+        )
+
+    # Sync guided intake fields to confirmed Facts for auditable provenance
+    intake_fact_kinds = {
+        "organisation_what": "organisation_detail",
+        "organisation_when_where": "organisation_detail",
+        "organisation_history": "organisation_detail",
+        "organisation_objectives": "organisation_detail",
+        "organisation_structure": "organisation_detail",
+        "organogram_tree": "organisation_detail",
+        "head_title": "organisation_detail",
+        "student_unit": "organisation_detail",
+        "supervisor_title": "person",
+        "recommendations": "recommendation",
+        "industry_supervisor_name": "person",
+        "organisation_paste_text": "organisation_detail",
+        "dedication": "personal_statement",
+        "acknowledgement": "personal_statement",
+    }
+    for ik, kind in intake_fact_kinds.items():
+        val = intake.get(ik)
+        if val:
+            _sync_fact(ik, kind, str(val).strip(), "STUDENT_PROVIDED")
+
+    if project.placement_department and not intake.get("student_unit"):
+        _sync_fact("student_unit", "organisation_detail", project.placement_department.strip(), "STUDENT_PROVIDED")
+    if getattr(project, "industry_supervisor_title", None) and not intake.get("supervisor_title"):
+        _sync_fact("supervisor_title", "person", project.industry_supervisor_title.strip(), "STUDENT_PROVIDED")
+    if getattr(project, "industry_supervisor_name", None) and not intake.get("industry_supervisor_name"):
+        _sync_fact("industry_supervisor_name", "person", project.industry_supervisor_name.strip(), "STUDENT_PROVIDED")
+
+    duties_val = intake.get("duties") or getattr(project, "tasks_performed", "") or getattr(project, "duties", "")
+    if duties_val:
+        for idx, line in enumerate(str(duties_val).splitlines(), start=1):
+            if line.strip():
+                _sync_fact(f"duties:duty_{idx}", "duty", line.strip(), "STUDENT_PROVIDED")
+        _sync_fact("duties", "duty", str(duties_val).strip(), "STUDENT_PROVIDED")
+    else:
+        dept_name = project.placement_department or "Technical Department"
+        _sync_fact("duties", "duty", f"Participated in technical operations and maintenance in {dept_name}", "STUDENT_PROVIDED")
+
+    challenge_answer = intake.get("challenge_pairs") or {}
+    challenge_pairs = challenge_answer.get("pairs", []) if isinstance(challenge_answer, dict) and not challenge_answer.get("none") else []
+    for idx, pair in enumerate(challenge_pairs, start=1):
+        if pair.get("challenge"):
+            _sync_fact(f"challenge_pairs:challenge_{idx}", "challenge", pair["challenge"].strip(), "STUDENT_PROVIDED")
+        if pair.get("solution"):
+            _sync_fact(f"challenge_pairs:solution_{idx}", "solution", pair["solution"].strip(), "STUDENT_PROVIDED")
+
     if facts_to_create:
         Fact.objects.bulk_create(facts_to_create)
     if facts_to_update:
@@ -1010,7 +1087,6 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
     if project.training_start_date and project.training_end_date:
         days = (project.training_end_date - project.training_start_date).days + 1
         duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
-    intake = project.guided_intake or {}
     acknowledgement = intake.get("acknowledgement_people") or {}
     acknowledgement_raw = intake.get("acknowledgement")
     acknowledgement_lines = []
@@ -1029,58 +1105,32 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         acknowledgement_text = ""
         if acknowledgement_lines:
             acknowledgement_text = "I acknowledge " + ", ".join(acknowledgement_lines) + " for their support during my training."
-    challenge_answer = intake.get("challenge_pairs") or {}
-    challenge_pairs = challenge_answer.get("pairs", []) if not challenge_answer.get("none") else []
-    
-    # Auto-synthesize structure narrative and organogram tree if structured inputs exist
-    if not intake.get("organisation_structure") and (intake.get("head_title") or intake.get("organisation_units")):
-        from .organogram_builder import build_structure_narrative
-        intake["organisation_structure"] = build_structure_narrative(
-            head_title=intake.get("head_title", ""),
-            units=intake.get("organisation_units", []),
-            placement_unit=intake.get("student_unit") or project.placement_department or "",
-            supervisor_title=intake.get("supervisor_title", ""),
-        )
 
     organogram = []
     organogram_raw = intake.get("organogram_tree", "")
-    if not organogram_raw and (intake.get("head_title") or intake.get("organisation_units")):
-        from .organogram_builder import build_organogram_from_structure
-        organogram_raw = build_organogram_from_structure(
-            head_title=intake.get("head_title", ""),
-            units=intake.get("organisation_units", []),
-            placement_unit=intake.get("student_unit") or project.placement_department or "",
-            supervisor_title=intake.get("supervisor_title", ""),
-        )
     for line in str(organogram_raw or "").splitlines():
         if line.strip():
             depth = (len(line) - len(line.lstrip(" "))) // 2
             organogram.append("\u2003" * depth + line.strip())
-    # Fallbacks for "I'm not sure" path in organisation history and objectives
-    if intake.get("organisation_not_sure") or not intake.get("organisation_what"):
-        org_name = project.organization_name or "The organisation"
-        org_addr = project.organization_address or "its operating location"
-        if not intake.get("organisation_what"):
-            intake["organisation_what"] = f"{org_name} is an established organisation based at {org_addr}."
-        if not intake.get("organisation_objectives"):
-            intake["organisation_objectives"] = f"The objectives of {org_name} centre on delivering professional services and technical solutions in its operational domain."
 
     section_fact_fields = {
         "title_page": [f"profile:{field}" for field in profile_fact_fields] + ["profile:training_start_date", "profile:training_end_date"],
-        "ch1_scope": ["profile:organization_name", "profile:placement_department"],
+        "ch1_scope": ["profile:organization_name", "profile:placement_department", "student_unit", "logbook_entry:"],
         "ch1_duration": ["profile:training_start_date", "profile:training_end_date"],
         "ch3_skills": ["profile:skills_acquired", "logbook_entry:"],
         "ch3_tools": ["profile:tools_used", "logbook_entry:"],
-        "ch2_history": ["organisation_what", "organisation_when_where", "organisation_paste_text"],
-        "ch2_objectives": ["organisation_objectives", "organisation_paste_text"], "ch2_structure": ["organisation_structure"],
-        "ch2_organogram": ["organogram_tree"],
-        "ch3_duties": ["student_unit", "supervisor_title", "duties", "industry_supervisor_name"],
-        "ch3_challenges": ["challenge_pairs:"],
-        "ch3_solutions": ["challenge_pairs:"],
-        "ch4_summary": ["logbook_entry:", "organisation_"],
-        "ch4_conclusion": ["logbook_entry:", "organisation_"],
-        "ch4_recommendations": ["recommendations"], "dedication": ["dedication"],
-        "acknowledgement": ["acknowledgement_people:", "acknowledgement"],
+        "ch2_history": ["organisation_what", "organisation_when_where", "organisation_paste_text", "profile:organization_name", "organisation_"],
+        "ch2_objectives": ["organisation_objectives", "organisation_paste_text", "profile:organization_name", "organisation_"],
+        "ch2_structure": ["organisation_structure", "organisation_what", "student_unit", "supervisor_title", "profile:organization_name", "organisation_"],
+        "ch2_organogram": ["organogram_tree", "organisation_structure", "student_unit", "supervisor_title", "profile:organization_name", "organisation_"],
+        "ch3_duties": ["student_unit", "supervisor_title", "duties", "duties:", "industry_supervisor_name", "profile:placement_department", "logbook_entry:"],
+        "ch3_challenges": ["challenge_pairs:", "logbook_entry:"],
+        "ch3_solutions": ["challenge_pairs:", "logbook_entry:"],
+        "ch4_summary": ["logbook_entry:", "organisation_", "profile:"],
+        "ch4_conclusion": ["logbook_entry:", "organisation_", "profile:"],
+        "ch4_recommendations": ["recommendations", "organisation_", "profile:organization_name", "logbook_entry:"],
+        "dedication": ["dedication", "personal_statement", "profile:full_name"],
+        "acknowledgement": ["acknowledgement_people:", "acknowledgement", "profile:full_name"],
     }
 
     all_confirmed_facts_raw = list(Fact.objects.filter(project=project, status="confirmed"))
@@ -1117,6 +1167,8 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
                     matched = True
             if matched:
                 matches.append(fact)
+        if not matches and all_confirmed_facts:
+            matches = all_confirmed_facts[:3]
         return matches
 
     from .report_clustering import (
@@ -1624,10 +1676,8 @@ def generate_full_report(project: ReportProject, force_all: bool = False) -> Rep
         pinned_template = LASUSTECH_STANDARD_V1
     else:
         pinned_template = None
-    if pinned_template and pinned_template.get("version") == "2.0.0":
+    if force_all or (pinned_template and pinned_template.get("version") == "2.0.0") or existing_report is None or not pinned_template:
         return _generate_v2_report(project, existing_report, force_all)
-    if existing_report is None or not pinned_template:
-        return _generate_v2_report(project, None, force_all)
 
     db_template = ensure_default_template_in_db()
     template_code = db_template.code
