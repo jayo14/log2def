@@ -146,6 +146,7 @@ export default function DashboardPage() {
     fetchActiveProject,
     ensureActiveProject,
     createProject,
+    switchProject,
     updateActiveProject,
     deleteProject,
     clearActiveProject,
@@ -332,6 +333,14 @@ export default function DashboardPage() {
       return false;
     }
   });
+
+  // Multi-report & project management state
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState<boolean>(false);
+  const [isCreateReportModalOpen, setIsCreateReportModalOpen] = useState<boolean>(false);
+  const [isCreatingReport, setIsCreatingReport] = useState<boolean>(false);
+  const [projectToDelete, setProjectToDelete] = useState<any | null>(null);
+  const [reportsFilter, setReportsFilter] = useState<'all' | 'ready' | 'in_progress'>('all');
+  const loadedProjectIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     try {
@@ -674,55 +683,278 @@ export default function DashboardPage() {
     return edits;
   };
 
-  // Initialize and synchronize project from PostgreSQL database
+  // Anti-bleed workspace loader: cleanly purges previous project memory and hydrates target project
+  const loadProjectWorkspace = useCallback(
+    async (projId: number, options?: { targetStep?: number; keepFlow?: boolean }) => {
+      if (!projId) return;
+      loadedProjectIdRef.current = projId;
+
+      // 1. Immediately reset state from any previous project to guarantee zero state bleed
+      setPages([]);
+      setEntries([]);
+      setGenState(0);
+      setGenProgress(0);
+      setGenError(null);
+      setChapterEdits({});
+      resetReportState();
+      setIntake({});
+      setReportImages([]);
+      setReadDone(false);
+      setReading(false);
+      setReadProgress(0);
+      setHasPaidDigital(false);
+      setPaymentSuccess(null);
+      setShortDurationConfirmed(false);
+      setCurrentSectionIdx(0);
+
+      // Reset Step 4 Organisation state
+      setOrgWhat('');
+      setOrgWhen('');
+      setOrgWhere('');
+      setOrgObjectives('');
+      setOrgPasteMode(false);
+      setOrgPasteText('');
+      setOrgNotSure(false);
+      setHeadTitle('');
+      setOrgUnits(['Technical Department', 'Operations Unit', 'Administration']);
+      setStudentUnit('');
+      setSupervisorTitle('');
+      setCustomTreeText('');
+      setIsEditingTree(false);
+
+      // Reset Step 5 Experience state
+      setExperienceDuties('');
+      setExperienceAdditional('');
+      setExperienceTools(['VS Code', 'Git', 'Linux', 'Python']);
+      setChallengesNone(true);
+      setChallengeText('');
+      setSolutionText('');
+      setChallenge2Text('');
+      setSolution2Text('');
+      setShowSecondPair(false);
+      setSelectedRecommendations([]);
+      setCustomRecommendation('');
+
+      // Reset Step 6 Extras state
+      setDedicationText('');
+      setAcknowledgementText('');
+
+      try {
+        // 2. Fetch fresh project and all associated records concurrently
+        const [freshProj, entriesData, repData, paymentsData, intakeData, imagesData] = await Promise.all([
+          fetchActiveProject(projId).catch(() => null),
+          fetchLogbookEntries(projId).catch(() => []),
+          fetchReport(projId).catch(() => null),
+          fetchPayments(projId).catch(() => []),
+          typeof projectsApi?.getGuidedIntake === 'function'
+            ? projectsApi.getGuidedIntake(projId).catch(() => null)
+            : Promise.resolve(null),
+          typeof projectsApi?.getReportImages === 'function'
+            ? projectsApi.getReportImages(projId).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+
+        // 3. Hydrate project details & source documents
+        if (freshProj) {
+          const loadedDetails = {
+            name: freshProj.full_name || userFullName,
+            matric: freshProj.matric_number || '',
+            dept: freshProj.department || '',
+            fac: freshProj.college || freshProj.faculty_school || 'College of Basic Science',
+            degree: freshProj.degree || '',
+            inst: freshProj.university_name || '',
+            co: freshProj.organization_name || '',
+            addr: freshProj.organization_address || '',
+            unit: freshProj.industry_department || '',
+            start: freshProj.training_start_date ? freshProj.training_start_date.slice(0, 10) : '',
+            end: freshProj.training_end_date ? freshProj.training_end_date.slice(0, 10) : '',
+            sup: freshProj.industry_supervisor_name || '',
+            isup: freshProj.institution_supervisor_name || '',
+          };
+          setDetails(loadedDetails);
+          lastSavedDetailsRef.current = JSON.stringify(loadedDetails);
+
+          if (freshProj.source_documents && freshProj.source_documents.length > 0) {
+            setPages(
+              freshProj.source_documents.map((d: any) => ({
+                id: d.id,
+                n: d.original_filename || `Page ${d.page_index + 1}`,
+                pdf: d.file_type === 'pdf',
+                th:
+                  d.presigned_url ||
+                  (d.file
+                    ? d.file.startsWith('http')
+                      ? d.file
+                      : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${d.file.startsWith('/') ? '' : '/'}${d.file}`
+                    : ''),
+                status: d.status,
+              }))
+            );
+            setReadDone(true);
+          }
+        }
+
+        // 4. Hydrate logbook entries
+        if (entriesData && entriesData.length > 0) {
+          setEntries(
+            entriesData.map((e: any) => ({
+              id: e.id,
+              w: e.week_number || 1,
+              t: e.verified_text || e.raw_text || e.activity_summary || '',
+              area: e.technical_area || 'Practical Engineering',
+              tools: e.tools_used || '',
+              u:
+                e.is_flagged ||
+                (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75)
+                  ? 1
+                  : 0,
+              ph: e.department_unit || 'activity details',
+              ok: e.is_verified ? 1 : 0,
+            }))
+          );
+        }
+
+        // 5. Hydrate report sections and compiled state
+        if (repData && repData.sections && repData.sections.length > 0) {
+          const hasContent = repData.sections.some(
+            (s: any) => s.content && s.content.trim().length > 20
+          );
+          if (hasContent) {
+            setGenState(2);
+            setChapterEdits(mapBackendSectionsToChapters(repData.sections));
+          }
+        }
+
+        // 6. Hydrate payment orders
+        if (paymentsData && paymentsData.length > 0) {
+          const isPaid = paymentsData.some((p: any) => p.status === 'paid');
+          if (isPaid) {
+            setHasPaidDigital(true);
+          }
+        }
+
+        // 7. Hydrate guided intake answers
+        if (intakeData) {
+          const rawIntake = intakeData as any;
+          const ans = (rawIntake?.answers || rawIntake || {}) as Record<string, any>;
+          setIntake(ans);
+          if (ans.organisation_what) setOrgWhat(ans.organisation_what);
+          if (ans.organisation_not_sure !== undefined)
+            setOrgNotSure(Boolean(ans.organisation_not_sure));
+          if (ans.organisation_when_where) {
+            const match = ans.organisation_when_where.match(/^(\d{4})\s*(.*)$/);
+            if (match) {
+              setOrgWhen(match[1]);
+              if (match[2]) setOrgWhere(match[2]);
+            } else {
+              setOrgWhere(ans.organisation_when_where);
+            }
+          }
+          if (ans.organisation_objectives) setOrgObjectives(ans.organisation_objectives);
+          if (ans.organisation_paste_text) {
+            setOrgPasteText(ans.organisation_paste_text);
+            if (
+              !ans.organisation_objectives ||
+              ans.organisation_objectives === ans.organisation_paste_text
+            ) {
+              setOrgPasteMode(true);
+            }
+          }
+          if (ans.head_title) setHeadTitle(ans.head_title);
+          if (Array.isArray(ans.organisation_units) && ans.organisation_units.length > 0) {
+            setOrgUnits(ans.organisation_units);
+          }
+          if (ans.student_unit) setStudentUnit(ans.student_unit);
+          if (ans.supervisor_title) setSupervisorTitle(ans.supervisor_title);
+          if (ans.organogram_tree) setCustomTreeText(ans.organogram_tree);
+
+          if (ans.duties) setExperienceDuties(ans.duties);
+          if (ans.challenge_pairs) {
+            setChallengesNone(Boolean(ans.challenge_pairs.none));
+            if (Array.isArray(ans.challenge_pairs.pairs) && ans.challenge_pairs.pairs.length > 0) {
+              setChallengeText(ans.challenge_pairs.pairs[0].challenge || '');
+              setSolutionText(ans.challenge_pairs.pairs[0].solution || '');
+              if (ans.challenge_pairs.pairs.length > 1) {
+                setShowSecondPair(true);
+                setChallenge2Text(ans.challenge_pairs.pairs[1].challenge || '');
+                setSolution2Text(ans.challenge_pairs.pairs[1].solution || '');
+              }
+            }
+          }
+          if (ans.recommendations) {
+            const recLines = ans.recommendations
+              .split('\n')
+              .map((s: string) => s.trim())
+              .filter(Boolean);
+            setSelectedRecommendations(
+              recLines.filter((l: string) => RECOMMENDATION_SUGGESTIONS.includes(l))
+            );
+            const custom = recLines
+              .filter((l: string) => !RECOMMENDATION_SUGGESTIONS.includes(l))
+              .join('\n');
+            if (custom) setCustomRecommendation(custom);
+          }
+          if (ans.dedication) setDedicationText(ans.dedication);
+          if (ans.acknowledgement) setAcknowledgementText(ans.acknowledgement);
+        }
+
+        // 8. Hydrate report images
+        if (imagesData && Array.isArray(imagesData)) {
+          setReportImages(imagesData);
+        }
+
+        // 9. Handle explicit navigation options
+        if (options?.targetStep !== undefined) {
+          setStep(options.targetStep);
+          setInFlow(true);
+        }
+      } catch (err) {
+        console.error('Failed to load project workspace:', err);
+      }
+    },
+    [
+      fetchActiveProject,
+      fetchLogbookEntries,
+      fetchReport,
+      fetchPayments,
+      resetReportState,
+      userFullName,
+    ]
+  );
+
+  // Switch project handler with workspace rehydration and optional navigation
+  const handleSwitchProject = useCallback(
+    async (projectId: number, targetView?: 'wizard' | 'report' | 'dashboard') => {
+      try {
+        await switchProject(projectId);
+        await loadProjectWorkspace(projectId);
+        if (targetView === 'wizard') {
+          const freshStoreProj = useProjectStore.getState().activeProject;
+          const hasDocs = (freshStoreProj?.source_documents?.length || 0) > 0;
+          goToFlow(hasDocs ? 2 : 1);
+        } else if (targetView === 'report') {
+          setLogbookView('report');
+          switchTab('logbooks');
+        }
+        showToast('Switched project successfully');
+      } catch (err: any) {
+        showToast(err.message || 'Failed to switch project');
+      }
+    },
+    [switchProject, loadProjectWorkspace, showToast]
+  );
+
+  // Initialize and synchronize project from PostgreSQL database on mount
   useEffect(() => {
     let isMounted = true;
     const initProject = async () => {
       try {
-        const current = await ensureActiveProject();
+        await fetchProjects().catch(() => []);
+        const current = await ensureActiveProject().catch(() => null);
         const projId = current?.id;
 
-        if (projId && isMounted) {
-          const freshProj = await fetchActiveProject(projId).catch(() => current);
-          const entriesData = await fetchLogbookEntries(projId).catch(() => []);
-          if (entriesData && entriesData.length > 0) {
-            setEntries(
-              entriesData.map((e: any) => ({
-                id: e.id,
-                w: e.week_number || 1,
-                t: e.verified_text || e.raw_text || e.activity_summary || '',
-                area: e.technical_area || 'Practical Engineering',
-                tools: e.tools_used || '',
-                u: e.is_flagged || (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75) ? 1 : 0,
-                ph: e.department_unit || 'activity details',
-                ok: e.is_verified ? 1 : 0,
-              }))
-            );
-          }
-
-          // Hydrate uploaded pages into Step 2 and Home screen if available
-          if (freshProj?.source_documents && freshProj.source_documents.length > 0) {
-            setPages((prev) => {
-              if (prev.length > 0) return prev;
-              return freshProj.source_documents.map((d: any) => ({
-                id: d.id,
-                n: d.original_filename || `Page ${d.page_index + 1}`,
-                pdf: d.file_type === 'pdf',
-                th: d.presigned_url || (d.file ? (d.file.startsWith('http') ? d.file : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${d.file.startsWith('/') ? '' : '/'}${d.file}`) : ''),
-                status: d.status,
-              }));
-            });
-          }
-
-          const repData = await fetchReport(projId).catch(() => null);
-          if (repData && repData.sections && repData.sections.length > 0) {
-            const hasContent = repData.sections.some((s: any) => s.content && s.content.trim().length > 20);
-            if (hasContent) {
-              setGenState(2);
-              setChapterEdits(mapBackendSectionsToChapters(repData.sections));
-            }
-          }
-          await fetchPayments(projId).catch(() => {});
+        if (projId && isMounted && loadedProjectIdRef.current !== projId) {
+          await loadProjectWorkspace(projId);
         }
       } catch (err) {
         console.error('Failed to init project from database:', err);
@@ -732,7 +964,14 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [user, ensureActiveProject, fetchActiveProject, fetchLogbookEntries, fetchReport, fetchPayments]);
+  }, [user, fetchProjects, ensureActiveProject, loadProjectWorkspace]);
+
+  // Synchronize workspace whenever active project changes externally
+  useEffect(() => {
+    if (activeProject?.id && loadedProjectIdRef.current !== activeProject.id) {
+      loadProjectWorkspace(activeProject.id);
+    }
+  }, [activeProject?.id, loadProjectWorkspace]);
 
   // Synchronize state directly from active database project
   useEffect(() => {
@@ -907,6 +1146,12 @@ export default function DashboardPage() {
     const searchParams = new URLSearchParams(window.location.search);
     const hash = window.location.hash.replace('#/', '').replace('#', '').toLowerCase();
 
+    if (hash === 'new' || searchParams.get('action') === 'new') {
+      restoredTab = 'reports';
+      restoredInFlow = false;
+      setIsCreateReportModalOpen(true);
+    }
+
     const paramStep = searchParams.get('step');
     const paramTab = searchParams.get('tab');
     const paramView = searchParams.get('view');
@@ -1073,6 +1318,12 @@ export default function DashboardPage() {
       const paramView = searchParams.get('view');
       const paramStatus = searchParams.get('status');
       const paramCheckout = searchParams.get('checkout');
+
+      if (hash === 'new' || searchParams.get('action') === 'new') {
+        switchTab('reports');
+        setInFlow(false);
+        setIsCreateReportModalOpen(true);
+      }
 
       if (paramStep) {
         if (paramStep === 'success' || paramStep === 'ready') {
@@ -2387,8 +2638,8 @@ export default function DashboardPage() {
   // ========================================================
   // REAL DOWNLOAD EXECUTION (PDF / DOCX FROM DATABASE)
   // ========================================================
-  const executeRealFileDownload = async (format: 'PDF' | 'Word') => {
-    const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
+  const executeRealFileDownload = async (format: 'PDF' | 'Word', specificProjectId?: number) => {
+    const projId = specificProjectId || activeProject?.id || useProjectStore.getState().activeProject?.id;
     if (!projId) {
       showToast('No active project');
       return;
@@ -2623,7 +2874,7 @@ export default function DashboardPage() {
       <div className="view" id="home-view" suppressHydrationWarning>
         <header className="top">
           <span className="sp" />
-          <span className="tt">Home</span>
+          {renderProjectSwitcher()}
           {!isInstalled && !installDismissed ? (
             <button
               type="button"
@@ -2700,6 +2951,8 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+
+        {renderActiveProjectBanner()}
 
         {/* OS-Aware Install Button / Banner */}
         {!isInstalled && !installDismissed && (
@@ -3588,13 +3841,15 @@ export default function DashboardPage() {
       <div className="view" id={logbookView === 'report' ? 'technical-report' : 'logbook-pages'}>
         <header className="top">
           <span className="sp" />
-          <span className="tt">Logbooks</span>
+          {renderProjectSwitcher()}
           <span className="sp" />
         </header>
 
         <div className="lg" style={{ paddingBottom: '12px' }}>
           <h1>My Logbooks</h1>
         </div>
+
+        {renderActiveProjectBanner()}
 
         {/* Sub-tab segmented toggle: Logbook Pages vs Technical Report */}
         <div className="seg" role="tablist" aria-label="Logbook tabs" style={{ marginBottom: '14px' }}>
@@ -3765,142 +4020,1013 @@ export default function DashboardPage() {
   };
 
   // ==========================================
-  // VIEW: REPORTS
+  // MULTI-REPORT PROJECT MANAGEMENT & SWITCHER
+  // ==========================================
+  const renderProjectSwitcher = () => {
+    return (
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          type="button"
+          onClick={() => setIsProjectDropdownOpen((prev) => !prev)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            maxWidth: '190px',
+            padding: '4px 10px',
+            borderRadius: '16px',
+            background: 'rgba(6, 107, 77, 0.08)',
+            border: '1px solid rgba(6, 107, 77, 0.16)',
+            color: 'var(--ink)',
+            fontSize: '12.5px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+          aria-expanded={isProjectDropdownOpen}
+          aria-label="Switch Technical Report"
+        >
+          <span className="ms" style={{ fontSize: '15px', color: 'var(--g)' }}>
+            folder
+          </span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeProject?.title || 'Technical Report'}
+          </span>
+          <span className="ms" style={{ fontSize: '15px', color: 'var(--mut)' }}>
+            {isProjectDropdownOpen ? 'arrow_drop_up' : 'arrow_drop_down'}
+          </span>
+        </button>
+
+        {isProjectDropdownOpen && (
+          <>
+            <div
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 998,
+              }}
+              onClick={() => setIsProjectDropdownOpen(false)}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '320px',
+                maxWidth: 'calc(100vw - 32px)',
+                background: '#fff',
+                borderRadius: '14px',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.06)',
+                border: '1px solid var(--line)',
+                zIndex: 999,
+                overflow: 'hidden',
+                textAlign: 'left',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '10px 14px',
+                  borderBottom: '1px solid var(--line)',
+                  background: 'var(--bg)',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    color: 'var(--mut)',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Reports ({projects.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProjectDropdownOpen(false);
+                    switchTab('reports');
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--gd)',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  Manage
+                </button>
+              </div>
+
+              <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                {projects.map((proj) => {
+                  const isActive = proj.id === activeProject?.id;
+                  const isPaid =
+                    proj.is_paid ||
+                    (proj.payment_orders &&
+                      proj.payment_orders.some((po: any) => po.status === 'paid'));
+                  const statusLabel = isPaid
+                    ? 'Paid & Ready'
+                    : proj.report_status === 'ready'
+                    ? 'Report Ready'
+                    : (proj.source_documents?.length || 0) > 0
+                    ? `${proj.source_documents.length} pages`
+                    : 'Draft';
+
+                  return (
+                    <button
+                      key={proj.id}
+                      type="button"
+                      onClick={() => {
+                        setIsProjectDropdownOpen(false);
+                        if (!isActive) {
+                          handleSwitchProject(proj.id);
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        padding: '10px 14px',
+                        background: isActive ? 'rgba(6, 107, 77, 0.06)' : 'transparent',
+                        border: 'none',
+                        borderBottom: '1px solid var(--line)',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background 0.15s ease',
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1, paddingRight: '8px' }}>
+                        <div
+                          style={{
+                            fontSize: '13.5px',
+                            fontWeight: isActive ? 800 : 600,
+                            color: 'var(--ink)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {proj.title || 'SIWES Technical Report'}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--mut)', marginTop: '2px' }}>
+                          {proj.organization_name || 'No company'} · {statusLabel}
+                        </div>
+                      </div>
+                      {isActive && (
+                        <span
+                          className="ms"
+                          style={{ color: 'var(--g)', fontSize: '18px', flexShrink: 0 }}
+                        >
+                          check
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div
+                style={{
+                  padding: '8px 10px',
+                  background: 'var(--bg)',
+                  borderTop: '1px solid var(--line)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProjectDropdownOpen(false);
+                    setIsCreateReportModalOpen(true);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    background: 'var(--g)',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span className="ms" style={{ fontSize: '16px' }}>
+                    add
+                  </span>
+                  Create New Report
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderActiveProjectBanner = () => {
+    if (!activeProject) return null;
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: 'rgba(6, 107, 77, 0.05)',
+          borderRadius: '12px',
+          border: '1px solid rgba(6, 107, 77, 0.12)',
+          margin: '0 0 16px',
+          gap: '8px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+          <span className="ms" style={{ color: 'var(--g)', fontSize: '20px', flexShrink: 0 }}>
+            assignment
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: '10.5px',
+                textTransform: 'uppercase',
+                color: 'var(--mut)',
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+              }}
+            >
+              Active Technical Report
+            </div>
+            <div
+              style={{
+                fontSize: '13.5px',
+                fontWeight: 800,
+                color: 'var(--ink)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {activeProject.title || 'SIWES Technical Report'}
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => switchTab('reports')}
+          style={{
+            padding: '5px 10px',
+            fontSize: '11.5px',
+            fontWeight: 700,
+            color: 'var(--gd)',
+            background: '#fff',
+            border: '1px solid rgba(6, 107, 77, 0.2)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          All Reports ({projects.length})
+        </button>
+      </div>
+    );
+  };
+
+  // ==========================================
+  // VIEW: REPORTS (MULTI-PROJECT HUB)
   // ==========================================
   const renderReportsView = () => {
-    const layout = computeLayout();
-    const hasReport = genState === 2 || Boolean(dbReport && dbReport.sections && dbReport.sections.length > 0);
+    const filteredProjects = projects.filter((proj) => {
+      const isPaid =
+        proj.is_paid ||
+        (proj.payment_orders && proj.payment_orders.some((po: any) => po.status === 'paid'));
+      const isReady = proj.report_status === 'ready' || isPaid;
+      if (reportsFilter === 'ready') return isReady;
+      if (reportsFilter === 'in_progress')
+        return !isReady && (proj.source_documents?.length || 0) > 0;
+      return true;
+    });
+
+    const readyCount = projects.filter(
+      (p) =>
+        p.is_paid ||
+        p.report_status === 'ready' ||
+        (p.payment_orders && p.payment_orders.some((po: any) => po.status === 'paid'))
+    ).length;
+    const inProgressCount = projects.filter(
+      (p) =>
+        !p.is_paid &&
+        p.report_status !== 'ready' &&
+        (!p.payment_orders || !p.payment_orders.some((po: any) => po.status === 'paid')) &&
+        (p.source_documents?.length || 0) > 0
+    ).length;
 
     return (
       <div className="view" id="reports-view">
         <header className="top">
           <span className="sp" />
-          <span className="tt">Reports</span>
+          {renderProjectSwitcher()}
           <span className="sp" />
         </header>
 
-        <div className="lg">
-          <h1>My Reports</h1>
+        <div className="lg" style={{ paddingBottom: '10px' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px',
+            }}
+          >
+            <div>
+              <h1 style={{ margin: 0 }}>Technical Reports</h1>
+              <p
+                style={{
+                  margin: '4px 0 0',
+                  color: 'var(--mut)',
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                }}
+              >
+                {projects.length} {projects.length === 1 ? 'report project' : 'report projects'} in
+                your account
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn s"
+              style={{
+                background: 'var(--g)',
+                color: '#fff',
+                border: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontWeight: 700,
+                padding: '9px 16px',
+                borderRadius: '10px',
+              }}
+              onClick={() => setIsCreateReportModalOpen(true)}
+            >
+              <span className="ms" aria-hidden="true" style={{ fontSize: '18px' }}>
+                add
+              </span>
+              New Report
+            </button>
+          </div>
         </div>
 
-        {!hasReport ? (
+        {/* Filter Tabs */}
+        {projects.length > 0 && (
+          <div
+            className="seg"
+            role="tablist"
+            aria-label="Report filter tabs"
+            style={{ marginBottom: '16px' }}
+          >
+            <button
+              role="tab"
+              type="button"
+              aria-selected={reportsFilter === 'all'}
+              onClick={() => setReportsFilter('all')}
+            >
+              All Reports ({projects.length})
+            </button>
+            <button
+              role="tab"
+              type="button"
+              aria-selected={reportsFilter === 'ready'}
+              onClick={() => setReportsFilter('ready')}
+            >
+              Ready ({readyCount})
+            </button>
+            <button
+              role="tab"
+              type="button"
+              aria-selected={reportsFilter === 'in_progress'}
+              onClick={() => setReportsFilter('in_progress')}
+            >
+              In Progress ({inProgressCount})
+            </button>
+          </div>
+        )}
+
+        {projects.length === 0 ? (
           <div className="card big">
             <div className="ok">
               <span className="ms" aria-hidden="true">
                 description
               </span>
             </div>
-            <h2>No reports yet</h2>
-            <p>Complete the 5-step generator to compile your institutional SIWES report.</p>
+            <h2>No technical reports yet</h2>
+            <p>
+              Initialize your first SIWES report to upload logbook pages, review extracted entries,
+              and compile an institutional report.
+            </p>
             <button
               className="btn w"
               type="button"
-              onClick={() => goToFlow(hasStarted ? step : 1)}
+              onClick={() => setIsCreateReportModalOpen(true)}
               style={{ textDecoration: 'none', marginTop: '20px' }}
             >
-              {hasStarted ? 'Continue your report' : 'Start a new report'}
+              + Create your first report
+            </button>
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="card" style={{ padding: '28px', textAlign: 'center' }}>
+            <span className="ms" style={{ fontSize: '32px', color: 'var(--mut)' }}>
+              filter_list_off
+            </span>
+            <h3 style={{ margin: '8px 0 4px', fontSize: '16px', fontWeight: 800 }}>
+              No reports in this category
+            </h3>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--mut)' }}>
+              Switch to "All Reports" to view all your technical reports.
+            </p>
+            <button
+              type="button"
+              className="btn o s"
+              style={{ marginTop: '14px' }}
+              onClick={() => setReportsFilter('all')}
+            >
+              View all reports
             </button>
           </div>
         ) : (
-          <div className="card" style={{ padding: '20px' }}>
-            <div className="row sb" style={{ alignItems: 'flex-start' }}>
-              <div>
-                <b style={{ fontSize: '17px', color: 'var(--ink)' }}>
-                  {activeProject?.title || 'LASUSTECH SIWES Technical Report'}
-                </b>
-                <p className="mut" style={{ margin: '4px 0 0', fontSize: '13.5px' }}>
-                  {details.co ? `${details.co} · ` : ''}{details.inst || 'LASUSTECH'}
-                </p>
-              </div>
-              <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)', fontWeight: 700 }}>
-                Draft Ready
-              </span>
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {filteredProjects.map((proj) => {
+              const isActive = proj.id === activeProject?.id;
+              const isPaid =
+                proj.is_paid ||
+                (proj.payment_orders &&
+                  proj.payment_orders.some((po: any) => po.status === 'paid'));
+              const isReady = proj.report_status === 'ready' || isPaid;
+              const docCount = proj.source_documents?.length || 0;
+              const pageCount = proj.actual_page_count || proj.estimated_pages || 0;
 
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                gap: '10px',
-                margin: '16px 0',
-                padding: '12px',
-                background: 'var(--bg)',
-                borderRadius: '14px',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '11px', color: 'var(--mut)', textTransform: 'uppercase', fontWeight: 700 }}>
-                  Estimated Length
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)', marginTop: '2px' }}>
-                  {layout.total} pages
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '11px', color: 'var(--mut)', textTransform: 'uppercase', fontWeight: 700 }}>
-                  Confirmed Weeks
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)', marginTop: '2px' }}>
-                  {entries.length} weeks
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '11px', color: 'var(--mut)', textTransform: 'uppercase', fontWeight: 700 }}>
-                  Format
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)', marginTop: '2px' }}>
-                  LASUSTECH v1
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                className="btn w s"
-                type="button"
-                onClick={() => {
-                  setLogbookView('report');
-                  switchTab('logbooks');
-                }}
-              >
-                <span className="ms" aria-hidden="true">
-                  edit_note
-                </span>
-                Open &amp; Edit Technical Report
-              </button>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  className="btn o w s"
-                  type="button"
-                  style={{ flex: 1 }}
-                  disabled={downloadLoading}
-                  onClick={() => executeRealFileDownload('PDF')}
+              return (
+                <div
+                  key={proj.id}
+                  className="card"
+                  style={{
+                    padding: '18px',
+                    border: isActive ? '2px solid var(--g)' : '1px solid var(--line)',
+                    position: 'relative',
+                  }}
                 >
-                  <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
-                    picture_as_pdf
-                  </span>
-                  {downloadLoading ? 'Preparing…' : 'PDF'}
-                </button>
-                <button
-                  className="btn o w s"
-                  type="button"
-                  style={{ flex: 1 }}
-                  disabled={downloadLoading}
-                  onClick={() => executeRealFileDownload('Word')}
-                >
-                  <span className="ms" aria-hidden="true" style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}>
-                    description
-                  </span>
-                  {downloadLoading ? 'Preparing…' : 'Word (DOCX)'}
-                </button>
-              </div>
-            </div>
+                  <div className="row sb" style={{ alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <b style={{ fontSize: '16.5px', color: 'var(--ink)' }}>
+                          {proj.title || 'SIWES Technical Report'}
+                        </b>
+                        {isActive && (
+                          <span
+                            className="chip"
+                            style={{
+                              background: 'var(--mint)',
+                              color: 'var(--gd)',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              padding: '2px 8px',
+                            }}
+                          >
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <p className="mut" style={{ margin: '4px 0 0', fontSize: '13px' }}>
+                        {proj.organization_name ? `${proj.organization_name} · ` : ''}
+                        {proj.university_name || 'LASUSTECH'}
+                      </p>
+                    </div>
+
+                    <div>
+                      {isPaid ? (
+                        <span
+                          className="chip"
+                          style={{ background: '#dcfce7', color: '#15803d', fontWeight: 800 }}
+                        >
+                          ✓ Paid &amp; Ready
+                        </span>
+                      ) : isReady ? (
+                        <span
+                          className="chip"
+                          style={{ background: '#dbeafe', color: '#1d4ed8', fontWeight: 700 }}
+                        >
+                          Report Ready
+                        </span>
+                      ) : docCount > 0 ? (
+                        <span
+                          className="chip"
+                          style={{ background: '#fef3c7', color: '#b45309', fontWeight: 700 }}
+                        >
+                          In Progress
+                        </span>
+                      ) : (
+                        <span
+                          className="chip"
+                          style={{ background: 'var(--bg)', color: 'var(--mut)', fontWeight: 700 }}
+                        >
+                          Draft
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Metadata Stats */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                      gap: '8px',
+                      margin: '14px 0',
+                      padding: '10px 12px',
+                      background: 'var(--bg)',
+                      borderRadius: '12px',
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '10.5px',
+                          color: 'var(--mut)',
+                          textTransform: 'uppercase',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Source Pages
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '15px',
+                          fontWeight: 800,
+                          color: 'var(--ink)',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {docCount} {docCount === 1 ? 'page' : 'pages'}
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '10.5px',
+                          color: 'var(--mut)',
+                          textTransform: 'uppercase',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Report Length
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '15px',
+                          fontWeight: 800,
+                          color: 'var(--ink)',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {pageCount > 0 ? `${pageCount} pages` : 'Pending'}
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '10.5px',
+                          color: 'var(--mut)',
+                          textTransform: 'uppercase',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Created
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '13.5px',
+                          fontWeight: 700,
+                          color: 'var(--ink)',
+                          marginTop: '3px',
+                        }}
+                      >
+                        {proj.created_at
+                          ? new Date(proj.created_at).toLocaleDateString()
+                          : 'Recent'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Row */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {isActive ? (
+                        <button
+                          className="btn w s"
+                          type="button"
+                          style={{ flex: 1, minWidth: '160px' }}
+                          onClick={() => {
+                            if (isReady) {
+                              setLogbookView('report');
+                              switchTab('logbooks');
+                            } else {
+                              goToFlow(docCount > 0 ? 2 : 1);
+                            }
+                          }}
+                        >
+                          <span className="ms" aria-hidden="true">
+                            {isReady ? 'edit_note' : 'play_arrow'}
+                          </span>
+                          {isReady ? 'Open & Edit Report' : 'Continue Workspace'}
+                        </button>
+                      ) : (
+                        <button
+                          className="btn o w s"
+                          type="button"
+                          style={{ flex: 1, minWidth: '160px' }}
+                          onClick={() =>
+                            handleSwitchProject(proj.id, isReady ? 'report' : 'wizard')
+                          }
+                        >
+                          <span className="ms" aria-hidden="true">
+                            swap_horiz
+                          </span>
+                          Switch to this Report
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="btn o s"
+                        style={{
+                          color: '#dc2626',
+                          borderColor: 'rgba(220, 38, 38, 0.25)',
+                          padding: '0 12px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        title="Delete Report"
+                        aria-label={`Delete ${proj.title || 'report'}`}
+                        onClick={() => setProjectToDelete(proj)}
+                      >
+                        <span className="ms" aria-hidden="true" style={{ fontSize: '18px' }}>
+                          delete_outline
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Quick export buttons when report is compiled */}
+                    {isReady && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          className="btn o w s"
+                          type="button"
+                          style={{ flex: 1 }}
+                          disabled={downloadLoading}
+                          onClick={() => {
+                            if (isPaid) {
+                              executeRealFileDownload('PDF', proj.id);
+                            } else {
+                              if (!isActive) handleSwitchProject(proj.id);
+                              setCheckoutModal('digital');
+                            }
+                          }}
+                        >
+                          <span
+                            className="ms"
+                            aria-hidden="true"
+                            style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}
+                          >
+                            picture_as_pdf
+                          </span>
+                          {isPaid ? 'Download PDF' : 'Pay & Download PDF'}
+                        </button>
+                        <button
+                          className="btn o w s"
+                          type="button"
+                          style={{ flex: 1 }}
+                          disabled={downloadLoading}
+                          onClick={() => {
+                            if (isPaid) {
+                              executeRealFileDownload('Word', proj.id);
+                            } else {
+                              if (!isActive) handleSwitchProject(proj.id);
+                              setCheckoutModal('digital');
+                            }
+                          }}
+                        >
+                          <span
+                            className="ms"
+                            aria-hidden="true"
+                            style={downloadLoading ? { animation: 'spin 1s linear infinite' } : {}}
+                          >
+                            description
+                          </span>
+                          {isPaid ? 'Download Word' : 'Pay & Download Word'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
     );
   };
+
+  const renderCreateReportModal = () => (
+    <div className="sh on" style={{ zIndex: 1000 }}>
+      <div
+        className="sh-bg"
+        onClick={() => !isCreatingReport && setIsCreateReportModalOpen(false)}
+      />
+      <div className="sh-c" style={{ maxWidth: '480px', margin: '0 auto', padding: '22px' }}>
+        <div className="sh-h">
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
+            Create Technical Report
+          </h3>
+          <button
+            type="button"
+            className="ib"
+            disabled={isCreatingReport}
+            onClick={() => setIsCreateReportModalOpen(false)}
+            aria-label="Close dialog"
+          >
+            <span className="ms">close</span>
+          </button>
+        </div>
+
+        <p
+          style={{
+            fontSize: '13px',
+            color: 'var(--mut)',
+            margin: '4px 0 16px',
+            lineHeight: 1.4,
+          }}
+        >
+          Each report operates as an isolated workspace. You can upload pages, customize placement
+          particulars, and compile an independent report.
+        </p>
+
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const formData = new FormData(form);
+            const title = (formData.get('title') as string)?.trim() || 'SIWES Technical Report';
+            const orgName = (formData.get('orgName') as string)?.trim() || '';
+            const university =
+              (formData.get('university') as string)?.trim() ||
+              'Lagos State University of Science and Technology';
+            const dept = (formData.get('dept') as string)?.trim() || details.dept || '';
+
+            setIsCreatingReport(true);
+            try {
+              const newProj = await createProject({
+                title,
+                organization_name: orgName,
+                university_name: university,
+                department: dept,
+                faculty_school: details.fac || 'College of Basic Science',
+                full_name: details.name || userFullName,
+                matric_number: details.matric || '',
+              });
+              setIsCreateReportModalOpen(false);
+              showToast('New technical report created!');
+              await loadProjectWorkspace(newProj.id, { targetStep: 1 });
+              goToFlow(1);
+            } catch (err: any) {
+              showToast(err.message || 'Failed to create report');
+            } finally {
+              setIsCreatingReport(false);
+            }
+          }}
+        >
+          <div style={{ marginBottom: '14px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                marginBottom: '6px',
+                color: 'var(--ink)',
+              }}
+            >
+              Report Title *
+            </label>
+            <input
+              name="title"
+              type="text"
+              className="inp"
+              defaultValue={`SIWES Technical Report ${
+                projects.length > 0 ? `#${projects.length + 1}` : ''
+              }`}
+              required
+              placeholder="e.g. SIWES Report - Software Engineering"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '14px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                marginBottom: '6px',
+                color: 'var(--ink)',
+              }}
+            >
+              Company / Placement Organization
+            </label>
+            <input
+              name="orgName"
+              type="text"
+              className="inp"
+              defaultValue={details.co || ''}
+              placeholder="e.g. MainOne Cables, Chevron Nigeria"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '14px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                marginBottom: '6px',
+                color: 'var(--ink)',
+              }}
+            >
+              Institution / University
+            </label>
+            <select
+              name="university"
+              className="inp"
+              defaultValue={details.inst || 'Lagos State University of Science and Technology'}
+              style={{ width: '100%' }}
+            >
+              {INSTITUTIONS.map((inst) => (
+                <option key={inst} value={inst}>
+                  {inst}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                marginBottom: '6px',
+                color: 'var(--ink)',
+              }}
+            >
+              Department
+            </label>
+            <input
+              name="dept"
+              type="text"
+              className="inp"
+              defaultValue={details.dept || ''}
+              placeholder="e.g. Computer Science"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="btn o s"
+              disabled={isCreatingReport}
+              onClick={() => setIsCreateReportModalOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn s"
+              disabled={isCreatingReport}
+              style={{
+                background: 'var(--g)',
+                color: '#fff',
+                border: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              {isCreatingReport ? (
+                <>
+                  <span className="ms" style={{ animation: 'spin 1s linear infinite' }}>
+                    sync
+                  </span>
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <span className="ms">rocket_launch</span>
+                  Start Technical Report
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
+  const renderDeleteProjectModal = () => (
+    <div className="sh on" style={{ zIndex: 1000 }}>
+      <div className="sh-bg" onClick={() => setProjectToDelete(null)} />
+      <div className="sh-c" style={{ maxWidth: '440px', margin: '0 auto', padding: '22px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            color: '#dc2626',
+            marginBottom: '12px',
+          }}
+        >
+          <span className="ms" style={{ fontSize: '26px' }}>
+            warning
+          </span>
+          <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800 }}>
+            Delete Technical Report?
+          </h3>
+        </div>
+        <p
+          style={{
+            fontSize: '13.5px',
+            color: 'var(--ink)',
+            lineHeight: 1.5,
+            margin: '0 0 16px',
+          }}
+        >
+          Are you sure you want to delete <b>{projectToDelete?.title || 'this report'}</b>? All
+          uploaded logbook pages, extracted entries, and compiled reports for this project will be
+          permanently removed.
+        </p>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            className="btn o s"
+            onClick={() => setProjectToDelete(null)}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn s"
+            style={{ background: '#dc2626', color: '#fff', border: 'none' }}
+            onClick={async () => {
+              const targetId = projectToDelete.id;
+              setProjectToDelete(null);
+              try {
+                await deleteProject(targetId);
+                showToast('Report deleted successfully');
+                const nextActive = useProjectStore.getState().activeProject;
+                if (nextActive?.id) {
+                  await loadProjectWorkspace(nextActive.id);
+                }
+              } catch (err: any) {
+                showToast(err.message || 'Failed to delete report');
+              }
+            }}
+          >
+            Delete Report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   // ==========================================
   // VIEW: SETTINGS — ENHANCED UI
@@ -3919,7 +5045,7 @@ export default function DashboardPage() {
       <div className="view" id="settings-view">
         <header className="top">
           <span className="sp" />
-          <span className="tt">Settings</span>
+          {renderProjectSwitcher()}
           <span className="sp" />
         </header>
 
@@ -6898,18 +8024,25 @@ export default function DashboardPage() {
                       close
                     </span>
                   </button>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <b style={{ fontSize: '14px' }}>
-                      Step {step} of 7 · {SN[step - 1]}
-                    </b>
-                    {autoSaveStatus === 'saving' && (
-                      <span style={{ fontSize: '11px', color: 'var(--mut)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <span className="ms" style={{ fontSize: '12px', animation: 'spin 1s linear infinite' }}>sync</span> Saving...
-                      </span>
-                    )}
-                    {autoSaveStatus === 'saved' && (
-                      <span style={{ fontSize: '11px', color: 'var(--g)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <span className="ms" style={{ fontSize: '13px' }}>check_circle</span> Saved
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <b style={{ fontSize: '14px' }}>
+                        Step {step} of 7 · {SN[step - 1]}
+                      </b>
+                      {autoSaveStatus === 'saving' && (
+                        <span style={{ fontSize: '11px', color: 'var(--mut)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <span className="ms" style={{ fontSize: '12px', animation: 'spin 1s linear infinite' }}>sync</span> Saving...
+                        </span>
+                      )}
+                      {autoSaveStatus === 'saved' && (
+                        <span style={{ fontSize: '11px', color: 'var(--g)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          <span className="ms" style={{ fontSize: '13px' }}>check_circle</span> Saved
+                        </span>
+                      )}
+                    </div>
+                    {activeProject?.title && (
+                      <span style={{ fontSize: '11px', color: 'var(--mut)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+                        {activeProject.title}
                       </span>
                     )}
                   </div>
@@ -7767,6 +8900,12 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Create Report Modal */}
+        {isCreateReportModalOpen && renderCreateReportModal()}
+
+        {/* Delete Report Confirmation Modal */}
+        {projectToDelete && renderDeleteProjectModal()}
 
         {/* Global Toast (#toast) */}
         <div
