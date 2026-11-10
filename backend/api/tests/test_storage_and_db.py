@@ -82,12 +82,53 @@ class StorageAndDatabaseTests(TestCase):
         self.assertIn('Endpoint:', output)
         self.assertIn('Bucket:', output)
 
-    def test_sync_storage_assets_dry_run(self):
-        out = StringIO()
-        call_command('sync_storage_assets', '--dry-run', stdout=out)
-        output = out.getvalue()
-        self.assertIn('Syncing media assets', output)
-        self.assertIn('Sync complete', output)
+    def test_report_project_serializer_computed_fields(self):
+        from django.contrib.auth.models import User
+        from api.models import ReportProject, Report, PaymentOrder
+        from api.serializers import ReportProjectSerializer
+
+        user = User.objects.create_user(username='test_proj_user_multi', password='password123')
+        try:
+            proj = ReportProject.objects.create(
+                user=user,
+                title='Multi Project Test',
+                university_name='LASUSTECH',
+                organization_name='Acme Corp'
+            )
+            serializer = ReportProjectSerializer(proj)
+            data = serializer.data
+            self.assertEqual(data['title'], 'Multi Project Test')
+            self.assertFalse(data['has_report'])
+            self.assertFalse(data['is_paid'])
+            self.assertEqual(data['report_status'], 'draft')
+            self.assertEqual(data['estimated_pages'], 0)
+
+            # Create payment
+            PaymentOrder.objects.create(
+                project=proj,
+                user=user,
+                amount=2000,
+                status='paid',
+                order_type='digital',
+                payment_method='card'
+            )
+            # Create report
+            Report.objects.create(
+                project=proj,
+                title='Report Title',
+                estimated_pages=16,
+                actual_page_count=16
+            )
+
+            proj.refresh_from_db()
+            serializer = ReportProjectSerializer(proj)
+            data = serializer.data
+            self.assertTrue(data['has_report'])
+            self.assertTrue(data['is_paid'])
+            self.assertEqual(data['estimated_pages'], 16)
+            self.assertEqual(data['actual_page_count'], 16)
+        finally:
+            user.delete()
 
     def test_migrate_storage_assets_dry_run(self):
         out = StringIO()

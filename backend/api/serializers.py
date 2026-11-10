@@ -218,6 +218,12 @@ class ReportProjectSerializer(serializers.ModelSerializer):
     source_documents_count = serializers.IntegerField(source='source_documents.count', read_only=True)
     logbook_entries_count = serializers.IntegerField(source='logbook_entries.count', read_only=True)
     has_report = serializers.SerializerMethodField()
+    is_paid = serializers.SerializerMethodField()
+    report_status = serializers.SerializerMethodField()
+    estimated_pages = serializers.SerializerMethodField()
+    actual_page_count = serializers.SerializerMethodField()
+    docx_url = serializers.SerializerMethodField()
+    pdf_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ReportProject
@@ -227,6 +233,55 @@ class ReportProjectSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.BooleanField)
     def get_has_report(self, obj):
         return hasattr(obj, 'report')
+
+    @extend_schema_field(serializers.BooleanField)
+    def get_is_paid(self, obj):
+        return obj.payment_orders.filter(status='paid').exists()
+
+    @extend_schema_field(serializers.CharField)
+    def get_report_status(self, obj):
+        if not hasattr(obj, 'report'):
+            if obj.source_documents.count() == 0:
+                return 'draft'
+            return 'in_progress'
+        rep = obj.report
+        if rep.pdf_file or rep.docx_file:
+            return 'exported'
+        if rep.sections.filter(content__isnull=False).exclude(content='').count() > 0:
+            return 'ready'
+        return 'draft'
+
+    @extend_schema_field(serializers.IntegerField)
+    def get_estimated_pages(self, obj):
+        if hasattr(obj, 'report'):
+            return obj.report.estimated_pages
+        return 0
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True))
+    def get_actual_page_count(self, obj):
+        if hasattr(obj, 'report'):
+            return obj.report.actual_page_count
+        return None
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_docx_url(self, obj):
+        if hasattr(obj, 'report') and obj.report.docx_file:
+            from .storage import get_public_url
+            try:
+                return get_public_url(obj.report.docx_file.name)
+            except Exception:
+                return obj.report.docx_file.url if hasattr(obj.report.docx_file, 'url') else None
+        return None
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_pdf_url(self, obj):
+        if hasattr(obj, 'report') and obj.report.pdf_file:
+            from .storage import get_public_url
+            try:
+                return get_public_url(obj.report.pdf_file.name)
+            except Exception:
+                return obj.report.pdf_file.url if hasattr(obj.report.pdf_file, 'url') else None
+        return None
 
 
 class ReportProjectDetailSerializer(serializers.ModelSerializer):
