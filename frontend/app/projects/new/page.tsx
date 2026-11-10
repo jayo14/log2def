@@ -7,7 +7,7 @@ export default function NewProjectRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/dashboard#new');
+    router.replace('/dashboard?tab=reports&action=new');
   }, [router]);
 
   return (
