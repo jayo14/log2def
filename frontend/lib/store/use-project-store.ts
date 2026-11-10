@@ -18,6 +18,7 @@ export interface ProjectState {
   updateMissingInfo: (projectId: number | string, data: Record<string, any>) => Promise<any>;
   fetchAiStatus: () => Promise<any>;
   createProject: (data: any) => Promise<any>;
+  switchProject: (projectId: number | string) => Promise<any>;
   updateActiveProject: (projectId: number | string, data: any) => Promise<any>;
   deleteProject: (projectId: number | string) => Promise<void>;
 
@@ -234,6 +235,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
+  switchProject: async (projectId: number | string) => {
+    set({ error: null });
+    try {
+      const full = await get().fetchActiveProject(projectId);
+      if (typeof window !== 'undefined' && full?.id) {
+        localStorage.setItem('log2def_active_project_id', String(full.id));
+      }
+      return full;
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to switch project' });
+      throw err;
+    }
+  },
+
   updateActiveProject: async (projectId: number | string, data: any) => {
     set({ error: null });
     try {
@@ -253,10 +268,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ error: null });
     try {
       await projectsApi.delete(projectId);
-      set((state) => ({
-        projects: state.projects.filter((p) => p.id !== Number(projectId)),
-        activeProject: state.activeProject?.id === Number(projectId) ? null : state.activeProject,
-      }));
+      const remaining = get().projects.filter((p) => p.id !== Number(projectId));
+      let nextActive = get().activeProject;
+      if (nextActive?.id === Number(projectId)) {
+        nextActive = remaining.length > 0 ? remaining[0] : null;
+        if (typeof window !== 'undefined') {
+          if (nextActive?.id) {
+            localStorage.setItem('log2def_active_project_id', String(nextActive.id));
+          } else {
+            localStorage.removeItem('log2def_active_project_id');
+          }
+        }
+      }
+      set({
+        projects: remaining,
+        activeProject: nextActive,
+      });
+      if (nextActive?.id) {
+        await get().fetchActiveProject(nextActive.id).catch(() => {});
+      }
     } catch (err: any) {
       set({ error: err.message || 'Failed to delete project' });
       throw err;
