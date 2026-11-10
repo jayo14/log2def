@@ -52,7 +52,8 @@ def test_validate_file_content_various_formats():
 
 @pytest.mark.django_db
 def test_extract_logbook_entries_no_unbound_local_error():
-    user = User.objects.create_user(username="testdocuser", password="password123")
+    import uuid
+    user = User.objects.create_user(username=f"testdocuser_{uuid.uuid4().hex[:8]}", password="password123")
     project = ReportProject.objects.create(
         user=user,
         title="Network Attachment",
@@ -97,3 +98,49 @@ def test_classify_page_logbook_with_vision_entries():
     result = classify_page("Some handwritten page text", vision_data=vision_data)
     assert result["page_type"] == "logbook"
     assert result["is_logbook"] is True
+
+
+@pytest.mark.django_db
+def test_generate_full_report_to_title_case_name_unbound_local():
+    import uuid
+    from api.report_generator import generate_full_report
+
+    user = User.objects.create_user(username=f"reportuser_{uuid.uuid4().hex[:8]}", password="password123")
+    project = ReportProject.objects.create(
+        user=user,
+        title="SIWES Technical Report",
+        full_name="John Ayobami",
+        matric_number="LASU/2026/001",
+        organization_name="HYPERSENCE TECHNOLOGY LIMITED",
+        organization_address="12 Moshood Street, Lagos",
+        department="Computer Science",
+        college="College of Science",
+        degree="B.Sc. Computer Science",
+        training_start_date=date(2026, 6, 1),
+        training_end_date=date(2026, 11, 30),
+        guided_intake={
+            "duration_confirmed": True,
+            "organisation_what": "Hypersence Technology is an IT firm.",
+            "organisation_objectives": "To provide scalable cloud solutions.",
+            "duties": "Configured routers and switches.",
+        }
+    )
+    # Add at least one valid logbook entry
+    LogbookEntry.objects.create(
+        project=project,
+        week_number=1,
+        entry_date=date(2026, 6, 2),
+        day_of_week="Monday",
+        activity_summary="Configured Cisco router interfaces and tested connections.",
+        raw_text="Configured Cisco router interfaces and tested connections.",
+        verified_text="Configured Cisco router interfaces and tested connections.",
+        tools_used="Cisco IOS, Terminal",
+        technical_area="Networking",
+        is_verified=True,
+        order=1
+    )
+
+    report = generate_full_report(project, force_all=True)
+    assert report is not None
+    assert report.sections.count() > 0
+

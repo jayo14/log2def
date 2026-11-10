@@ -3,6 +3,7 @@ import re
 import sys
 import time
 import hashlib
+import logging
 import threading
 from io import BytesIO
 from html import escape, unescape
@@ -26,6 +27,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes, OpenApiResponse
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 

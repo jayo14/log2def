@@ -16,6 +16,22 @@ from .templates import (
     get_template_spec, ensure_default_template_in_db, ensure_v2_template_in_db,
     LASUSTECH_STANDARD_V1, LASUSTECH_CS_V2,
 )
+from .report_clustering import (
+    cluster_logbook_entries,
+    synthesize_scope_section,
+    synthesize_duration_section,
+    synthesize_history_section,
+    synthesize_objectives_section,
+    synthesize_structure_section,
+    synthesize_duties_section,
+    derive_categorised_skills,
+    categorise_tools,
+    synthesize_challenges_and_solutions,
+    synthesize_summary_section,
+    synthesize_conclusion_section,
+    synthesize_recommendations_section,
+    to_title_case_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1247,23 +1263,6 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
         if not matches and all_confirmed_facts:
             matches = all_confirmed_facts[:3]
         return matches
-
-    from .report_clustering import (
-        cluster_logbook_entries,
-        synthesize_scope_section,
-        synthesize_duration_section,
-        synthesize_history_section,
-        synthesize_objectives_section,
-        synthesize_structure_section,
-        synthesize_duties_section,
-        derive_categorised_skills,
-        categorise_tools,
-        synthesize_challenges_and_solutions,
-        synthesize_summary_section,
-        synthesize_conclusion_section,
-        synthesize_recommendations_section,
-        to_title_case_name,
-    )
 
     clean_org_name = to_title_case_name(project.organization_name)
     dept_name = project.placement_department or (intake.get("student_unit") or "Technical Department")
