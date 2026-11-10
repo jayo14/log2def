@@ -162,6 +162,82 @@ export async function apiRequest<T = any>(
   throw lastError;
 }
 
+export interface UploadProgressEvent {
+  loaded: number;
+  total: number;
+  percentage: number;
+}
+
+export function uploadFileWithProgress<T = any>(
+  endpoint: string,
+  formData: FormData,
+  onProgress?: (progress: UploadProgressEvent) => void
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const token = getAuthToken();
+    const baseUrl = getApiBaseUrl();
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+
+    xhr.open('POST', `${baseUrl}${cleanEndpoint}`);
+
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percentage = Math.min(99, Math.round((event.loaded / event.total) * 100));
+          onProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percentage,
+          });
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (onProgress) {
+            onProgress({ loaded: 1, total: 1, percentage: 100 });
+          }
+          resolve(data as T);
+        } catch {
+          resolve(xhr.responseText as unknown as T);
+        }
+      } else {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          const msg =
+            err.error ||
+            err.detail ||
+            (err.messages ? err.messages.join(', ') : `Upload failed with status ${xhr.status}`);
+          reject(new Error(msg));
+        } catch {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new Error('Network error during file upload. Please check your internet connection.'));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new Error('Upload timed out. For very large files, please ensure a stable connection.'));
+    };
+
+    // 25 minutes timeout to reliably support large files (500MB+)
+    xhr.timeout = 25 * 60 * 1000;
+
+    xhr.send(formData);
+  });
+}
+
 // Auth API
 export const authApi = {
   login: async (credentials: any) => {
@@ -249,11 +325,12 @@ export const projectsApi = {
   },
 
   // Documents
-  uploadDocument: async (projectId: number | string, formData: FormData) => {
-    return apiRequest(`/projects/${projectId}/documents/`, {
-      method: 'POST',
-      body: formData,
-    });
+  uploadDocument: async (
+    projectId: number | string,
+    formData: FormData,
+    onProgress?: (progress: UploadProgressEvent) => void
+  ) => {
+    return uploadFileWithProgress(`/projects/${projectId}/documents/`, formData, onProgress);
   },
 
   reorderDocuments: async (projectId: number | string, order: { id: number; page_index: number }[]) => {

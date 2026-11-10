@@ -460,12 +460,12 @@ class DocumentListUploadView(views.APIView):
                 try:
                     from .storage import upload_object
                     if doc.file and os.path.exists(doc.file.path):
-                        with open(doc.file.path, 'rb') as f:
-                            upload_object(key=doc.file.name, body=f.read())
+                        upload_object(key=doc.file.name, body=doc.file.path)
                 except Exception:
                     pass
 
-                if is_async and not is_testing:
+                should_async = is_async or file_obj.size > 2 * 1024 * 1024 or verified_type == 'pdf'
+                if should_async and not is_testing:
                     t = threading.Thread(target=process_source_document, args=(doc.id,), daemon=True)
                     t.start()
                 else:

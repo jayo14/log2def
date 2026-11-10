@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { projectsApi, authApi, CompletenessResult } from '../api';
+import { projectsApi, authApi, CompletenessResult, UploadProgressEvent } from '../api';
 
 export interface ProjectState {
   projects: any[];
@@ -24,7 +24,11 @@ export interface ProjectState {
 
   // Source documents & extracted pages
   uploadGuideline: (projectId: number | string, formData: FormData) => Promise<any>;
-  uploadDocument: (projectId: number | string, formData: FormData) => Promise<any>;
+  uploadDocument: (
+    projectId: number | string,
+    formData: FormData,
+    onProgress?: (progress: UploadProgressEvent) => void
+  ) => Promise<any>;
   reorderDocuments: (projectId: number | string, order: { id: number; page_index: number }[]) => Promise<any>;
   deleteDocument: (projectId: number | string, docId: number | string) => Promise<void>;
   reprocessDocument: (projectId: number | string, docId: number | string) => Promise<any>;
@@ -305,10 +309,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  uploadDocument: async (projectId: number | string, formData: FormData) => {
+  uploadDocument: async (
+    projectId: number | string,
+    formData: FormData,
+    onProgress?: (progress: UploadProgressEvent) => void
+  ) => {
     set({ error: null });
     try {
-      const doc = await projectsApi.uploadDocument(projectId, formData);
+      const doc = await projectsApi.uploadDocument(projectId, formData, onProgress);
       await get().fetchActiveProject(projectId);
       return doc;
     } catch (err: any) {

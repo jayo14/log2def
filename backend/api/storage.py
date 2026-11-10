@@ -1,6 +1,15 @@
 import os
 import boto3
 from botocore.config import Config
+from boto3.s3.transfer import TransferConfig
+
+# High-speed multi-threaded multipart transfer configuration (supports 500MB+ files)
+S3_MULTIPART_CONFIG = TransferConfig(
+    multipart_threshold=8 * 1024 * 1024,  # 8 MB
+    max_concurrency=10,
+    multipart_chunksize=8 * 1024 * 1024,   # 8 MB chunks
+    use_threads=True,
+)
 from django.conf import settings
 import logging
 
@@ -53,24 +62,36 @@ def get_public_url(key: str) -> str:
 
 def upload_object(key: str, body, content_type: str = None) -> bool:
     """
-    Uploads a file body (bytes, string, or file-like object) to the S3 bucket.
+    Uploads a file body (file path, file-like object, bytes, or string) to S3.
+    Uses multi-threaded multipart transfers for high-speed streaming on large files (500MB+).
     """
     s3 = get_s3_client()
     if not s3:
         return False
     
     bucket = get_bucket_name()
-    params = {
-        'Bucket': bucket,
-        'Key': key,
-        'Body': body
-    }
+    extra_args = {}
     if content_type:
-        params['ContentType'] = content_type
-        
+        extra_args['ContentType'] = content_type
+
     try:
-        s3.put_object(**params)
-        return True
+        # If body is a filepath on disk, stream directly via high-speed multipart upload
+        if isinstance(body, (str, os.PathLike)) and os.path.isfile(str(body)):
+            s3.upload_file(str(body), bucket, key, ExtraArgs=extra_args or None, Config=S3_MULTIPART_CONFIG)
+            return True
+        elif hasattr(body, 'read'):
+            s3.upload_fileobj(body, bucket, key, ExtraArgs=extra_args or None, Config=S3_MULTIPART_CONFIG)
+            return True
+        else:
+            params = {
+                'Bucket': bucket,
+                'Key': key,
+                'Body': body
+            }
+            if content_type:
+                params['ContentType'] = content_type
+            s3.put_object(**params)
+            return True
     except Exception as e:
         logger.error(f"Error uploading object {key} to {bucket}: {e}")
         return False

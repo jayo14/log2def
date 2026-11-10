@@ -105,6 +105,8 @@ interface LogPage {
   status?: string;
   isUploading?: boolean;
   uploadProgress?: number;
+  bytesUploaded?: number;
+  totalBytes?: number;
 }
 
 interface LogEntry {
@@ -126,6 +128,14 @@ interface ReportImage {
   week_number?: number | null;
   processed_url?: string | null;
   low_resolution_warning?: boolean;
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 export default function DashboardPage() {
@@ -1951,7 +1961,20 @@ export default function DashboardPage() {
             fd.append('file', page.file);
             fd.append('page_index', String(i));
             try {
-              const uploadedDoc = await uploadDocument(projId, fd);
+              const uploadedDoc = await uploadDocument(projId, fd, (progress) => {
+                setPages((prev) => {
+                  const next = [...prev];
+                  if (next[i]) {
+                    next[i] = {
+                      ...next[i],
+                      uploadProgress: progress.percentage,
+                      bytesUploaded: progress.loaded,
+                      totalBytes: progress.total,
+                    };
+                  }
+                  return next;
+                });
+              });
               if (uploadedDoc?.id) {
                 setPages((prev) => {
                   const next = [...prev];
@@ -1961,6 +1984,8 @@ export default function DashboardPage() {
                       id: uploadedDoc.id,
                       isUploading: false,
                       uploadProgress: 100,
+                      bytesUploaded: page.file?.size,
+                      totalBytes: page.file?.size,
                     };
                   }
                   return next;
@@ -2315,101 +2340,112 @@ export default function DashboardPage() {
       th: '',
       file: f,
       isUploading: true,
-      uploadProgress: 15,
+      uploadProgress: 0,
+      bytesUploaded: 0,
+      totalBytes: f.size,
     }));
 
     setPages((prev) => [...prev, ...initialPlaceholders]);
 
+    const queue = fileArr.map((f, i) => ({ file: f, pageIdx: startingIndex + i }));
     let successCount = 0;
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const pageIdx = startingIndex + i;
 
-      // Animate progress smoothly while uploading
-      const progressTimer = setInterval(() => {
-        setPages((prev) => {
-          const idx = prev.findIndex((p) => p.file === f);
-          if (idx === -1 || !prev[idx].isUploading) return prev;
-          const next = [...prev];
-          const current = next[idx].uploadProgress || 15;
-          if (current < 85) {
-            next[idx] = { ...next[idx], uploadProgress: current + 12 };
+    const uploadWorker = async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item) break;
+        const { file: f, pageIdx } = item;
+
+        const localThPromise = generateThumbnail(f);
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('page_index', String(pageIdx));
+        fd.append('async', 'true');
+
+        try {
+          const uploadedDoc = await uploadDocument(projId, fd, (progress) => {
+            setPages((prev) => {
+              const idx = prev.findIndex((p) => p.file === f);
+              if (idx === -1) return prev;
+              const next = [...prev];
+              next[idx] = {
+                ...next[idx],
+                uploadProgress: progress.percentage,
+                bytesUploaded: progress.loaded,
+                totalBytes: progress.total,
+              };
+              return next;
+            });
+          });
+
+          successCount++;
+          const localTh = await localThPromise;
+          let finalTh = localTh;
+          if (uploadedDoc) {
+            if (uploadedDoc.presigned_url) {
+              finalTh = uploadedDoc.presigned_url;
+            } else if (uploadedDoc.file) {
+              finalTh = uploadedDoc.file.startsWith('http')
+                ? uploadedDoc.file
+                : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${uploadedDoc.file.startsWith('/') ? '' : '/'}${uploadedDoc.file}`;
+            }
           }
-          return next;
-        });
-      }, 140);
 
-      const localThPromise = generateThumbnail(f);
+          // Complete progress to 100%
+          setPages((prev) => {
+            const idx = prev.findIndex((p) => p.file === f);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              id: uploadedDoc?.id,
+              uploadProgress: 100,
+              bytesUploaded: f.size,
+              totalBytes: f.size,
+            };
+            return next;
+          });
 
-      const fd = new FormData();
-      fd.append('file', f);
-      fd.append('page_index', String(pageIdx));
-      fd.append('async', 'true');
+          // Short 200ms pause so the student sees 100% completion
+          await new Promise((r) => setTimeout(r, 200));
 
-      try {
-        const uploadedDoc = await uploadDocument(projId, fd);
-        clearInterval(progressTimer);
-        successCount++;
-
-        const localTh = await localThPromise;
-        let finalTh = localTh;
-        if (uploadedDoc) {
-          if (uploadedDoc.presigned_url) {
-            finalTh = uploadedDoc.presigned_url;
-          } else if (uploadedDoc.file) {
-            finalTh = uploadedDoc.file.startsWith('http')
-              ? uploadedDoc.file
-              : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${uploadedDoc.file.startsWith('/') ? '' : '/'}${uploadedDoc.file}`;
-          }
+          setPages((prev) => {
+            const idx = prev.findIndex((p) => p.file === f);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              id: uploadedDoc?.id,
+              th: finalTh,
+              isUploading: false,
+              uploadProgress: 100,
+            };
+            return next;
+          });
+        } catch (err: any) {
+          const localTh = await localThPromise;
+          setPages((prev) => {
+            const idx = prev.findIndex((p) => p.file === f);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = {
+              ...next[idx],
+              th: localTh,
+              isUploading: false,
+              q: 'error',
+            };
+            return next;
+          });
+          showToast(`Upload error on ${f.name}: ${err.message || 'failed'}`);
         }
-
-        // Complete loader line to 100%
-        setPages((prev) => {
-          const idx = prev.findIndex((p) => p.file === f);
-          if (idx === -1) return prev;
-          const next = [...prev];
-          next[idx] = {
-            ...next[idx],
-            id: uploadedDoc?.id,
-            uploadProgress: 100,
-          };
-          return next;
-        });
-
-        // Short 200ms pause so the student sees the filled progress line
-        await new Promise((r) => setTimeout(r, 200));
-
-        setPages((prev) => {
-          const idx = prev.findIndex((p) => p.file === f);
-          if (idx === -1) return prev;
-          const next = [...prev];
-          next[idx] = {
-            ...next[idx],
-            id: uploadedDoc?.id,
-            th: finalTh,
-            isUploading: false,
-            uploadProgress: 100,
-          };
-          return next;
-        });
-      } catch (err: any) {
-        clearInterval(progressTimer);
-        const localTh = await localThPromise;
-        setPages((prev) => {
-          const idx = prev.findIndex((p) => p.file === f);
-          if (idx === -1) return prev;
-          const next = [...prev];
-          next[idx] = {
-            ...next[idx],
-            th: localTh,
-            isUploading: false,
-            q: 'error',
-          };
-          return next;
-        });
-        showToast(`Upload error on ${f.name}: ${err.message || 'failed'}`);
       }
-    }
+    };
+
+    // Parallel upload workers (concurrency = 2) for maximum speed with 500MB+ files
+    const CONCURRENCY = 2;
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, fileArr.length) }, () => uploadWorker())
+    );
 
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (camInputRef.current) camInputRef.current.value = '';
@@ -3923,22 +3959,30 @@ export default function DashboardPage() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        padding: '10px 8px',
+                        padding: '12px 6px',
                         boxSizing: 'border-box',
                         background: 'var(--bg)',
+                        textAlign: 'center',
                       }}
                     >
-                      <span
-                        className="ms"
+                      <div
                         style={{
-                          fontSize: '32px',
-                          color: p.pdf ? '#ef4444' : 'var(--g)',
-                          animation: 'pulse 1.8s infinite',
+                          width: '52px',
+                          height: '52px',
+                          borderRadius: '999px',
+                          border: `3px solid ${(p.uploadProgress ?? 0) >= 90 ? '#059669' : 'rgba(16, 185, 129, 0.4)'}`,
+                          background: (p.uploadProgress ?? 0) >= 90 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.05)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: (p.uploadProgress ?? 0) >= 90 ? '0 0 10px rgba(16, 185, 129, 0.25)' : 'none',
+                          transition: 'all 0.2s ease',
                         }}
-                        aria-hidden="true"
                       >
-                        {p.pdf ? 'picture_as_pdf' : 'image'}
-                      </span>
+                        <span style={{ fontSize: '15px', fontWeight: 800, color: (p.uploadProgress ?? 0) >= 90 ? '#059669' : 'var(--g)', lineHeight: 1 }}>
+                          {Math.round(p.uploadProgress ?? 0)}%
+                        </span>
+                      </div>
                       <span
                         style={{
                           fontSize: '11px',
@@ -3948,36 +3992,31 @@ export default function DashboardPage() {
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          margin: '4px 0',
+                          marginTop: '6px',
                         }}
                         title={p.n}
                       >
                         {p.n}
                       </span>
-                      {/* Small loader line that fills up to the end */}
-                      <div
+                      <span
                         style={{
-                          width: '84%',
-                          height: '4px',
-                          background: 'rgba(16, 185, 129, 0.16)',
-                          borderRadius: '999px',
-                          overflow: 'hidden',
-                          margin: '4px 0 3px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: (p.uploadProgress ?? 0) >= 90 ? '#059669' : 'var(--g)',
+                          marginTop: '2px',
                         }}
                       >
-                        <div
-                          style={{
-                            height: '100%',
-                            width: `${p.uploadProgress || 15}%`,
-                            background: 'linear-gradient(90deg, #10b981, #34d399)',
-                            borderRadius: '999px',
-                            transition: 'width 0.35s ease-out',
-                          }}
-                        />
-                      </div>
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--g)' }}>
-                        {p.uploadProgress ? `${p.uploadProgress}%` : 'Uploading…'}
+                        {(p.uploadProgress ?? 0) >= 100
+                          ? 'Complete'
+                          : (p.uploadProgress ?? 0) >= 90
+                          ? 'Almost done…'
+                          : 'Uploading…'}
                       </span>
+                      {p.totalBytes ? (
+                        <span style={{ fontSize: '9px', color: 'var(--ink)', opacity: 0.65, marginTop: '2px' }}>
+                          {formatBytes(p.bytesUploaded)} / {formatBytes(p.totalBytes)}
+                        </span>
+                      ) : null}
                     </div>
                   ) : p.th ? (
                     <img src={p.th} alt={`Page ${i + 1}`} />
@@ -5419,32 +5458,75 @@ export default function DashboardPage() {
         />
 
         {/* Upload status banner if uploads are pending */}
-        {pages.some((p) => p.isUploading || (p.uploadProgress !== undefined && p.uploadProgress < 100)) && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '10px 14px',
-              borderRadius: '12px',
-              background: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.24)',
-              color: 'var(--g)',
-              fontSize: '13px',
-              fontWeight: 600,
-              margin: '12px 0',
-            }}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="ms" style={{ animation: 'spin 1.2s linear infinite', fontSize: '18px' }}>
-              sync
-            </span>
-            <span>
-              Uploading {pages.filter((p) => p.isUploading).length || 1} file{pages.filter((p) => p.isUploading).length > 1 ? 's' : ''}... The Next button will be enabled once uploads finish.
-            </span>
-          </div>
-        )}
+        {pages.some((p) => p.isUploading || (p.uploadProgress !== undefined && p.uploadProgress < 100)) && (() => {
+          const uploading = pages.filter((p) => p.isUploading || (p.uploadProgress !== undefined && p.uploadProgress < 100));
+          const totalBytes = uploading.reduce((sum, p) => sum + (p.totalBytes || 0), 0);
+          const uploadedBytes = uploading.reduce((sum, p) => sum + (p.bytesUploaded || 0), 0);
+          const avgPct = totalBytes > 0
+            ? Math.round((uploadedBytes / totalBytes) * 100)
+            : Math.round(uploading.reduce((sum, p) => sum + (p.uploadProgress || 0), 0) / uploading.length);
+          const isAlmostDone = avgPct >= 90;
+
+          return (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: isAlmostDone ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.08)',
+                border: `1px solid ${isAlmostDone ? 'rgba(16, 185, 129, 0.4)' : 'rgba(16, 185, 129, 0.24)'}`,
+                color: 'var(--g)',
+                fontSize: '13px',
+                fontWeight: 600,
+                margin: '12px 0',
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span className="ms" style={{ animation: 'spin 1.2s linear infinite', fontSize: '20px' }}>
+                  sync
+                </span>
+                <div>
+                  <div>
+                    Uploading {uploading.length} file{uploading.length > 1 ? 's' : ''}:{' '}
+                    <strong style={{ fontSize: '14px' }}>{avgPct}%</strong>
+                    {isAlmostDone && (
+                      <span style={{ marginLeft: '8px', color: '#059669', fontWeight: 700 }}>
+                        — Almost done!
+                      </span>
+                    )}
+                  </div>
+                  {totalBytes > 0 && (
+                    <div style={{ fontSize: '11px', opacity: 0.8, fontWeight: 500, marginTop: '2px' }}>
+                      {formatBytes(uploadedBytes)} of {formatBytes(totalBytes)} transferred
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: '44px',
+                  height: '44px',
+                  borderRadius: '999px',
+                  background: isAlmostDone ? '#059669' : 'var(--g)',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.25)',
+                }}
+              >
+                {avgPct}%
+              </div>
+            </div>
+          );
+        })()}
 
         {n ? (
           <>
@@ -5460,22 +5542,30 @@ export default function DashboardPage() {
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        padding: '10px 8px',
+                        padding: '12px 6px',
                         boxSizing: 'border-box',
                         background: 'var(--bg)',
+                        textAlign: 'center',
                       }}
                     >
-                      <span
-                        className="ms"
+                      <div
                         style={{
-                          fontSize: '32px',
-                          color: p.pdf ? '#ef4444' : 'var(--g)',
-                          animation: 'pulse 1.8s infinite',
+                          width: '52px',
+                          height: '52px',
+                          borderRadius: '999px',
+                          border: `3px solid ${(p.uploadProgress ?? 0) >= 90 ? '#059669' : 'rgba(16, 185, 129, 0.4)'}`,
+                          background: (p.uploadProgress ?? 0) >= 90 ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.05)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: (p.uploadProgress ?? 0) >= 90 ? '0 0 10px rgba(16, 185, 129, 0.25)' : 'none',
+                          transition: 'all 0.2s ease',
                         }}
-                        aria-hidden="true"
                       >
-                        {p.pdf ? 'picture_as_pdf' : 'image'}
-                      </span>
+                        <span style={{ fontSize: '15px', fontWeight: 800, color: (p.uploadProgress ?? 0) >= 90 ? '#059669' : 'var(--g)', lineHeight: 1 }}>
+                          {Math.round(p.uploadProgress ?? 0)}%
+                        </span>
+                      </div>
                       <span
                         style={{
                           fontSize: '11px',
@@ -5485,35 +5575,31 @@ export default function DashboardPage() {
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          margin: '4px 0',
+                          marginTop: '6px',
                         }}
                         title={p.n}
                       >
                         {p.n}
                       </span>
-                      <div
+                      <span
                         style={{
-                          width: '84%',
-                          height: '4px',
-                          background: 'rgba(16, 185, 129, 0.16)',
-                          borderRadius: '999px',
-                          overflow: 'hidden',
-                          margin: '4px 0 3px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: (p.uploadProgress ?? 0) >= 90 ? '#059669' : 'var(--g)',
+                          marginTop: '2px',
                         }}
                       >
-                        <div
-                          style={{
-                            height: '100%',
-                            width: `${p.uploadProgress || 15}%`,
-                            background: 'linear-gradient(90deg, #10b981, #34d399)',
-                            borderRadius: '999px',
-                            transition: 'width 0.35s ease-out',
-                          }}
-                        />
-                      </div>
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--g)' }}>
-                        {p.uploadProgress ? `${p.uploadProgress}%` : 'Uploading…'}
+                        {(p.uploadProgress ?? 0) >= 100
+                          ? 'Complete'
+                          : (p.uploadProgress ?? 0) >= 90
+                          ? 'Almost done…'
+                          : 'Uploading…'}
                       </span>
+                      {p.totalBytes ? (
+                        <span style={{ fontSize: '9px', color: 'var(--ink)', opacity: 0.65, marginTop: '2px' }}>
+                          {formatBytes(p.bytesUploaded)} / {formatBytes(p.totalBytes)}
+                        </span>
+                      ) : null}
                     </div>
                   ) : p.th ? (
                     <img src={p.th} alt={`Page ${i + 1}`} />

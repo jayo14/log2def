@@ -208,6 +208,12 @@ REST_FRAMEWORK = {
 }
 
 
+# --- File Upload & Streaming Configuration (supports 500MB+ files) ---
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 1024  # 1 GB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024    # 10 MB in RAM, larger streams to disk
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
+FILE_UPLOAD_PERMISSIONS = 0o644
+
 # Spectacular OpenAPI / Swagger Settings
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Log2Def API',

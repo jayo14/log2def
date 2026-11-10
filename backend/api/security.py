@@ -14,7 +14,7 @@ MAGIC_SIGNATURES = {
     'docx': [b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08'],
 }
 
-MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
+MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024  # 1 GB (supports 500MB+ high-resolution logbooks and scans)
 
 
 def get_safe_upload_filename(original_filename: str) -> str:
@@ -36,7 +36,7 @@ def validate_file_content(file_obj) -> str:
     Raises ValidationError if invalid or suspicious.
     """
     if file_obj.size > MAX_FILE_SIZE_BYTES:
-        raise ValidationError(f"File size exceeds maximum permitted limit of 15MB.")
+        raise ValidationError("File size exceeds maximum permitted limit of 1GB.")
 
     pos = file_obj.tell()
     file_obj.seek(0)
