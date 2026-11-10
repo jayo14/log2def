@@ -11,7 +11,9 @@ if str(BACKEND) not in sys.path:
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 import django
-django.setup()
+from django.apps import apps
+if not apps.ready:
+    django.setup()
 
 from django.contrib.auth.models import User
 from api.models import ReportProject, LogbookEntry

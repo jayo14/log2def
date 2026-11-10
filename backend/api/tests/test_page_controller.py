@@ -8,12 +8,6 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from unittest.mock import MagicMock
-sys.modules['django'] = MagicMock()
-sys.modules['django.conf'] = MagicMock()
-sys.modules['django.conf'].settings = MagicMock()
-sys.modules['django.conf'].settings.configured = False
-
 import logging
 logging.disable(logging.CRITICAL)
 

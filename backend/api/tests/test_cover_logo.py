@@ -30,7 +30,14 @@ def _load(name: str, path: Path):
     return mod
 
 
+_did_mock = False
+
+
 def _mock_django_for_exporter():
+    global _did_mock
+    if "django" in sys.modules and getattr(sys.modules["django"], "__file__", None):
+        return
+    _did_mock = True
     django = types.ModuleType("django")
     conf = types.ModuleType("django.conf")
     conf.settings = types.SimpleNamespace(MEDIA_ROOT="/tmp")
@@ -60,8 +67,9 @@ def _mock_django_for_exporter():
 @pytest.fixture(autouse=True, scope="module")
 def cleanup_mock_modules():
     yield
-    for name in ["api.document_quality", "api.models", "django", "django.conf", "django.utils", "django.utils.timezone"]:
-        sys.modules.pop(name, None)
+    if _did_mock:
+        for name in ["api.document_quality", "api.models", "django", "django.conf", "django.utils", "django.utils.timezone"]:
+            sys.modules.pop(name, None)
 
 
 def _make_logo(path: Path, size=(400, 400)) -> Path:

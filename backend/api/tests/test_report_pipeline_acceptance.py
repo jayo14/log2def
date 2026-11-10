@@ -29,8 +29,8 @@ from api.logbook_cleaner import (
 @pytest.mark.django_db
 def test_full_pipeline_acceptance_on_project_31():
     proj = ReportProject.objects.filter(id=31).first()
-    if not proj:
-        pytest.skip("Project 31 not present in current test database.")
+    if not proj or proj.logbook_entries.count() < 40:
+        pytest.skip("Project 31 genuine entries not present in current test database.")
 
     # 1. Clean and filter logbook entries
     raw_entries = list(proj.logbook_entries.all())
