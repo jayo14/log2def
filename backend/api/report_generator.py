@@ -5,6 +5,7 @@ from html import escape
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
+from django.conf import settings
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from .models import ReportProject, Report, ReportSection, LogbookEntry, ReportVersion, ReportTemplate, Fact, ReportParagraph
@@ -272,6 +273,7 @@ def render_title_page_html(project: ReportProject, start: str = "", end: str = "
 
 <p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0;">DEPARTMENT: {dept}</p>
 <p style="font-size: 11pt; font-weight: bold; margin: 0 0 2pt 0;">COLLEGE: {college}{needs_confirm_badge}</p>
+<p style="font-size: 11pt; font-weight: bold; margin: 4pt 0 2pt 0; text-transform: uppercase;">LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
 <p style="font-size: 10pt; font-weight: bold; margin: 4pt 0 2pt 0; text-transform: uppercase;">IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF</p>
 <p style="font-size: 11pt; font-weight: bold; margin: 0 0 10pt 0; text-transform: uppercase;">{degree} IN {dept}</p>
 
@@ -306,6 +308,7 @@ def render_title_page_text(project: ReportProject, start: str = "", end: str = "
         "",
         f"DEPARTMENT: {dept}",
         f"COLLEGE: {college}",
+        "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY",
         "IN PARTIAL FULFILMENT OF THE REQUIREMENTS FOR THE AWARD OF",
         f"{degree} IN {dept}",
         "",
