@@ -86,3 +86,26 @@ class StorageAndDatabaseTests(TestCase):
         output = out.getvalue()
         self.assertIn('Syncing media assets', output)
         self.assertIn('Sync complete', output)
+
+    def test_migrate_storage_assets_dry_run(self):
+        out = StringIO()
+        call_command('migrate_storage_assets', '--dry-run', stdout=out)
+        output = out.getvalue()
+        self.assertIn('Safe S3 Storage Asset Migration', output)
+        self.assertIn('Storage Migration Complete', output)
+
+    def test_migrate_db_data_dry_run_dump(self):
+        # Create a small temporary dump file
+        dump_path = '/tmp/test_dump.sql'
+        with open(dump_path, 'w', encoding='utf-8') as f:
+            f.write('-- Test SQL dump file\n')
+        try:
+            out = StringIO()
+            call_command('migrate_db_data', '--dump-file', dump_path, '--dry-run', stdout=out)
+            output = out.getvalue()
+            self.assertIn('Safe Cross-Database Migration', output)
+            self.assertIn('Dry Run Mode:     True', output)
+            self.assertIn('Ready for import', output)
+        finally:
+            if os.path.exists(dump_path):
+                os.remove(dump_path)
