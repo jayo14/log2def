@@ -4797,38 +4797,69 @@ export default function DashboardPage() {
   };
 
   const renderCreateReportModal = () => (
-    <div className="sh on" style={{ zIndex: 1000 }}>
+    <div id="create-report-modal">
       <div
-        className="sh-bg"
+        className="bd"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 80,
+          background: 'rgba(15, 23, 41, 0.55)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          animation: 'fade 0.25s',
+        }}
         onClick={() => !isCreatingReport && setIsCreateReportModalOpen(false)}
       />
-      <div className="sh-c" style={{ maxWidth: '480px', margin: '0 auto', padding: '22px' }}>
-        <div className="sh-h">
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800 }}>
-            Create Technical Report
-          </h3>
+      <div
+        className="sht"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create Technical Report"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 81,
+          background: 'var(--paper)',
+          borderRadius: '32px 32px 0 0',
+          padding: '12px 20px calc(24px + var(--sb))',
+          maxHeight: '90%',
+          overflowY: 'auto',
+          boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.25)',
+          animation: 'up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        }}
+      >
+        <div className="hd" />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: '12px',
+            marginBottom: '10px',
+          }}
+        >
+          <div>
+            <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, color: 'var(--ink)' }}>
+              Create Technical Report
+            </h2>
+            <p style={{ fontSize: '12.5px', color: 'var(--mut)', margin: '4px 0 0', lineHeight: 1.4 }}>
+              Each report operates as an independent workspace with its own logbook pages and generated report.
+            </p>
+          </div>
           <button
             type="button"
             className="ib"
             disabled={isCreatingReport}
             onClick={() => setIsCreateReportModalOpen(false)}
             aria-label="Close dialog"
+            style={{ flexShrink: 0 }}
           >
             <span className="ms">close</span>
           </button>
         </div>
-
-        <p
-          style={{
-            fontSize: '13px',
-            color: 'var(--mut)',
-            margin: '4px 0 16px',
-            lineHeight: 1.4,
-          }}
-        >
-          Each report operates as an isolated workspace. You can upload pages, customize placement
-          particulars, and compile an independent report.
-        </p>
 
         <form
           onSubmit={async (e) => {
@@ -4864,70 +4895,36 @@ export default function DashboardPage() {
             }
           }}
         >
-          <div style={{ marginBottom: '14px' }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '12.5px',
-                fontWeight: 700,
-                marginBottom: '6px',
-                color: 'var(--ink)',
-              }}
-            >
-              Report Title *
+          <div className="f" style={{ marginBottom: '14px' }}>
+            <label>
+              Report Title <em>*</em>
             </label>
             <input
               name="title"
               type="text"
-              className="inp"
               defaultValue={`SIWES Technical Report ${
                 projects.length > 0 ? `#${projects.length + 1}` : ''
               }`}
               required
               placeholder="e.g. SIWES Report - Software Engineering"
-              style={{ width: '100%' }}
             />
           </div>
 
-          <div style={{ marginBottom: '14px' }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '12.5px',
-                fontWeight: 700,
-                marginBottom: '6px',
-                color: 'var(--ink)',
-              }}
-            >
-              Company / Placement Organization
-            </label>
+          <div className="f" style={{ marginBottom: '14px' }}>
+            <label>Company / Placement Organization</label>
             <input
               name="orgName"
               type="text"
-              className="inp"
               defaultValue={details.co || ''}
               placeholder="e.g. MainOne Cables, Chevron Nigeria"
-              style={{ width: '100%' }}
             />
           </div>
 
-          <div style={{ marginBottom: '14px' }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '12.5px',
-                fontWeight: 700,
-                marginBottom: '6px',
-                color: 'var(--ink)',
-              }}
-            >
-              Institution / University
-            </label>
+          <div className="f" style={{ marginBottom: '14px' }}>
+            <label>Institution / University</label>
             <select
               name="university"
-              className="inp"
               defaultValue={details.inst || 'Lagos State University of Science and Technology'}
-              style={{ width: '100%' }}
             >
               {INSTITUTIONS.map((inst) => (
                 <option key={inst} value={inst}>
@@ -4937,29 +4934,17 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '12.5px',
-                fontWeight: 700,
-                marginBottom: '6px',
-                color: 'var(--ink)',
-              }}
-            >
-              Department
-            </label>
+          <div className="f" style={{ marginBottom: '18px' }}>
+            <label>Department</label>
             <input
               name="dept"
               type="text"
-              className="inp"
               defaultValue={details.dept || ''}
               placeholder="e.g. Computer Science"
-              style={{ width: '100%' }}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', paddingTop: '6px' }}>
             <button
               type="button"
               className="btn o s"
@@ -5002,37 +4987,94 @@ export default function DashboardPage() {
   );
 
   const renderDeleteProjectModal = () => (
-    <div className="sh on" style={{ zIndex: 1000 }}>
-      <div className="sh-bg" onClick={() => setProjectToDelete(null)} />
-      <div className="sh-c" style={{ maxWidth: '440px', margin: '0 auto', padding: '22px' }}>
+    <div id="delete-report-modal">
+      <div
+        className="bd"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 80,
+          background: 'rgba(15, 23, 41, 0.55)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          animation: 'fade 0.25s',
+        }}
+        onClick={() => setProjectToDelete(null)}
+      />
+      <div
+        className="sht"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Delete Technical Report"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 81,
+          background: 'var(--paper)',
+          borderRadius: '32px 32px 0 0',
+          padding: '12px 20px calc(24px + var(--sb))',
+          maxHeight: '80%',
+          overflowY: 'auto',
+          boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.25)',
+          animation: 'up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)',
+        }}
+      >
+        <div className="hd" />
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
-            color: '#dc2626',
-            marginBottom: '12px',
+            justifyContent: 'space-between',
+            marginBottom: '14px',
           }}
         >
-          <span className="ms" style={{ fontSize: '26px' }}>
-            warning
-          </span>
-          <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800 }}>
-            Delete Technical Report?
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '50%',
+                background: 'rgba(220, 38, 38, 0.12)',
+                color: '#dc2626',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <span className="ms" style={{ fontSize: '22px' }}>
+                warning
+              </span>
+            </div>
+            <h2 style={{ fontSize: '19px', margin: 0, fontWeight: 800, color: 'var(--ink)' }}>
+              Delete Report?
+            </h2>
+          </div>
+          <button
+            type="button"
+            className="ib"
+            onClick={() => setProjectToDelete(null)}
+            aria-label="Close dialog"
+            style={{ flexShrink: 0 }}
+          >
+            <span className="ms">close</span>
+          </button>
         </div>
+
         <p
           style={{
             fontSize: '13.5px',
             color: 'var(--ink)',
             lineHeight: 1.5,
-            margin: '0 0 16px',
+            margin: '0 0 20px',
           }}
         >
           Are you sure you want to delete <b>{projectToDelete?.title || 'this report'}</b>? All
           uploaded logbook pages, extracted entries, and compiled reports for this project will be
           permanently removed.
         </p>
+
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
           <button
             type="button"
