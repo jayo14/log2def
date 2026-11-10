@@ -146,6 +146,8 @@ class SourceDocument(models.Model):
         ('pdf', 'PDF Document'),
         ('image', 'Scanned / Photo Image'),
         ('docx', 'Word Document'),
+        ('doc', 'Legacy Word Document'),
+        ('text', 'Text / Markdown File'),
         ('note', 'Typed / Pasted Note'),
     )
     STATUS_CHOICES = (

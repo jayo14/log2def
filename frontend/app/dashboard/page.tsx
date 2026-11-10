@@ -2340,7 +2340,7 @@ export default function DashboardPage() {
     const fileArr = Array.from(files);
     const initialPlaceholders: LogPage[] = fileArr.map((f: File) => ({
       n: f.name,
-      pdf: f.type === 'application/pdf',
+      pdf: f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'),
       th: '',
       file: f,
       isUploading: true,
@@ -4032,7 +4032,7 @@ export default function DashboardPage() {
                     <img src={p.th} alt={`Page ${i + 1}`} />
                   ) : (
                     <span className="ms" style={{ fontSize: '34px', color: 'var(--g)' }} aria-hidden="true">
-                      {p.pdf ? 'picture_as_pdf' : 'sync'}
+                      {p.pdf ? 'picture_as_pdf' : (p.n?.toLowerCase().endsWith('.doc') || p.n?.toLowerCase().endsWith('.docx')) ? 'description' : (p.n?.toLowerCase().endsWith('.txt') || p.n?.toLowerCase().endsWith('.md')) ? 'article' : 'insert_drive_file'}
                     </span>
                   )}
                   <span className="n" title={p.n || (i === 0 ? 'Cover' : `Page ${i}`)}>
@@ -5575,9 +5575,9 @@ export default function DashboardPage() {
               className="fi"
               id="upl"
               type="file"
-              accept="image/jpeg,image/png,image/webp,application/pdf"
+              accept="image/jpeg,image/png,image/webp,image/*,application/pdf,.pdf,.docx,.doc,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain,text/markdown"
               multiple
-              aria-label="Upload logbook images or PDFs"
+              aria-label="Upload logbook documents (PDF, Word, Text, Images)"
               onChange={(e) => handleFilesAdded(e.target.files)}
             />
           </label>
@@ -5742,7 +5742,7 @@ export default function DashboardPage() {
                     <img src={p.th} alt={`Page ${i + 1}`} />
                   ) : (
                     <span className="ms" style={{ fontSize: '34px', color: 'var(--g)' }} aria-hidden="true">
-                      {p.pdf ? 'picture_as_pdf' : 'sync'}
+                      {p.pdf ? 'picture_as_pdf' : (p.n?.toLowerCase().endsWith('.doc') || p.n?.toLowerCase().endsWith('.docx')) ? 'description' : (p.n?.toLowerCase().endsWith('.txt') || p.n?.toLowerCase().endsWith('.md')) ? 'article' : 'insert_drive_file'}
                     </span>
                   )}
                   {p.q === 'dark' && (

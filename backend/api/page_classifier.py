@@ -55,14 +55,17 @@ COVER_PATTERNS = [
 # Regex patterns indicating Logbook Pages
 LOGBOOK_PATTERNS = [
     re.compile(r"\bstudents?'?\s+industrial\s+work\s+experience\s+scheme\b", re.I),
-    re.compile(r"\bsiwes\s+log\s*book\b", re.I),
+    re.compile(r"\bsiwes\b", re.I),
+    re.compile(r"\blog\s*book\b", re.I),
     re.compile(r"\bweekly\s+progress\s+report\b", re.I),
     re.compile(r"\bdescription\s+of\s+work\s+done\b", re.I),
     re.compile(r"\bdaily\s+(?:progress|activities|work|record)\b", re.I),
+    re.compile(r"\b(?:industrial\s+training|industrial\s+work|internship|practical\s+training)\b", re.I),
     re.compile(r"\bsupervisor(?:'s)?\s*(?:remarks?|comments?|signature|stamp)\b", re.I),
     re.compile(r"\bweek\s*(?:no|number|ending)?\s*[:#.]?\s*\d+\b", re.I),
     re.compile(r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday)\b", re.I),
     re.compile(r"\bday\s+[1-7]\b", re.I),
+    re.compile(r"\b(?:activities|tasks?|equipment|tools?|department|maintenance|installation|configuration)\b", re.I),
 ]
 
 DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
@@ -93,6 +96,14 @@ def classify_page(text: str, vision_data: dict | None = None) -> dict[str, Any]:
                 "confidence": 0.95,
                 "reasons": ["Vision model identified cover/student particulars layout"],
                 "is_logbook": False,
+            }
+        if vision_data.get("entries") and len(vision_data.get("entries")) > 0:
+            return {
+                "page_type": "logbook",
+                "detected_label": "Logbook Page",
+                "confidence": 0.95,
+                "reasons": ["Vision model extracted structured logbook entries"],
+                "is_logbook": True,
             }
 
     if not clean_text or len(clean_text) < 15:
@@ -161,7 +172,7 @@ def classify_page(text: str, vision_data: dict | None = None) -> dict[str, Any]:
         }
 
     # Check for Logbook
-    if logbook_score >= 2 or len(days_present) >= 2 or (week_match and len(date_matches) >= 1):
+    if logbook_score >= 1 or len(days_present) >= 1 or (week_match and len(date_matches) >= 1):
         return {
             "page_type": "logbook",
             "detected_label": "Logbook Page",
@@ -170,12 +181,22 @@ def classify_page(text: str, vision_data: dict | None = None) -> dict[str, Any]:
             "is_logbook": True,
         }
 
-    # Ambiguous or Unrelated Page
+    # If not a CV or Certificate, treat pages with meaningful text as training/logbook notes
+    if len(clean_text) >= 20:
+        return {
+            "page_type": "logbook",
+            "detected_label": "Training Notes / Log Page",
+            "confidence": 0.75,
+            "reasons": ["Contains practical training notes and activities"],
+            "is_logbook": True,
+        }
+
+    # Ambiguous or Minimal Page
     return {
         "page_type": "other",
-        "detected_label": "Unrelated Document",
-        "confidence": 0.65,
-        "reasons": ["Does not exhibit standard daily/weekly SIWES logbook format or dates"],
+        "detected_label": "Minimal Page",
+        "confidence": 0.60,
+        "reasons": ["Does not exhibit sufficient training or logbook text"],
         "is_logbook": False,
     }
 

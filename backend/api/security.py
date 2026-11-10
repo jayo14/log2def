@@ -12,6 +12,9 @@ MAGIC_SIGNATURES = {
     'png': [b'\x89PNG\r\n\x1a\n'],
     'jpeg': [b'\xff\xd8\xff'],
     'docx': [b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08'],
+    'doc': [b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'],
+    'bmp': [b'BM'],
+    'tiff': [b'II*\x00', b'MM\x00*'],
 }
 
 MAX_FILE_SIZE_BYTES = 1024 * 1024 * 1024  # 1 GB (supports 500MB+ high-resolution logbooks and scans)
@@ -62,6 +65,14 @@ def validate_file_content(file_obj) -> str:
     if header.startswith(b'RIFF') and len(header) >= 12 and header[8:12] == b'WEBP':
         return 'image'
 
+    # Check BMP or TIFF
+    if any(header.startswith(sig) for sig in MAGIC_SIGNATURES['bmp']) or any(header.startswith(sig) for sig in MAGIC_SIGNATURES['tiff']):
+        return 'image'
+
+    # Check Legacy DOC (OLE Compound Document)
+    if any(header.startswith(sig) for sig in MAGIC_SIGNATURES['doc']):
+        return 'doc'
+
     # Check DOCX (Zip archive containing word/document.xml)
     if any(header.startswith(sig) for sig in MAGIC_SIGNATURES['docx']):
         try:
@@ -75,9 +86,22 @@ def validate_file_content(file_obj) -> str:
         finally:
             file_obj.seek(pos)
 
-    ext = os.path.splitext(file_obj.name)[1].lower()
+    # Check Plain Text / Markdown
+    file_name = getattr(file_obj, 'name', '') or ''
+    ext = os.path.splitext(file_name)[1].lower()
+    if ext in ['.txt', '.text', '.md', '.markdown', '.log']:
+        try:
+            file_obj.seek(0)
+            sample = file_obj.read(4096)
+            file_obj.seek(pos)
+            if b'\x00' not in sample:
+                sample.decode('utf-8', errors='replace')
+                return 'text'
+        except Exception:
+            pass
+
     raise ValidationError(
-        f"File content does not match allowed document types (PDF, JPG, PNG, WEBP, DOCX). "
+        f"File content does not match allowed document types (PDF, Word DOCX/DOC, TXT/MD, JPG, PNG, WEBP). "
         f"Detected signature does not validate for extension '{ext}'."
     )
 

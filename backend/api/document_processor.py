@@ -486,15 +486,6 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
 
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     current_week = fallback_week
-    
-    # Check if a week header exists
-    detected_week = extract_week_from_string(text)
-    if detected_week:
-        current_week = detected_week
-    elif parsed_date and project.training_start_date:
-        current_week = max(1, ((parsed_date - project.training_start_date).days // 7) + 1)
-    else:
-        current_week = fallback_week
 
     # Extract date if mentioned e.g. 2024-06-10 or 10/06/2024 or June 10, 2024
     parsed_date = None
@@ -504,6 +495,15 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
             parsed_date = datetime.strptime(date_match.group(1).replace('/', '-'), '%Y-%m-%d').date()
         except Exception:
             parsed_date = None
+    
+    # Check if a week header exists
+    detected_week = extract_week_from_string(text)
+    if detected_week:
+        current_week = detected_week
+    elif parsed_date and project.training_start_date:
+        current_week = max(1, ((parsed_date - project.training_start_date).days // 7) + 1)
+    else:
+        current_week = fallback_week
 
     # Check for detectable tools explicitly in text
     tool_keywords = [
@@ -613,7 +613,7 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
             source_page=page_instance,
             week_number=current_week,
             entry_date=entry_date,
-            day_of_week="",
+            day_of_week=validated.get('day_of_week') or "Weekly Log",
             raw_text=sanitize_privacy_identifiers(validated['raw_text']),
             verified_text=sanitize_privacy_identifiers(validated['verified_text']),
             activity_summary=sanitize_privacy_identifiers(validated['activity_summary']),
@@ -647,7 +647,30 @@ def process_source_document(doc_id: int):
     doc.status = 'processing'
     doc.save(update_fields=['status'])
 
-    file_path = doc.file.path if doc.file else None
+    file_path = None
+    if doc.file:
+        try:
+            file_path = doc.file.path
+        except Exception:
+            file_path = None
+
+    temp_download_path = None
+    if not file_path or not os.path.exists(file_path):
+        if doc.file:
+            from .storage import download_object
+            try:
+                content = download_object(doc.file.name)
+                if content:
+                    import tempfile
+                    ext = os.path.splitext(doc.original_filename or "")[1] or f".{doc.file_type}"
+                    tf = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+                    tf.write(content)
+                    tf.flush()
+                    tf.close()
+                    file_path = tf.name
+                    temp_download_path = tf.name
+            except Exception as d_err:
+                logger.warning(f"Could not download file {doc.file.name} from storage: {d_err}")
     
     try:
         from .completeness import check_project_completeness
@@ -693,8 +716,13 @@ def process_source_document(doc_id: int):
                 trace_ocr_captured = False
                 page_fallback_week = filename_week or 1
 
-                # If text is too short or doesn't have structure, rasterize and run multimodal vision
-                if len(text) < 50:
+                words = text.split()
+                has_daily_logs = any(d in text.lower() for d in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'week'])
+                has_images = len(page.get_images()) > 0
+
+                # If text is short, lacks daily structures, or page contains scan images: rasterize and run multimodal vision
+                needs_vision_ocr = len(words) < 35 or (has_images and not has_daily_logs) or (len(words) < 120 and not has_daily_logs)
+                if needs_vision_ocr:
                     pix = page.get_pixmap(dpi=150)
                     temp_img_path = f"{file_path}_p{page_num}.png"
                     if trace_dir is not None:
@@ -757,7 +785,7 @@ def process_source_document(doc_id: int):
                 page_label = classification.get("detected_label", "Page")
                 extracted_page.notes = f"{notes} ({page_label})" if notes else page_label
 
-                if page_type == "other":
+                if page_type == "other" and page_label in ["Curriculum Vitae / Resume", "Certificate of Completion / Award"]:
                     extracted_page.status = 'completed'
                     extracted_page.save(update_fields=['status', 'notes'])
                     continue
@@ -931,7 +959,7 @@ def process_source_document(doc_id: int):
             page_label = classification.get("detected_label", "Page")
             extracted_page.notes = f"{notes} ({page_label})" if notes else page_label
 
-            if page_type == "other":
+            if page_type == "other" and page_label in ["Curriculum Vitae / Resume", "Certificate of Completion / Award"]:
                 extracted_page.status = 'completed'
                 extracted_page.save(update_fields=['status', 'notes'])
             elif page_type == "cover_or_details":
@@ -1059,7 +1087,84 @@ def process_source_document(doc_id: int):
                 is_reviewed=False
             )
             if full_text:
-                extract_logbook_entries_from_text(doc.project, extracted_page, full_text)
+                extract_logbook_entries_from_text(doc.project, extracted_page, full_text, fallback_week=filename_week or 1)
+
+        elif doc.file_type in ('text', 'txt') and file_path and os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                full_text = f.read().strip()
+            
+            doc.page_count = 1
+            doc.save(update_fields=['page_count'])
+
+            extracted_page = ExtractedPage.objects.create(
+                document=doc,
+                page_number=1,
+                page_index=doc.page_index,
+                extracted_text=full_text,
+                confidence_score=1.0,
+                status='completed',
+                notes='Direct text extraction',
+                is_reviewed=False
+            )
+            if full_text:
+                extract_logbook_entries_from_text(doc.project, extracted_page, full_text, fallback_week=filename_week or 1)
+
+        elif doc.file_type == 'doc' and file_path and os.path.exists(file_path):
+            import subprocess
+            import tempfile
+            converted_docx = None
+            try:
+                temp_dir = tempfile.mkdtemp()
+                cmd = ['soffice', '--headless', '--convert-to', 'docx', file_path, '--outdir', temp_dir]
+                subprocess.run(cmd, check=True, timeout=30, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                base = os.path.splitext(os.path.basename(file_path))[0]
+                potential_docx = os.path.join(temp_dir, f"{base}.docx")
+                if os.path.exists(potential_docx):
+                    converted_docx = potential_docx
+            except Exception as se:
+                logger.warning(f"Failed to convert legacy doc with soffice: {se}")
+
+            full_text = ""
+            if converted_docx and os.path.exists(converted_docx):
+                try:
+                    doc_obj = DocxDocument(converted_docx)
+                    paragraphs = [p.text.strip() for p in doc_obj.paragraphs if p.text.strip()]
+                    full_text = '\n\n'.join(paragraphs)
+                    table_texts = []
+                    for table in doc_obj.tables:
+                        for row in table.rows:
+                            row_text = ' | '.join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                            if row_text:
+                                table_texts.append(row_text)
+                    if table_texts:
+                        full_text += '\n\nTable Data:\n' + '\n'.join(table_texts)
+                except Exception as de:
+                    logger.warning(f"Error reading converted docx: {de}")
+
+            if not full_text:
+                try:
+                    with open(file_path, 'rb') as f:
+                        raw_bytes = f.read()
+                    found_words = re.findall(rb'[\x20-\x7e\n\r\t]{4,}', raw_bytes)
+                    full_text = "\n".join(w.decode('utf-8', errors='ignore') for w in found_words)
+                except Exception:
+                    full_text = ""
+
+            doc.page_count = 1
+            doc.save(update_fields=['page_count'])
+
+            extracted_page = ExtractedPage.objects.create(
+                document=doc,
+                page_number=1,
+                page_index=doc.page_index,
+                extracted_text=full_text,
+                confidence_score=0.95 if converted_docx else 0.70,
+                status='completed',
+                notes='Word document (.doc) extraction',
+                is_reviewed=False
+            )
+            if full_text:
+                extract_logbook_entries_from_text(doc.project, extracted_page, full_text, fallback_week=filename_week or 1)
 
         elif doc.file_type == 'note':
             page = ExtractedPage.objects.create(
@@ -1076,6 +1181,13 @@ def process_source_document(doc_id: int):
                 extract_logbook_entries_from_text(doc.project, page, doc.error_message)
             doc.error_message = ""
 
+        # Clean up temporary downloaded file if one was created
+        if temp_download_path and os.path.exists(temp_download_path):
+            try:
+                os.remove(temp_download_path)
+            except OSError:
+                pass
+
         # Run completeness check on project
         check_project_completeness(doc.project)
 
@@ -1089,6 +1201,11 @@ def process_source_document(doc_id: int):
         return True
 
     except Exception as e:
+        if 'temp_download_path' in locals() and temp_download_path and os.path.exists(temp_download_path):
+            try:
+                os.remove(temp_download_path)
+            except OSError:
+                pass
         doc.status = 'error'
         doc.error_message = str(e)
         doc.save(update_fields=['status', 'error_message'])
