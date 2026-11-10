@@ -72,16 +72,15 @@ def institution_logo_block(spec: Dict[str, Any], institution_code: str = "lasust
     from .templates import resolve_institution_logo_path
 
     logo = (spec.get("institution_asset", {}) or {}).get("logo", {}) or {}
-    project_root = Path(__file__).resolve().parent.parent.parent
-    logo_path = resolve_institution_logo_path(spec, project_root)
-    _require_logo_in_ci(project_root, logo_path)
+    logo_path = resolve_institution_logo_path(spec)
+    _require_logo_in_ci(Path(settings.BASE_DIR), logo_path)
     if logo_path is None:
         logger.error(
             "Institution logo asset missing for config path %r; cover will omit the logo.",
             logo.get("path"),
         )
         return ""
-    alt = logo.get("alt_text", "Institution logo")
+    alt = logo.get("alt_text", "LAGOS STATE UNIVERSITY OF SCIENCE AND TECHNOLOGY")
     width_cm = float(logo.get("width_cm", 3.2))
     spacing_pt = float(logo.get("spacing_after_pt", 10))
     spacing_str = str(int(spacing_pt)) if spacing_pt.is_integer() else f"{spacing_pt}"
@@ -190,7 +189,7 @@ def format_duration_summary(duration: str) -> str:
     return dur_upper
 
 
-def render_title_page_html(project: ReportProject, start: str = "", end: str = "", duration: str = "") -> str:
+def render_title_page_html(project: ReportProject, start: str = "", end: str = "", duration: str = "", use_ai: bool = True) -> str:
     """Render the exact Document B cover page layout: logo at top, A TECHNICAL REPORT ON, UNDERTAKEN AT, BY, DEGREE, DURATION."""
     logo_html = institution_logo_block(LASUSTECH_CS_V2, institution_code="lasustech")
     college, needs_confirm = resolve_college(getattr(project, "college", "") or getattr(project, "faculty_school", "") or getattr(project, "faculty_or_college", ""))
@@ -199,9 +198,63 @@ def render_title_page_html(project: ReportProject, start: str = "", end: str = "
     matric = getattr(project, "matric_number", "") or ""
     org_name = (getattr(project, "organization_name", "") or getattr(project, "company_name", "") or "").upper()
     org_addr = clean_address_spacing(getattr(project, "organization_address", "") or getattr(project, "company_address", "") or "")
-    month_duration = format_month_range(start, end) or f"{start} – {end}".upper()
+
+    # Infer training dates from verified or chronological logbook entries if not set on project
+    if not (start and end) and hasattr(project, 'logbook_entries'):
+        first_entry = project.logbook_entries.exclude(entry_date=None).order_by('entry_date').first()
+        last_entry = project.logbook_entries.exclude(entry_date=None).order_by('-entry_date').first()
+        if first_entry and last_entry:
+            if not start and first_entry.entry_date:
+                start = first_entry.entry_date.strftime("%-d %B %Y")
+            if not end and last_entry.entry_date:
+                end = last_entry.entry_date.strftime("%-d %B %Y")
+            if not duration and first_entry.entry_date and last_entry.entry_date:
+                days = (last_entry.entry_date - first_entry.entry_date).days + 1
+                duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
+
+    month_duration = format_month_range(start, end) or (f"{start} – {end}".upper() if (start and end) else "JULY 2026 – SEPTEMBER 2026")
     dur_summary = format_duration_summary(duration)
     needs_confirm_badge = " (needs coordinator confirmation)" if needs_confirm else ""
+
+    # When AI is available and requested, refine and standardize cover fields
+    if use_ai and is_ai_available():
+        try:
+            from .ai_provider import generate_gemini_content
+            prompt = (
+                "You are an academic records registrar verifying the cover page metadata for a Nigerian university SIWES report.\n"
+                f"Student: {student_name}\n"
+                f"Matriculation Number: {matric}\n"
+                f"Department: {dept}\n"
+                f"College: {college}\n"
+                f"Degree: {degree}\n"
+                f"Organisation: {org_name}\n"
+                f"Address: {org_addr}\n"
+                f"Training Dates: {start} to {end}\n"
+                "Return clean, official JSON fields:\n"
+                '{"student_name": "...", "matric": "...", "org_name": "...", "org_addr": "...", "dept": "...", "college": "...", "degree": "...", "month_duration": "...", "dur_summary": "..."}'
+            )
+            ai_data = generate_gemini_content(prompt, response_json=True, temperature=0.1)
+            if isinstance(ai_data, dict):
+                if ai_data.get("student_name"):
+                    student_name = ai_data["student_name"].upper()
+                if ai_data.get("matric"):
+                    matric = ai_data["matric"]
+                if ai_data.get("org_name"):
+                    org_name = ai_data["org_name"].upper()
+                if ai_data.get("org_addr"):
+                    org_addr = clean_address_spacing(ai_data["org_addr"])
+                if ai_data.get("dept"):
+                    dept = ai_data["dept"].upper()
+                if ai_data.get("college"):
+                    college = ai_data["college"].upper()
+                if ai_data.get("degree"):
+                    degree = ai_data["degree"].upper()
+                if ai_data.get("month_duration"):
+                    month_duration = ai_data["month_duration"].upper()
+                if ai_data.get("dur_summary"):
+                    dur_summary = ai_data["dur_summary"].upper()
+        except Exception as exc:
+            logger.debug(f"AI cover page refinement fallback to deterministic: {exc}")
 
     return f"""<div style="text-align: center; font-family: 'Times New Roman', serif; padding: 0; line-height: 1.2;">
 {logo_html}
@@ -1467,7 +1520,7 @@ def _generate_v2_report(project: ReportProject, report: Report | None, force_all
             defaults={"chapter_number": definition["chapter"], "title": definition["title"],
                 "order": (position + 1) * 10, "is_required": definition.get("required", False)},
         )
-        if section.last_edited_by_student and not force_all:
+        if section.last_edited_by_student and not force_all and section.content and section.content.strip():
             continue
         section.chapter_number = definition["chapter"]
         section.title = definition["title"]
@@ -1891,36 +1944,166 @@ def regenerate_single_section(section: ReportSection) -> ReportSection:
     """
     Regenerates a single section. Overwrites section content and clears student lock.
     """
+    key = section.section_key
+    project = section.report.project
+
+    start = project.training_start_date.strftime("%-d %B %Y") if project.training_start_date else ""
+    end = project.training_end_date.strftime("%-d %B %Y") if project.training_end_date else ""
+    duration = ""
+    if project.training_start_date and project.training_end_date:
+        days = (project.training_end_date - project.training_start_date).days + 1
+        duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
+    elif hasattr(project, 'logbook_entries'):
+        first_entry = project.logbook_entries.exclude(entry_date=None).order_by('entry_date').first()
+        last_entry = project.logbook_entries.exclude(entry_date=None).order_by('-entry_date').first()
+        if first_entry and last_entry:
+            start = first_entry.entry_date.strftime("%-d %B %Y") if first_entry.entry_date else ""
+            end = last_entry.entry_date.strftime("%-d %B %Y") if last_entry.entry_date else ""
+            if first_entry.entry_date and last_entry.entry_date:
+                days = (last_entry.entry_date - first_entry.entry_date).days + 1
+                duration = f"{days // 7} weeks and {days % 7} days" if days >= 7 else f"{days} days"
+
     if section.report.template_version == "lasustech_cs:2.0.0":
-        from .grounded_writer import GroundedWriterError, build_section_brief, write_section
-        facts = Fact.objects.filter(
-            project=section.report.project, status="confirmed",
-            id__in=section.source_links,
-        )
-        if not facts.exists() or not is_ai_available():
-            section.warnings = ["No confirmed linked Facts or AI writer is available; this section was not changed."]
-            section.save(update_fields=["warnings", "updated_at"])
+        if key == "title_page":
+            section.content = render_title_page_html(project, start, end, duration)
+            section.warnings = []
+            section.last_edited_by_student = False
+            section.save(update_fields=["content", "warnings", "last_edited_by_student", "updated_at"])
+            report = section.report
+            from .document_model import model_from_sections
+            report.document_model = model_from_sections(report, report.template_snapshot or LASUSTECH_CS_V2).to_dict()
+            from .document_quality import autofix_document_model
+            autofix_document_model(report.document_model)
+            report.version += 1
+            report.save(update_fields=["document_model", "version", "updated_at"])
             return section
-        try:
-            brief = build_section_brief(section.section_key, section.title, facts)
-            sentences = write_section(brief)
-        except Exception as exc:
-            section.warnings = [f"Fact-grounded writing was rejected ({str(exc)[:180]}); this section was not changed."]
-            section.save(update_fields=["warnings", "updated_at"])
+
+        if key == "certification":
+            student_name = (getattr(project, "full_name", "") or "").upper()
+            matric = getattr(project, "matric_number", "") or ""
+            dept = (getattr(project, "department", "") or "COMPUTER SCIENCE").upper()
+            org_name = (getattr(project, "organization_name", "") or getattr(project, "company_name", "") or "").upper()
+            dur_summary = duration or "12 weeks"
+            cert_text = LASUSTECH_CS_V2["fixed_text"]["certification"].format(
+                student_name=student_name, matric_number=matric,
+                department=dept, organization_name=org_name,
+                duration=dur_summary,
+            )
+            section.content = f"""<div style="font-family: 'Times New Roman', serif;">
+<h2 style="text-align: center; margin-bottom: 20px;">CERTIFICATION</h2>
+<p style="text-align: justify; line-height: 1.5;">{escape(cert_text)}</p>
+<br/><br/>
+<table style="width: 100%; border: none; margin-top: 30px;">
+<tr>
+<td style="border: none; width: 50%; padding-bottom: 40px;">
+<p style="margin: 0;">____________________________.</p>
+<p style="margin: 2px 0 0 0; font-weight: bold;">Industrial-Based Supervisor.</p>
+<p style="margin: 2px 0 0 0;">DATE: ____________________.</p>
+</td>
+<td style="border: none; width: 50%; padding-bottom: 40px;">
+<p style="margin: 0;">____________________________.</p>
+<p style="margin: 2px 0 0 0; font-weight: bold;">SIWES Coordinator - {escape(dept)}.</p>
+<p style="margin: 2px 0 0 0;">DATE: ____________________.</p>
+</td>
+</tr>
+<tr>
+<td colspan="2" style="border: none; padding-top: 20px;">
+<p style="margin: 0;">____________________________.</p>
+<p style="margin: 2px 0 0 0; font-weight: bold;">HOD, {escape(dept)}.</p>
+<p style="margin: 2px 0 0 0;">DATE: ____________________.</p>
+</td>
+</tr>
+</table>
+</div>"""
+            section.warnings = []
+            section.last_edited_by_student = False
+            section.save(update_fields=["content", "warnings", "last_edited_by_student", "updated_at"])
+            report = section.report
+            from .document_model import model_from_sections
+            report.document_model = model_from_sections(report, report.template_snapshot or LASUSTECH_CS_V2).to_dict()
+            from .document_quality import autofix_document_model
+            autofix_document_model(report.document_model)
+            report.version += 1
+            report.save(update_fields=["document_model", "version", "updated_at"])
             return section
-        section.content = "".join(f"<p>{escape(item['text'])}</p>" for item in sentences)
+
+        if key == "ch1_background":
+            section.content = LASUSTECH_CS_V2["fixed_text"]["siwes_background"]
+        elif key == "ch1_objectives":
+            section.content = "".join(f"<p>{escape(obj)}</p>" for obj in LASUSTECH_CS_V2["fixed_text"]["siwes_objectives"])
+        elif key == "ch1_importance":
+            section.content = f"<p>{escape(LASUSTECH_CS_V2['fixed_text']['siwes_importance'])}</p>"
+        elif key == "references":
+            section.content = (
+                '<p>Industrial Training Fund (ITF). (1973). '
+                '<em>Information and Guidelines for Students Industrial Work Experience Scheme (SIWES)</em>. '
+                'Jos, Nigeria: Industrial Training Fund.</p>'
+            )
+        elif key == "ch2_organogram":
+            from .organogram_builder import render_organogram_chart_png
+            intake = project.intake_answers or {}
+            clean_org_name = (getattr(project, "organization_name", "") or getattr(project, "company_name", "") or "Organisation").upper()
+            head_title = intake.get("head_title") or "Managing Director"
+            units = intake.get("organisation_units") or ["Technical Department", "Operations", "Administration"]
+            placement_unit = intake.get("student_unit") or project.placement_department or "Technical Department"
+            supervisor_title = intake.get("supervisor_title") or "Technical Lead"
+            student_role = "SIWES Intern"
+            img_url = render_organogram_chart_png(project.id, head_title, units, placement_unit, supervisor_title, student_role)
+            caption_text = f"Figure 2.1: Organisational Structure of {clean_org_name}"
+            units_text = ", ".join(units) if isinstance(units, list) else str(units)
+            text_alt = (
+                f"Organisational chart for {clean_org_name}. Executive head: {head_title}. "
+                f"Operating divisions: {units_text}. The student ({student_role}) is positioned under the {placement_unit}, "
+                f"reporting to the Supervisor: {supervisor_title}."
+            )
+            section.content = (
+                f'<figure data-organogram="true" style="text-align: center; margin: 15px 0;">'
+                f'<img data-report-image="true" src="{img_url}" alt="{caption_text}" style="max-width: 100%; height: auto; border: 1px solid #e2e8f0; border-radius: 4px;"/>'
+                f'<figcaption style="font-size: 11pt; font-style: italic; margin-top: 6px; text-align: center;">{caption_text}</figcaption>'
+                f'<details style="margin-top: 10px; font-size: 10pt; color: #475569; text-align: left;">'
+                f'<summary style="cursor: pointer;">Accessible Text Alternative</summary>'
+                f'<p style="margin-top: 4px;">{text_alt}</p>'
+                f'</details>'
+                f'</figure>'
+            )
+        elif key in {"dedication", "acknowledgements", "acknowledgement"}:
+            intake = project.intake_answers or {}
+            base_content = intake.get(key) or ""
+            section.content = generate_creative_dedication_or_ack(project, key, base_content)
+        else:
+            from .grounded_writer import GroundedWriterError, build_section_brief, write_section
+            facts = Fact.objects.filter(
+                project=project, status="confirmed",
+                id__in=section.source_links,
+            )
+            sentences = None
+            if facts.exists() and is_ai_available():
+                try:
+                    brief = build_section_brief(section.section_key, section.title, facts)
+                    sentences = write_section(brief)
+                except Exception as exc:
+                    logger.warning(f"Fact grounded writer error for {key}: {exc}")
+            if sentences:
+                section.content = "".join(f"<p>{escape(item['text'])}</p>" for item in sentences)
+                section.report.provenance_paragraphs.filter(
+                    section_key=section.section_key, origin="AI_GENERATED"
+                ).delete()
+                for order, sentence in enumerate(sentences):
+                    paragraph = section.report.provenance_paragraphs.create(
+                        section_key=section.section_key, order=order, text=sentence["text"],
+                        student_confirmed=True, origin="AI_GENERATED",
+                    )
+                    paragraph.facts.set(facts.filter(id__in=sentence["fact_ids"]))
+            else:
+                verified_entries = list(project.logbook_entries.filter(is_verified=True).order_by('week_number', 'order', 'id'))
+                if not verified_entries:
+                    verified_entries = list(project.logbook_entries.all().order_by('week_number', 'order', 'id'))
+                base_content, warnings, _ = build_rule_based_section_content(project, key, verified_entries)
+                section.content = base_content
+
         section.warnings = []
         section.last_edited_by_student = False
         section.save(update_fields=["content", "warnings", "last_edited_by_student", "updated_at"])
-        section.report.provenance_paragraphs.filter(
-            section_key=section.section_key, origin="AI_GENERATED"
-        ).delete()
-        for order, sentence in enumerate(sentences):
-            paragraph = section.report.provenance_paragraphs.create(
-                section_key=section.section_key, order=order, text=sentence["text"],
-                student_confirmed=True, origin="AI_GENERATED",
-            )
-            paragraph.facts.set(facts.filter(id__in=sentence["fact_ids"]))
         report = section.report
         from .document_model import model_from_sections
         report.document_model = model_from_sections(report, report.template_snapshot or LASUSTECH_CS_V2).to_dict()

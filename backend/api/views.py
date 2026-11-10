@@ -925,8 +925,7 @@ class InstitutionLogoView(views.APIView):
         import hashlib
         from .templates import get_template_spec, resolve_institution_logo_path
         spec = get_template_spec(code=institution_code, version="1.0.0")
-        project_root = Path(settings.BASE_DIR).parent
-        abs_path = resolve_institution_logo_path(spec, project_root)
+        abs_path = resolve_institution_logo_path(spec)
         if abs_path is None or not abs_path.exists():
             raise Http404("Logo asset not found on disk.")
         
@@ -1537,14 +1536,21 @@ class SectionUpdateView(views.APIView):
 
         content = request.data.get('content')
         if content is not None:
-            section.content = sanitize_html(content)
-            section.last_edited_by_student = True
+            cleaned = sanitize_html(content).strip()
+            # If student or autosave sends empty content for a required section,
+            # regenerate canonical content so report quality gate does not produce an empty blocker
+            if not cleaned and section.is_required:
+                regenerate_single_section(section)
+                section.refresh_from_db()
+            else:
+                section.content = sanitize_html(content)
+                section.last_edited_by_student = True
+                section.save()
         
         title = request.data.get('title')
         if title is not None:
             section.title = title
-
-        section.save()
+            section.save(update_fields=['title'])
         report = section.report
         if content is not None and report.template_version == "lasustech_cs:2.0.0":
             class ParagraphTextParser(HTMLParser):

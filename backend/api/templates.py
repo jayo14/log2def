@@ -387,8 +387,42 @@ def get_section_requirements(code: str = "lasustech_cs", version: str = "2.0.0")
 
 
 
-def resolve_institution_logo_path(spec: Dict[str, Any], project_root: Path) -> Path | None:
-    """Resolve configured logo path, falling back to common asset names.
+def get_asset_roots(preferred: Path | None = None) -> list[Path]:
+    """Return ordered candidate root paths for resolving asset files across local, container, and test environments."""
+    roots: list[Path] = []
+    if preferred:
+        roots.append(Path(preferred).resolve())
+        roots.append(Path(preferred).resolve().parent)
+
+    try:
+        from django.conf import settings
+        if settings.configured and hasattr(settings, "BASE_DIR"):
+            base_dir = Path(settings.BASE_DIR).resolve()
+            roots.append(base_dir)          # e.g. /app or /path/to/backend
+            roots.append(base_dir.parent)   # e.g. /path/to/log2def
+    except Exception:
+        pass
+
+    here = Path(__file__).resolve()
+    roots.append(here.parent.parent)        # backend/
+    roots.append(here.parent.parent.parent) # repo root
+    roots.append(Path("/app"))              # standard docker workdir
+
+    seen = set()
+    unique_roots: list[Path] = []
+    for r in roots:
+        try:
+            resolved = r.resolve()
+            if str(resolved) not in seen and str(resolved) != "/":
+                seen.add(str(resolved))
+                unique_roots.append(resolved)
+        except OSError:
+            continue
+    return unique_roots
+
+
+def resolve_institution_logo_path(spec: Dict[str, Any], project_root: Path | None = None) -> Path | None:
+    """Resolve configured logo path, falling back to common asset names and candidate roots.
 
     Returns an absolute path to an existing PNG/SVG asset, or None if missing.
     Does not modify assets. Students cannot replace the template-configured logo.
@@ -396,15 +430,18 @@ def resolve_institution_logo_path(spec: Dict[str, Any], project_root: Path) -> P
     logo = (spec.get("institution_asset", {}) or {}).get("logo", {}) or {}
     configured = logo.get("path")
     candidates: list[Path] = []
-    if configured:
-        candidates.append((project_root / configured).resolve())
-    # Canonical/fallback names under the same institution directory.
-    inst_dir = project_root / "assets" / "institutions" / "lasustech"
-    for name in ("logo.png", "logo.web.png", "logo.svg"):
-        candidates.append((inst_dir / name).resolve())
+    roots = get_asset_roots(project_root)
+
+    for root in roots:
+        if configured:
+            candidates.append((root / configured).resolve())
+        inst_dir = root / "assets" / "institutions" / "lasustech"
+        for name in ("logo.png", "logo.web.png", "logo.svg"):
+            candidates.append((inst_dir / name).resolve())
+
     for cand in candidates:
         try:
-            if cand.exists() and cand.is_file() and str(cand).startswith(str(project_root)):
+            if cand.exists() and cand.is_file():
                 return cand
         except OSError:
             continue

@@ -1,5 +1,9 @@
+import os
 from io import StringIO
 from unittest.mock import patch, MagicMock
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+django.setup()
 from django.test import TestCase, override_settings
 from django.core.management import call_command
 from api.storage import (
