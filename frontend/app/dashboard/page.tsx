@@ -2931,6 +2931,10 @@ export default function DashboardPage() {
               const text = escapeHtml(node.text || '').replace(/\n/g, '<br/>');
               return node.type === 'heading' ? `<h3>${text}</h3>` : `<p>${text}</p>`;
             }
+            if (node.type === 'container') {
+              const text = escapeHtml(node.text || '').replace(/\n/g, '<br/>');
+              return text ? `<div>${text}</div>` : '';
+            }
             if (node.type === 'list') {
               const tag = node.attrs?.ordered ? 'ol' : 'ul';
               return `<${tag}>${(node.children || []).map((item: any) => `<li>${escapeHtml(item.text || '')}</li>`).join('')}</${tag}>`;
@@ -2978,18 +2982,18 @@ export default function DashboardPage() {
             const contentHtml = rawSec?.content || nodeHtml;
 
             if (isPrelim) {
-              if (section.key === 'title_page') {
+              const pLabel = romanNumerals[romanIdx] || `${romanIdx + 1}`;
+              romanIdx++;
+              if (section.key === 'title_page' || section.key === 'cover') {
                 rows.push({
-                  t: 'Title Page (Cover)',
+                  t: section.title || 'Title Page',
                   h: contentHtml,
                   p: 1,
-                  l: '', // Cover page has no printed page number
+                  l: pLabel,
                 });
                 return;
               }
 
-              const pLabel = romanNumerals[romanIdx] || `${romanIdx + 1}`;
-              romanIdx++;
               const hasHeading = contentHtml.includes('<h1') || contentHtml.includes('<h2');
               const titleHtml = hasHeading ? '' : `<h2>${escapeHtml(section.title.toUpperCase())}</h2>`;
               rows.push({
@@ -3485,7 +3489,7 @@ export default function DashboardPage() {
                   <p className="pl2">
                     {q.t} ·{' '}
                     {q.l
-                      ? `page ${q.l}${q.p > 1 && !isNaN(Number(q.l)) ? ` (continues to ${+q.l + q.p - 1})` : ''}`
+                      ? `page ${q.l}${!String(q.l).includes('–') && !String(q.l).includes('-') && q.p > 1 && !isNaN(Number(q.l)) ? ` (continues to ${Number(q.l) + q.p - 1})` : ''}`
                       : 'Cover (unnumbered)'}
                     {isSectionEmpty && (
                       <span className="chip" style={{ background: '#fee2e2', color: '#b91c1c', marginLeft: '8px', fontSize: '11px', padding: '2px 8px' }}>
@@ -3522,7 +3526,11 @@ export default function DashboardPage() {
                     ) : (
                       <div dangerouslySetInnerHTML={{ __html: q.h }} />
                     )}
-                    {q.l && <div className="pn">Page {q.l}{q.p > 1 ? ` – ${+q.l + q.p - 1}` : ''}</div>}
+                    {q.l && (
+                      <div className="pn">
+                        Page {q.l}{!String(q.l).includes('–') && !String(q.l).includes('-') && q.p > 1 && !isNaN(Number(q.l)) ? ` – ${Number(q.l) + q.p - 1}` : ''}
+                      </div>
+                    )}
                   </div>
                 </React.Fragment>
               );

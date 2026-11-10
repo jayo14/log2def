@@ -65,7 +65,11 @@ def model_from_sections(report, spec: dict[str, Any]) -> ReportDocument:
 
         def handle_starttag(self, tag, attrs):
             attributes = dict(attrs)
-            if tag in {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6"}:
+            if tag == "div":
+                node = DocumentNode(type="container", text="", provenance={}, attrs=attributes)
+                self._append(node)
+                self.stack.append(node)
+            elif tag in {"p", "h1", "h2", "h3", "h4", "h5", "h6"}:
                 node_type = "heading" if tag.startswith("h") else "paragraph"
                 node = DocumentNode(type=node_type, text="", provenance={}, attrs={"level": tag[1:]} if tag.startswith("h") else {})
                 self._append(node)
@@ -87,7 +91,12 @@ def model_from_sections(report, spec: dict[str, Any]) -> ReportDocument:
 
         def handle_data(self, data):
             if self.stack:
-                self.stack[-1].text += data
+                if self.stack[-1].type == "container":
+                    stripped = data.strip()
+                    if stripped:
+                        self.stack[-1].text = f"{self.stack[-1].text} {stripped}".strip() if self.stack[-1].text else stripped
+                else:
+                    self.stack[-1].text += data
             elif data.strip():
                 self.nodes.append(DocumentNode(type="paragraph", text=data.strip(), provenance={}))
 

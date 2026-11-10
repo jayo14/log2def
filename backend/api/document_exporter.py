@@ -486,6 +486,8 @@ def document_node_to_html(node: dict) -> str:
     node_type = node.get("type")
     text = escape(node.get("text", "")).replace("\n", "<br/>")
     children = "".join(document_node_to_html(child) for child in node.get("children", []))
+    if node_type == "container":
+        return f"<div>{children}</div>" if children else (f"<div>{text}</div>" if text else "")
     if node_type == "paragraph":
         return f"<p>{text}{children}</p>"
     if node_type == "heading":
