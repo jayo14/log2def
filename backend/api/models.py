@@ -58,6 +58,15 @@ class ReportProject(models.Model):
     organization_name = models.CharField(max_length=255, blank=True)
     organization_address = models.TextField(blank=True)
     placement_department = models.CharField(max_length=255, blank=True)
+
+    @property
+    def industry_department(self):
+        return self.placement_department or ""
+
+    @industry_department.setter
+    def industry_department(self, value):
+        self.placement_department = value or ""
+
     industry_supervisor_name = models.CharField(max_length=255, blank=True)
     industry_supervisor_title = models.CharField(max_length=255, blank=True)
     academic_supervisor_name = models.CharField(max_length=255, blank=True)

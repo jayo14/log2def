@@ -50,3 +50,38 @@ def test_duties_and_tech_paragraphs_not_flagged_as_repetitive():
     err = validate_intake_answer("duties", text, required=True)
     assert err == ""
 
+
+@pytest.mark.django_db
+def test_guided_intake_get_and_root_health():
+    import uuid
+    from django.contrib.auth.models import User
+    from rest_framework.test import APIClient
+    from api.models import ReportProject
+
+    client = APIClient()
+    # 1. Test root health check
+    res_root = client.get('/')
+    assert res_root.status_code == 200
+    assert res_root.json()['status'] == 'ok'
+
+    # 2. Test HEAD /
+    res_head = client.head('/')
+    assert res_head.status_code == 200
+
+    # 3. Test guided intake GET without industry_department error
+    user = User.objects.create_user(username=f'u_{uuid.uuid4().hex[:8]}', password='password123')
+    try:
+        project = ReportProject.objects.create(
+            user=user,
+            title='SIWES Report',
+            organization_name='Test Org',
+            placement_department='Engineering'
+        )
+        client.force_authenticate(user=user)
+        res_intake = client.get(f'/api/projects/{project.id}/intake/')
+        assert res_intake.status_code == 200
+        data = res_intake.json()
+        assert data['answers']['student_unit'] == 'Engineering'
+    finally:
+        user.delete()
+

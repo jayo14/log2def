@@ -215,6 +215,7 @@ class DefenceSessionSerializer(serializers.ModelSerializer):
 
 
 class ReportProjectSerializer(serializers.ModelSerializer):
+    industry_department = serializers.CharField(source='placement_department', required=False, allow_blank=True)
     source_documents_count = serializers.IntegerField(source='source_documents.count', read_only=True)
     logbook_entries_count = serializers.IntegerField(source='logbook_entries.count', read_only=True)
     has_report = serializers.SerializerMethodField()
@@ -285,6 +286,7 @@ class ReportProjectSerializer(serializers.ModelSerializer):
 
 
 class ReportProjectDetailSerializer(serializers.ModelSerializer):
+    industry_department = serializers.CharField(source='placement_department', required=False, allow_blank=True)
     source_documents = SourceDocumentSerializer(many=True, read_only=True)
     logbook_entries = LogbookEntrySerializer(many=True, read_only=True)
     report = ReportSerializer(read_only=True)

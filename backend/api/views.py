@@ -1005,7 +1005,7 @@ class ReportGenerateView(views.APIView):
         answers = dict(project.guided_intake or {})
         changed = False
         if not answers.get("student_unit"):
-            fallback_unit = project.placement_department or project.industry_department or ""
+            fallback_unit = project.placement_department or getattr(project, "industry_department", "") or ""
             if fallback_unit:
                 answers["student_unit"] = fallback_unit
                 changed = True
@@ -1168,7 +1168,7 @@ class GuidedIntakeView(views.APIView):
         steps = get_section_requirements()["guided_intake"]["steps"]
         answers = dict(project.guided_intake or {})
         if not answers.get("student_unit"):
-            fallback_unit = project.placement_department or project.industry_department or ""
+            fallback_unit = project.placement_department or getattr(project, "industry_department", "") or ""
             if fallback_unit:
                 answers["student_unit"] = fallback_unit
         required_steps = [step for step in steps if step.get("required") and not intake_answer_complete(step, answers)]
@@ -1212,7 +1212,7 @@ class GuidedIntakeView(views.APIView):
             # Auto-synthesize structure narrative and organogram if head and units exist
             head = answers.get("head_title") or project.industry_supervisor_title or ""
             units = answers.get("organisation_units") or []
-            student_unit = answers.get("student_unit") or project.placement_department or project.industry_department or ""
+            student_unit = answers.get("student_unit") or project.placement_department or getattr(project, "industry_department", "") or ""
             if not answers.get("student_unit") and student_unit:
                 answers["student_unit"] = student_unit
             supervisor = answers.get("supervisor_title") or ""
@@ -1265,7 +1265,7 @@ class GuidedIntakeView(views.APIView):
         # Auto-synthesize structure narrative and organogram if head and units exist
         head = answers.get("head_title") or project.industry_supervisor_title or ""
         units = answers.get("organisation_units") or []
-        student_unit = answers.get("student_unit") or project.placement_department or project.industry_department or ""
+        student_unit = answers.get("student_unit") or project.placement_department or getattr(project, "industry_department", "") or ""
         if not answers.get("student_unit") and student_unit:
             answers["student_unit"] = student_unit
         supervisor = answers.get("supervisor_title") or ""

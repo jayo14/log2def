@@ -16,7 +16,8 @@ def health_check(request):
     return JsonResponse({'status': 'ok', 'service': 'log2def-backend'})
 
 urlpatterns = [
-    # Health checks (both root and api prefixes, trailing-slash agnostic)
+    # Health checks (root, /health, /api/health - trailing-slash agnostic)
+    path('', health_check, name='root-health-check'),
     path('health/', health_check, name='health-check'),
     path('health', health_check),
     path('api/health/', health_check, name='api-health-check'),

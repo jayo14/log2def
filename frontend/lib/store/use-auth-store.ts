@@ -56,6 +56,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const res = await authApi.login(credentials);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('log2def_active_project_id');
+        } catch {}
+      }
       set({ user: res.user, token: res.access, isLoading: false, error: null });
       return res;
     } catch (err: any) {
@@ -68,6 +73,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const res = await authApi.register(data);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('log2def_active_project_id');
+        } catch {}
+      }
       set({ user: res.user, token: res.tokens.access, isLoading: false, error: null });
       return res;
     } catch (err: any) {
@@ -78,6 +88,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     removeAuthToken();
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('log2def_active_project_id');
+      } catch {}
+    }
     set({ user: null, token: null, isLoading: false, error: null });
   },
 }));
