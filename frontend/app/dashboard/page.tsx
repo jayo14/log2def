@@ -584,13 +584,17 @@ export default function DashboardPage() {
     }
   };
 
-  // Sync user info on mount
+  // Sync user info on mount without overwriting active project student particulars
   useEffect(() => {
     if (user) {
       const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
       if (name) {
-        setDetails((prev) => ({ ...prev, name }));
-        setDeliveryData((prev) => ({ ...prev, recipientName: name }));
+        setDetails((prev) => {
+          if (prev.name && prev.name !== userFullName) return prev;
+          if (activeProject?.full_name) return prev;
+          return { ...prev, name };
+        });
+        setDeliveryData((prev) => ({ ...prev, recipientName: prev.recipientName || name }));
       }
     }
   }, [user]);
@@ -767,7 +771,7 @@ export default function DashboardPage() {
         // 3. Hydrate project details & source documents
         if (freshProj) {
           const loadedDetails = {
-            name: freshProj.full_name || userFullName,
+            name: freshProj.full_name || '',
             matric: freshProj.matric_number || '',
             dept: freshProj.department || '',
             fac: freshProj.college || freshProj.faculty_school || 'College of Basic Science',
@@ -989,19 +993,19 @@ export default function DashboardPage() {
 
     setDetails((prev) => {
       const next = {
-        name: activeProject.full_name || prev.name || userFullName,
-        matric: activeProject.matric_number || prev.matric || '',
-        dept: activeProject.department || prev.dept || '',
-        fac: activeProject.college || activeProject.faculty_school || prev.fac || 'College of Basic Science',
-        degree: activeProject.degree || prev.degree || '',
-        inst: activeProject.university_name || prev.inst || '',
-        co: activeProject.organization_name || prev.co || '',
-        addr: activeProject.organization_address || prev.addr || '',
-        unit: activeProject.industry_department || prev.unit || '',
-        start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : prev.start,
-        end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : prev.end,
-        sup: activeProject.industry_supervisor_name || prev.sup || '',
-        isup: activeProject.institution_supervisor_name || prev.isup || '',
+        name: activeProject.full_name || '',
+        matric: activeProject.matric_number || '',
+        dept: activeProject.department || '',
+        fac: activeProject.college || activeProject.faculty_school || 'College of Basic Science',
+        degree: activeProject.degree || '',
+        inst: activeProject.university_name || '',
+        co: activeProject.organization_name || '',
+        addr: activeProject.organization_address || '',
+        unit: activeProject.industry_department || '',
+        start: activeProject.training_start_date ? activeProject.training_start_date.slice(0, 10) : '',
+        end: activeProject.training_end_date ? activeProject.training_end_date.slice(0, 10) : '',
+        sup: activeProject.industry_supervisor_name || '',
+        isup: activeProject.institution_supervisor_name || '',
       };
       const isDiff = Object.keys(next).some((k) => (next as any)[k] !== (prev as any)[k]);
       if (!isDiff) return prev;
@@ -2938,8 +2942,14 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
             <div>
               <p style={{ margin: '0 0 4px', fontWeight: 700, color: 'var(--mut)' }}>
-                Hi, {details.name ? details.name.split(' ')[0] : (user?.first_name || user?.username || 'there')}
+                Hi, {user?.first_name || (details.name ? details.name.split(' ')[0] : 'there')}
               </p>
+              {activeProject?.full_name ? (
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--gd)', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span className="ms" style={{ fontSize: '15px' }}>badge</span>
+                  <span>Report for: <b>{activeProject.full_name}</b>{activeProject.matric_number ? ` (${activeProject.matric_number})` : ''}</span>
+                </div>
+              ) : null}
               <h1>
                 Logbook in.
                 <br />
@@ -4088,7 +4098,9 @@ export default function DashboardPage() {
             folder
           </span>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeProject?.title || 'Technical Report'}
+            {activeProject?.full_name
+              ? `${activeProject.full_name} · ${activeProject.title}`
+              : activeProject?.title || 'Technical Report'}
           </span>
           <span className="ms" style={{ fontSize: '15px', color: 'var(--mut)' }}>
             {isProjectDropdownOpen ? 'arrow_drop_up' : 'arrow_drop_down'}
@@ -4206,20 +4218,27 @@ export default function DashboardPage() {
                       }}
                     >
                       <div style={{ minWidth: 0, flex: 1, paddingRight: '8px' }}>
-                        <div
-                          style={{
-                            fontSize: '13.5px',
-                            fontWeight: isActive ? 800 : 600,
-                            color: 'var(--ink)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {proj.title || 'SIWES Technical Report'}
-                        </div>
-                        <div style={{ fontSize: '11.5px', color: 'var(--mut)', marginTop: '2px' }}>
-                          {proj.organization_name || 'No company'} · {statusLabel}
+                        <div>
+                          <div
+                            style={{
+                              fontSize: '13.5px',
+                              fontWeight: isActive ? 800 : 600,
+                              color: 'var(--ink)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {proj.title || 'SIWES Technical Report'}
+                          </div>
+                          {proj.full_name && (
+                            <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gd)', marginTop: '1px' }}>
+                              👤 {proj.full_name}
+                            </div>
+                          )}
+                          <div style={{ fontSize: '11px', color: 'var(--mut)', marginTop: '1px' }}>
+                            {proj.organization_name || 'No company'} · {statusLabel}
+                          </div>
                         </div>
                       </div>
                       {isActive && (
@@ -4555,8 +4574,32 @@ export default function DashboardPage() {
                           </span>
                         )}
                       </div>
-                      <p className="mut" style={{ margin: '4px 0 0', fontSize: '13px' }}>
+                      {proj.full_name && (
+                        <div
+                          style={{
+                            fontSize: '13.5px',
+                            fontWeight: 700,
+                            color: 'var(--gd)',
+                            marginTop: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                          }}
+                        >
+                          <span className="ms" style={{ fontSize: '16px' }}>
+                            person
+                          </span>
+                          <span>{proj.full_name}</span>
+                          {proj.matric_number ? (
+                            <span style={{ color: 'var(--mut)', fontWeight: 500, fontSize: '12px' }}>
+                              · {proj.matric_number}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                      <p className="mut" style={{ margin: '3px 0 0', fontSize: '13px' }}>
                         {proj.organization_name ? `${proj.organization_name} · ` : ''}
+                        {proj.department ? `${proj.department} · ` : ''}
                         {proj.university_name || 'LASUSTECH'}
                       </p>
                     </div>
@@ -4825,7 +4868,7 @@ export default function DashboardPage() {
           background: 'var(--paper)',
           borderRadius: '32px 32px 0 0',
           padding: '12px 20px calc(24px + var(--sb))',
-          maxHeight: '90%',
+          maxHeight: '92%',
           overflowY: 'auto',
           boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.25)',
           animation: 'up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1)',
@@ -4846,7 +4889,7 @@ export default function DashboardPage() {
               Create Technical Report
             </h2>
             <p style={{ fontSize: '12.5px', color: 'var(--mut)', margin: '4px 0 0', lineHeight: 1.4 }}>
-              Each report operates as an independent workspace with its own logbook pages and generated report.
+              Set up a distinct report for yourself or for another student.
             </p>
           </div>
           <button
@@ -4866,26 +4909,32 @@ export default function DashboardPage() {
             e.preventDefault();
             const form = e.currentTarget;
             const formData = new FormData(form);
-            const title = (formData.get('title') as string)?.trim() || 'SIWES Technical Report';
-            const orgName = (formData.get('orgName') as string)?.trim() || '';
+            const fullName = (formData.get('fullName') as string)?.trim() || '';
+            const matric = (formData.get('matric') as string)?.trim() || '';
             const university =
               (formData.get('university') as string)?.trim() ||
               'Lagos State University of Science and Technology';
-            const dept = (formData.get('dept') as string)?.trim() || details.dept || '';
+            const faculty = (formData.get('faculty') as string)?.trim() || 'College of Basic Science';
+            const dept = (formData.get('dept') as string)?.trim() || '';
+            const orgName = (formData.get('orgName') as string)?.trim() || '';
+            const title =
+              (formData.get('title') as string)?.trim() ||
+              (fullName ? `SIWES Report - ${fullName}` : `SIWES Technical Report #${projects.length + 1}`);
 
             setIsCreatingReport(true);
             try {
               const newProj = await createProject({
                 title,
-                organization_name: orgName,
+                full_name: fullName,
+                matric_number: matric,
                 university_name: university,
+                faculty_school: faculty,
+                college: faculty,
                 department: dept,
-                faculty_school: details.fac || 'College of Basic Science',
-                full_name: details.name || userFullName,
-                matric_number: details.matric || '',
+                organization_name: orgName,
               });
               setIsCreateReportModalOpen(false);
-              showToast('New technical report created!');
+              showToast(`New report created${fullName ? ` for ${fullName}` : ''}!`);
               await loadProjectWorkspace(newProj.id, { targetStep: 1 });
               goToFlow(1);
             } catch (err: any) {
@@ -4895,28 +4944,43 @@ export default function DashboardPage() {
             }
           }}
         >
+          <div
+            style={{
+              padding: '10px 12px',
+              borderRadius: '12px',
+              background: 'rgba(6, 107, 77, 0.06)',
+              border: '1px solid rgba(6, 107, 77, 0.18)',
+              marginBottom: '14px',
+              fontSize: '12.5px',
+              color: 'var(--gd)',
+              fontWeight: 600,
+              lineHeight: 1.4,
+            }}
+          >
+            💡 You can manage reports for different students on this account. Each report is completely separate with its own student particulars, logbook scans, and compiled document.
+          </div>
+
           <div className="f" style={{ marginBottom: '14px' }}>
             <label>
-              Report Title <em>*</em>
+              Student / Candidate Full Name <em>*</em>
             </label>
             <input
-              name="title"
+              name="fullName"
               type="text"
-              defaultValue={`SIWES Technical Report ${
-                projects.length > 0 ? `#${projects.length + 1}` : ''
-              }`}
               required
-              placeholder="e.g. SIWES Report - Software Engineering"
+              placeholder="e.g. Babatunde Fashola"
+              autoFocus
             />
           </div>
 
           <div className="f" style={{ marginBottom: '14px' }}>
-            <label>Company / Placement Organization</label>
+            <label>
+              Matriculation / Student ID Number
+            </label>
             <input
-              name="orgName"
+              name="matric"
               type="text"
-              defaultValue={details.co || ''}
-              placeholder="e.g. MainOne Cables, Chevron Nigeria"
+              placeholder="e.g. 210591001"
             />
           </div>
 
@@ -4924,7 +4988,7 @@ export default function DashboardPage() {
             <label>Institution / University</label>
             <select
               name="university"
-              defaultValue={details.inst || 'Lagos State University of Science and Technology'}
+              defaultValue="Lagos State University of Science and Technology"
             >
               {INSTITUTIONS.map((inst) => (
                 <option key={inst} value={inst}>
@@ -4934,13 +4998,44 @@ export default function DashboardPage() {
             </select>
           </div>
 
-          <div className="f" style={{ marginBottom: '18px' }}>
-            <label>Department</label>
+          <div className="f" style={{ marginBottom: '14px' }}>
+            <label>Faculty / College</label>
+            <select name="faculty" defaultValue="College of Basic Science">
+              {COLLEGES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="f" style={{ marginBottom: '14px' }}>
+            <label>Department / Course of Study</label>
             <input
               name="dept"
               type="text"
-              defaultValue={details.dept || ''}
               placeholder="e.g. Computer Science"
+            />
+          </div>
+
+          <div className="f" style={{ marginBottom: '14px' }}>
+            <label>Company / Placement Organization</label>
+            <input
+              name="orgName"
+              type="text"
+              placeholder="e.g. MainOne Cables, Chevron Nigeria"
+            />
+          </div>
+
+          <div className="f" style={{ marginBottom: '18px' }}>
+            <label>Report Title / Reference</label>
+            <input
+              name="title"
+              type="text"
+              defaultValue={`SIWES Technical Report ${
+                projects.length > 0 ? `#${projects.length + 1}` : ''
+              }`}
+              placeholder="e.g. SIWES Report - Software Engineering"
             />
           </div>
 
