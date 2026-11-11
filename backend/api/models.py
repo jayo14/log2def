@@ -612,6 +612,8 @@ class PaymentOrder(models.Model):
             self.transaction_reference = f"L2D_TXN_{uuid.uuid4().hex[:12]}"
         if self.amount and not self.amount_kobo:
             self.amount_kobo = int(self.amount * 100)
+        if self.status == 'paid' and self.order_type in ('digital', 'delivery') and not self.digital_files_unlocked:
+            self.digital_files_unlocked = True
         super().save(*args, **kwargs)
         # Generate stable order_reference now that id is known
         if not self.order_reference:
