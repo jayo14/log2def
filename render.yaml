@@ -28,6 +28,24 @@ services:
         value: "True"
       - key: DJANGO_SECURE_SSL_REDIRECT
         value: "True"
+      - key: AWS_ENDPOINT_URL_S3
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_PUBLIC_URL
+        sync: false
+      - key: SQUAD_SECRET_KEY
+        sync: false
+      - key: SQUAD_PUBLIC_KEY
+        sync: false
+      - key: SQUAD_ENV
+        sync: false
 
 databases:
   - name: log2def-db
