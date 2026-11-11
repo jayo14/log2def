@@ -127,6 +127,17 @@ def render_organogram_chart_png(
     pix = doc[0].get_pixmap(dpi=150)
     pix.save(str(out_png))
 
+    # Upload to S3 bucket if storage is available
+    try:
+        from .storage import upload_object, get_public_url
+        s3_key = f"organograms/organogram_proj_{project_id}.png"
+        if upload_object(s3_key, str(out_png), content_type="image/png"):
+            public_url = get_public_url(s3_key)
+            if public_url:
+                return public_url
+    except Exception:
+        pass
+
     # Return relative path for web and docx embedding
     return f"/media/organograms/organogram_proj_{project_id}.png"
 
