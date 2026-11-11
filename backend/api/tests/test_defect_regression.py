@@ -422,3 +422,38 @@ def test_organogram_media_view_dynamic_generation():
     assert len(api_res.content) > 100
 
 
+def test_data_uri_image_handling_in_html_parser():
+    """Verify SimpleHTMLDocxParser handles data:image/png;base64 URIs without Errno 36 File name too long."""
+    import base64
+    from docx import Document
+    from api.document_exporter import SimpleHTMLDocxParser
+
+    # A minimal 1x1 transparent PNG as base64
+    png_1x1 = b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+    data_uri = f"data:image/png;base64,{png_1x1.decode('ascii')}"
+
+    doc = Document()
+    parser = SimpleHTMLDocxParser(doc)
+
+    # 1. Test data-report-image="true" with huge base64 data URI
+    html_content = f'<p><img data-report-image="true" src="{data_uri}" alt="Figure 1: Test Diagram" /></p>'
+    # Must not raise OSError [Errno 36] File name too long
+    parser.feed(html_content)
+
+    # 2. Test logo-style img tag with base64 data URI
+    html_logo = f'<p><img src="{data_uri}" alt="University Logo" /></p>'
+    parser.feed(html_logo)
+
+    # 3. Test with an actual PIL-generated PNG as base64 data URI
+    from PIL import Image as PILImage
+    import io
+    img = PILImage.new('RGB', (50, 50), color='blue')
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    large_uri = f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+    parser.feed(f'<p><img data-report-image="true" src="{large_uri}" alt="Diagram" /></p>')
+    parser.feed(f'<p><img src="{large_uri}" alt="Logo" /></p>')
+
+
+
+

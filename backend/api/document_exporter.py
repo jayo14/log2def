@@ -120,7 +120,14 @@ class SimpleHTMLDocxParser(HTMLParser):
             abs_path = None
             image_stream = None
 
-            if src.startswith(('http://', 'https://')):
+            if src.startswith(('data:image/', 'data:application/', 'data:')):
+                try:
+                    import base64
+                    header, b64_str = src.split(',', 1)
+                    image_stream = io.BytesIO(base64.b64decode(b64_str))
+                except Exception as exc:
+                    logger.warning("Could not decode base64 report image: %s", exc)
+            elif src.startswith(('http://', 'https://')):
                 try:
                     import requests
                     resp = requests.get(src, timeout=15)
@@ -129,26 +136,75 @@ class SimpleHTMLDocxParser(HTMLParser):
                 except Exception as exc:
                     logger.warning("Could not download remote report image %s: %s", src, exc)
 
-            if image_stream is None:
-                p_cand = Path(src)
-                if p_cand.exists() and p_cand.is_file():
-                    abs_path = p_cand
-                else:
+            if image_stream is None and not src.startswith('data:') and len(src) < 1024:
+                try:
+                    p_cand = Path(src)
+                    if p_cand.exists() and p_cand.is_file():
+                        abs_path = p_cand
+                except OSError:
+                    pass
+                if abs_path is None:
                     clean_src = src.replace('/media/', '', 1).lstrip('/')
                     if hasattr(settings, 'MEDIA_ROOT'):
-                        m_cand = (Path(settings.MEDIA_ROOT) / clean_src).resolve()
-                        if m_cand.exists() and m_cand.is_file():
-                            abs_path = m_cand
+                        try:
+                            m_cand = (Path(settings.MEDIA_ROOT) / clean_src).resolve()
+                            if m_cand.exists() and m_cand.is_file():
+                                abs_path = m_cand
+                        except OSError:
+                            pass
                     if abs_path is None:
                         from .templates import get_asset_roots
                         for root in get_asset_roots():
-                            c = (root / clean_src).resolve()
-                            if c.exists() and c.is_file():
-                                abs_path = c
-                                break
+                            try:
+                                c = (root / clean_src).resolve()
+                                if c.exists() and c.is_file():
+                                    abs_path = c
+                                    break
+                            except OSError:
+                                pass
+
+            # Fallback 1: Try downloading from S3 bucket if missing on local disk
+            if abs_path is None and image_stream is None and not src.startswith('data:') and len(src) < 1024:
+                try:
+                    from .storage import download_object
+                    clean_key = src.replace('/media/', '', 1).lstrip('/')
+                    for candidate_key in [clean_key, f"organograms/{clean_key}", f"media/{clean_key}"]:
+                        s3_bytes = download_object(candidate_key)
+                        if s3_bytes:
+                            image_stream = io.BytesIO(s3_bytes)
+                            break
+                except Exception as s3_err:
+                    logger.warning("Could not download report image from storage: %s", s3_err)
+
+            # Fallback 2: Dynamic synthesis for organogram if missing on disk and S3
+            if abs_path is None and image_stream is None and not src.startswith('data:') and len(src) < 1024:
+                match = re.search(r'organogram_proj_(\d+)\.png', src)
+                if match:
+                    try:
+                        p_id = int(match.group(1))
+                        from .models import ReportProject
+                        proj = ReportProject.objects.filter(id=p_id).first()
+                        if proj:
+                            intake = getattr(proj, 'guided_intake', {}) or {}
+                            if not isinstance(intake, dict):
+                                intake = {}
+                            from .organogram_builder import render_organogram_chart_png
+                            render_organogram_chart_png(
+                                project_id=proj.id,
+                                head_title=intake.get("head_title") or "Managing Director",
+                                units=intake.get("organisation_units") or ["Technical Department", "Operations", "Administration"],
+                                placement_unit=intake.get("student_unit") or proj.placement_department or "Technical Department",
+                                supervisor_title=intake.get("supervisor_title") or "Technical Lead",
+                                student_role="SIWES Intern",
+                            )
+                            org_path = Path(settings.MEDIA_ROOT) / "organograms" / f"organogram_proj_{p_id}.png"
+                            if org_path.exists() and org_path.is_file():
+                                abs_path = org_path
+                    except Exception as synth_err:
+                        logger.warning("Could not synthesize organogram on demand for exporter: %s", synth_err)
 
             if abs_path is None and image_stream is None:
-                logger.warning("Report image missing during export: %s", src)
+                logger.warning("Report image missing during export: %s", src[:64] if src else '')
                 return
 
             from PIL import Image as PILImage
@@ -191,22 +247,28 @@ class SimpleHTMLDocxParser(HTMLParser):
             logo_cfg = self.logo_cfg or {}
             configured_path = logo_cfg.get('path', '')
             roots = get_asset_roots(self.project_root) if hasattr(self, 'project_root') and self.project_root else get_asset_roots()
-            if src.startswith('/api/institutions/') or src.startswith('data:image') or attrs_dict.get('data-src', '').startswith('/api/institutions/'):
+            if (not src.startswith('data:') and len(src) < 1024 and (src.startswith('/api/institutions/') or attrs_dict.get('data-src', '').startswith('/api/institutions/'))):
                 for root in roots:
                     if configured_path:
-                        candidate = (root / configured_path).resolve()
-                        if candidate.exists() and candidate.suffix.lower() != '.svg':
-                            abs_path = str(candidate)
-                            break
+                        try:
+                            candidate = (root / configured_path).resolve()
+                            if candidate.exists() and candidate.suffix.lower() != '.svg':
+                                abs_path = str(candidate)
+                                break
+                        except OSError:
+                            pass
                     inst_dir = root / 'assets' / 'institutions' / 'lasustech'
                     for name in ('logo.png', 'logo.web.png', 'logo.original.png'):
-                        candidate = (inst_dir / name).resolve()
-                        if candidate.exists() and candidate.suffix.lower() != '.svg':
-                            abs_path = str(candidate)
-                            break
+                        try:
+                            candidate = (inst_dir / name).resolve()
+                            if candidate.exists() and candidate.suffix.lower() != '.svg':
+                                abs_path = str(candidate)
+                                break
+                        except OSError:
+                            pass
                     if abs_path:
                         break
-            if abs_path is None and src.startswith('data:image'):
+            if abs_path is None and src.startswith(('data:image', 'data:')):
                 try:
                     import base64
                     import io
@@ -214,18 +276,68 @@ class SimpleHTMLDocxParser(HTMLParser):
                     image_stream = io.BytesIO(base64.b64decode(b64_str))
                     p = self.doc.add_paragraph()
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p.paragraph_format.space_after = Pt(float(logo_cfg.get('spacing_after_pt', 18)))
                     run = p.add_run()
-                    run.add_picture(image_stream, width=Inches(1.26))
+                    width_cm = float(logo_cfg.get('width_cm', 3.2))
+                    run.add_picture(image_stream, width=Cm(width_cm))
+                    expected_alt = logo_cfg.get('alt_text', 'Lagos State University of Science and Technology Logo')
+                    drawing = run._r.find(qn('w:drawing'))
+                    if drawing is not None:
+                        doc_pr = drawing.find('.//' + qn('wp:docPr'))
+                        if doc_pr is not None:
+                            doc_pr.set('descr', expected_alt)
+                            doc_pr.set('title', expected_alt)
                     return
-                except Exception:
-                    pass
-            if abs_path is None:
+                except Exception as b64_err:
+                    logger.warning("Could not decode base64 logo: %s", b64_err)
+
+            if abs_path is None and not src.startswith('data:') and len(src) < 1024:
                 # Fallback: treat src as a direct filesystem path relative to candidate roots.
                 for root in roots:
-                    candidate = (root / src.lstrip('/')).resolve()
-                    if candidate.exists() and candidate.suffix.lower() != '.svg':
-                        abs_path = str(candidate)
-                        break
+                    try:
+                        candidate = (root / src.lstrip('/')).resolve()
+                        if candidate.exists() and candidate.suffix.lower() != '.svg':
+                            abs_path = str(candidate)
+                            break
+                    except OSError:
+                        pass
+
+            if abs_path is None and not src.startswith('data:') and len(src) < 1024:
+                clean_src = src.replace('/media/', '', 1).lstrip('/')
+                if hasattr(settings, 'MEDIA_ROOT'):
+                    try:
+                        m_cand = (Path(settings.MEDIA_ROOT) / clean_src).resolve()
+                        if m_cand.exists() and m_cand.is_file():
+                            abs_path = str(m_cand)
+                    except OSError:
+                        pass
+                if abs_path is None:
+                    try:
+                        from .storage import download_object
+                        for candidate_key in [clean_src, f"organograms/{clean_src}", f"media/{clean_src}"]:
+                            s3_bytes = download_object(candidate_key)
+                            if s3_bytes:
+                                image_stream = io.BytesIO(s3_bytes)
+                                break
+                    except Exception:
+                        pass
+
+            if abs_path is None and image_stream is not None:
+                p = self.doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.space_after = Pt(float(logo_cfg.get('spacing_after_pt', 18)))
+                run = p.add_run()
+                width_cm = float(logo_cfg.get('width_cm', 3.2))
+                run.add_picture(image_stream, width=Cm(width_cm))
+                expected_alt = logo_cfg.get('alt_text', 'Lagos State University of Science and Technology Logo')
+                drawing = run._r.find(qn('w:drawing'))
+                if drawing is not None:
+                    doc_pr = drawing.find('.//' + qn('wp:docPr'))
+                    if doc_pr is not None:
+                        doc_pr.set('descr', expected_alt)
+                        doc_pr.set('title', expected_alt)
+                return
+
             if abs_path is None:
                 # Logo missing: do not render a placeholder; log an error and skip.
                 # CI/build can enforce presence via REQUIRE_REPORT_LOGO/CI checks.
@@ -234,7 +346,7 @@ class SimpleHTMLDocxParser(HTMLParser):
                     raise FileNotFoundError(
                         "Institution logo asset is missing for DOCX cover embedding; build/export cannot continue."
                     )
-                logger.error("Institution logo asset missing for src '%s'; DOCX cover will omit the logo.", src)
+                logger.error("Institution logo asset missing for src '%s'; DOCX cover will omit the logo.", src[:64] if src else '')
                 return
             width_cm = float(logo_cfg.get('width_cm', 3.2))
             # Ensure a paragraph exists for the image.
