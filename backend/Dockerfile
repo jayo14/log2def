@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-calc-nogui \
     tesseract-ocr \
     tesseract-ocr-eng \
+    hunspell \
+    hunspell-en-gb \
     fonts-liberation \
     fonts-dejavu-core \
     libgl1 \
