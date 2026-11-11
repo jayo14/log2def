@@ -2991,31 +2991,50 @@ export default function DashboardPage() {
       return;
     }
     setDownloadLoading(true);
+    showToast(`Preparing your ${format} download...`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
     try {
-      // Ensure export is ready with server-side long polling wait (avoids rapid client retries)
       const fmt = format === 'PDF' ? 'pdf' : 'docx';
-      const statusRes = await projectsApi.getExportStatus(projId, fmt, true, 12).catch(() => null);
-      if (statusRes && statusRes.status === 'failed') {
-        showToast(statusRes.error || 'Export generation failed. Please review your chapters.');
-        return;
+
+      // First check if export is already generated or poll server
+      try {
+        const statusRes = await projectsApi.getExportStatus(projId, fmt, true, 8);
+        if (statusRes && statusRes.status === 'failed') {
+          showToast(statusRes.error || 'Export generation failed. Please review your chapters.');
+          return;
+        }
+      } catch (pollErr: any) {
+        console.warn('Export status pre-check warning:', pollErr);
+        // Continue to direct squad download endpoint which handles fallback generation
       }
 
-      // Verify payment via secure backend endpoint
+      // Download file via secure backend endpoint
       const url = `${getApiBaseUrl()}/projects/${projId}/squad/download/${fmt}/`;
       const token = getAuthToken();
       const res = await fetch(url, {
+        signal: controller.signal,
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
+
       if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
         if (res.status === 403) {
-          showToast('You must complete payment before downloading.');
+          showToast(errJson?.error || 'You must complete payment before downloading.');
+        } else if (res.status === 422) {
+          showToast(errJson?.error || 'Report validation issue. Please review your chapters.');
         } else {
-          showToast('Download not available yet.');
+          showToast(errJson?.error || 'Document is being compiled. Please tap download again in a moment.');
         }
         return;
       }
+
       const blob = await res.blob();
-      const filename = res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || `siwes_report.${format.toLowerCase()}`;
+      const filename =
+        res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] ||
+        `SIWES_Report_${projId}.${fmt}`;
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
@@ -3024,9 +3043,15 @@ export default function DashboardPage() {
       a.click();
       window.URL.revokeObjectURL(downloadUrl);
       a.remove();
+      showToast(`${format} download ready`);
     } catch (err: any) {
-      showToast(err.message || 'Download failed');
+      if (err?.name === 'AbortError') {
+        showToast('Download timed out. Document is still compiling, please tap download again.');
+      } else {
+        showToast(err.message || 'Download failed');
+      }
     } finally {
+      clearTimeout(timeoutId);
       setDownloadLoading(false);
     }
   };
