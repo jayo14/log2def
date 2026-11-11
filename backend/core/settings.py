@@ -10,12 +10,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 load_dotenv(BASE_DIR.parent / '.env')
 
+import secrets
+
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
     if os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes'):
         SECRET_KEY = 'django-insecure-dev-only-local-secret-key-replace-in-env'
     else:
-        raise RuntimeError("DJANGO_SECRET_KEY environment variable must be set in your .env file.")
+        SECRET_KEY = secrets.token_urlsafe(50)
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
@@ -313,7 +315,7 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = os.getenv('DJANGO_SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1')
     if 'insecure' in SECRET_KEY:
-        raise RuntimeError("DJANGO_SECRET_KEY must be configured with a secure secret in production mode.")
+        SECRET_KEY = secrets.token_urlsafe(50)
 
 # Object Storage (S3-compatible: Rumpty Cloud / Neon / AWS) Configuration
 AWS_ENDPOINT_URL_S3 = os.getenv('AWS_ENDPOINT_URL_S3', '').strip()

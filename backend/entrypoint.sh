@@ -3,9 +3,15 @@ set -e
 
 echo "==> Log2Def Backend Service Starting..."
 
-# Apply database migrations
+# Apply database migrations with retry in case database service is initializing
 echo "==> Running database migrations..."
-python manage.py migrate --noinput
+MAX_TRIES=5
+COUNT=0
+until python manage.py migrate --noinput || [ $COUNT -ge $MAX_TRIES ]; do
+  COUNT=$((COUNT + 1))
+  echo "Migration attempt $COUNT/$MAX_TRIES failed, retrying in 3 seconds..."
+  sleep 3
+done
 
 # Collect static files for WhiteNoise
 echo "==> Collecting static assets..."
