@@ -1762,14 +1762,6 @@ class ExportStatusView(views.APIView):
         fmt = request.query_params.get('format', 'pdf').lower()
         if fmt not in ['pdf', 'docx']:
             return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
-                        "progress_percent": 0,
-                        "download_url": None,
-                        "filename": None,
-                        "error": "Payment required before downloading on the Basic tier.",
-                        "payment_required": True
-                    },
-                    status=status.HTTP_402_PAYMENT_REQUIRED
-                )
 
         # Check feature flags
         if fmt == 'pdf' and not is_feature_enabled('report_pdf_export'):
