@@ -8,6 +8,7 @@ export interface User {
   first_name: string;
   last_name: string;
   preferred_university?: string;
+  tier?: 'basic' | 'pro';
 }
 
 interface AuthState {

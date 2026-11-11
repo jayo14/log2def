@@ -203,6 +203,12 @@ export default function DashboardPage() {
     ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username
     : '';
 
+  const isPro = Boolean(
+    activeProject?.tier === 'pro' ||
+    activeProject?.is_pro === true ||
+    (user as any)?.tier === 'pro'
+  );
+
   const [details, setDetails] = useState<Record<string, string>>({
     name: userFullName,
     inst: '',
@@ -3837,14 +3843,14 @@ export default function DashboardPage() {
           </>
         )}
 
-        {/* Dual Actions: 1. Digital Download (NGN 2,000) & 2. Print Delivery (NGN 4,000) */}
+        {/* Dual Actions: 1. Digital Download (NGN 2,000 for Basic, Free for Pro) & 2. Print Delivery (Hidden on Pro) */}
         <div style={{ marginTop: '22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button
             className="btn w"
             type="button"
             disabled={downloadLoading}
             onClick={() => {
-              if (hasPaidDigital) {
+              if (isPro || hasPaidDigital) {
                 executeRealFileDownload('PDF');
               } else {
                 setCheckoutModal('digital');
@@ -3856,21 +3862,25 @@ export default function DashboardPage() {
             </span>
             {downloadLoading
               ? 'Preparing download…'
-              : hasPaidDigital
-                ? 'Download Report (Paid)'
-                : 'Download Report (NGN 2,000)'}
+              : isPro
+                ? 'Download Report (Pro Tier)'
+                : hasPaidDigital
+                  ? 'Download Report (Paid)'
+                  : 'Download Report (NGN 2,000)'}
           </button>
 
-          <button
-            className="btn o w"
-            type="button"
-            onClick={() => setCheckoutModal('delivery')}
-          >
-            <span className="ms" aria-hidden="true">
-              local_shipping
-            </span>
-            Print & Spiral Binding Delivery (NGN 4,000)
-          </button>
+          {!isPro && (
+            <button
+              className="btn o w"
+              type="button"
+              onClick={() => setCheckoutModal('delivery')}
+            >
+              <span className="ms" aria-hidden="true">
+                local_shipping
+              </span>
+              Print & Spiral Binding Delivery (NGN 4,000)
+            </button>
+          )}
         </div>
       </div>
     );
@@ -4528,7 +4538,12 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {filteredProjects.map((proj) => {
               const isActive = proj.id === activeProject?.id;
+              const isProjectPro =
+                proj.tier === 'pro' ||
+                proj.is_pro === true ||
+                (user as any)?.tier === 'pro';
               const isPaid =
+                isProjectPro ||
                 proj.is_paid ||
                 (proj.payment_orders &&
                   proj.payment_orders.some((po: any) => po.status === 'paid'));
@@ -4605,7 +4620,14 @@ export default function DashboardPage() {
                     </div>
 
                     <div>
-                      {isPaid ? (
+                      {isProjectPro ? (
+                        <span
+                          className="chip"
+                          style={{ background: '#dcfce7', color: '#15803d', fontWeight: 800 }}
+                        >
+                          ✓ Pro Tier
+                        </span>
+                      ) : isPaid ? (
                         <span
                           className="chip"
                           style={{ background: '#dcfce7', color: '#15803d', fontWeight: 800 }}
@@ -5407,26 +5429,28 @@ export default function DashboardPage() {
               </div>
               <div style={{ flex: 1 }}>
                 <div className="s-label">Digital Download (PDF &amp; Word DOCX)</div>
-                <div className="s-val">NGN 2,000</div>
+                <div className="s-val">{isPro ? 'Free (Pro Tier Included)' : 'NGN 2,000'}</div>
               </div>
-              {hasPaidDigital && (
+              {(isPro || hasPaidDigital) && (
                 <span className="chip" style={{ background: 'var(--mint)', color: 'var(--g)' }}>
-                  Unlocked
+                  {isPro ? 'Pro' : 'Unlocked'}
                 </span>
               )}
             </div>
 
-            <div className="settings-row">
-              <div className="s-icon">
-                <span className="ms" aria-hidden="true">
-                  local_shipping
-                </span>
+            {!isPro && (
+              <div className="settings-row">
+                <div className="s-icon">
+                  <span className="ms" aria-hidden="true">
+                    local_shipping
+                  </span>
+                </div>
+                <div>
+                  <div className="s-label">Printed &amp; Spiral Binding Delivery</div>
+                  <div className="s-val">NGN 4,000 (LASUSTECH Campus drop-off)</div>
+                </div>
               </div>
-              <div>
-                <div className="s-label">Printed &amp; Spiral Binding Delivery</div>
-                <div className="s-val">NGN 4,000 (LASUSTECH Campus drop-off)</div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -8555,7 +8579,7 @@ export default function DashboardPage() {
         {/* ======================================================== */}
         {/* CHECKOUT MODAL 2: PRINT & SPIRAL BINDING DELIVERY (NGN 4,000) */}
         {/* ======================================================== */}
-        {checkoutModal === 'delivery' && (
+        {checkoutModal === 'delivery' && !isPro && (
           <div id="checkout-delivery">
             <div className="bd" onClick={() => !squadCheckoutLoading && setCheckoutModal(null)} />
             <div

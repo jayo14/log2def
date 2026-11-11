@@ -1,15 +1,23 @@
 from django.contrib import admin
 from .models import (
-    ReportProject, ReportTemplate, SourceDocument, 
+    StudentProfile, ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, 
     DefenceQuestion, DefenceSession
 )
 
+@admin.register(StudentProfile)
+class StudentProfileAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'tier', 'preferred_university', 'created_at', 'updated_at')
+    list_filter = ('tier',)
+    search_fields = ('user__username', 'user__email', 'preferred_university')
+    list_editable = ('tier',)
+
 @admin.register(ReportProject)
 class ReportProjectAdmin(admin.ModelAdmin):
-    list_display = ('id', 'title', 'user', 'matric_number', 'status', 'updated_at')
-    list_filter = ('status', 'university_name', 'department')
+    list_display = ('id', 'title', 'user', 'tier', 'status', 'matric_number', 'updated_at')
+    list_filter = ('tier', 'status', 'university_name', 'department')
     search_fields = ('title', 'full_name', 'matric_number', 'user__username')
+    list_editable = ('tier',)
 
 @admin.register(SourceDocument)
 class SourceDocumentAdmin(admin.ModelAdmin):

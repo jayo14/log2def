@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 import shutil
 from .security import get_safe_upload_filename
+from .enums import UserTier
 
 
 class StudentProfile(models.Model):
@@ -12,11 +13,20 @@ class StudentProfile(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='student_profile')
     preferred_university = models.CharField(max_length=255, blank=True, default='')
+    tier = models.CharField(
+        max_length=16,
+        choices=UserTier.choices,
+        default=UserTier.BASIC,
+        db_default=UserTier.BASIC,
+        db_index=True,
+        help_text="Student tier (basic or pro)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Profile for {self.user.username}"
+        return f"Profile for {self.user.username} ({self.tier})"
+
 
 class ReportProject(models.Model):
     STATUS_CHOICES = (
@@ -32,6 +42,28 @@ class ReportProject(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='projects')
     title = models.CharField(max_length=255, default='SIWES Technical Report')
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='draft')
+    tier = models.CharField(
+        max_length=16,
+        choices=UserTier.choices,
+        default=UserTier.BASIC,
+        db_default=UserTier.BASIC,
+        db_index=True,
+        help_text="Project tier (basic or pro)"
+    )
+
+    @property
+    def effective_tier(self) -> str:
+        """Returns 'pro' if either the project or the user profile is on pro tier."""
+        if self.tier == UserTier.PRO:
+            return UserTier.PRO
+        profile = getattr(self.user, 'student_profile', None)
+        if profile and profile.tier == UserTier.PRO:
+            return UserTier.PRO
+        return UserTier.BASIC
+
+    @property
+    def is_pro(self) -> bool:
+        return self.effective_tier == UserTier.PRO
 
     # Student Information
     full_name = models.CharField(max_length=255, blank=True)

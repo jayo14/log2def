@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from drf_spectacular.utils import extend_schema_field
+from .enums import UserTier
 from .models import (
     ReportProject, ReportTemplate, SourceDocument, 
     ExtractedPage, LogbookEntry, Report, ReportSection, ReportVersion,
@@ -75,18 +76,24 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     preferred_university = serializers.SerializerMethodField()
+    tier = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             'id', 'username', 'email', 'first_name', 'last_name',
-            'preferred_university'
+            'preferred_university', 'tier'
         )
 
     @extend_schema_field(serializers.CharField(allow_blank=True))
     def get_preferred_university(self, obj):
         profile = getattr(obj, 'student_profile', None)
         return profile.preferred_university if profile else ''
+
+    @extend_schema_field(serializers.CharField())
+    def get_tier(self, obj):
+        profile = getattr(obj, 'student_profile', None)
+        return profile.tier if profile else UserTier.BASIC
 
 
 class ExtractedPageSerializer(serializers.ModelSerializer):
@@ -220,6 +227,8 @@ class ReportProjectSerializer(serializers.ModelSerializer):
     logbook_entries_count = serializers.IntegerField(source='logbook_entries.count', read_only=True)
     has_report = serializers.SerializerMethodField()
     is_paid = serializers.SerializerMethodField()
+    tier = serializers.CharField(source='effective_tier', read_only=True)
+    is_pro = serializers.BooleanField(read_only=True)
     report_status = serializers.SerializerMethodField()
     estimated_pages = serializers.SerializerMethodField()
     actual_page_count = serializers.SerializerMethodField()
@@ -237,7 +246,9 @@ class ReportProjectSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.BooleanField)
     def get_is_paid(self, obj):
-        return obj.payment_orders.filter(status='paid').exists()
+        if getattr(obj, 'is_pro', False):
+            return True
+        return obj.payment_orders.filter(status='paid', digital_files_unlocked=True).exists()
 
     @extend_schema_field(serializers.CharField)
     def get_report_status(self, obj):
@@ -291,11 +302,20 @@ class ReportProjectDetailSerializer(serializers.ModelSerializer):
     logbook_entries = LogbookEntrySerializer(many=True, read_only=True)
     report = ReportSerializer(read_only=True)
     defence_questions = DefenceQuestionSerializer(many=True, read_only=True)
+    tier = serializers.CharField(source='effective_tier', read_only=True)
+    is_pro = serializers.BooleanField(read_only=True)
+    is_paid = serializers.SerializerMethodField()
 
     class Meta:
         model = ReportProject
         fields = '__all__'
         read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake')
+
+    @extend_schema_field(serializers.BooleanField)
+    def get_is_paid(self, obj):
+        if getattr(obj, 'is_pro', False):
+            return True
+        return obj.payment_orders.filter(status='paid', digital_files_unlocked=True).exists()
 
 
 # --- Documentation & Request Helper Serializers ---

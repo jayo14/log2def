@@ -1826,6 +1826,19 @@ class ExportDownloadView(views.APIView):
             user = request.user
 
         project = get_user_project(user, project_id)
+        if not project.is_pro:
+            has_paid = project.payment_orders.filter(
+                user=user,
+                order_type='digital',
+                status='paid',
+                digital_files_unlocked=True
+            ).exists()
+            if not has_paid:
+                return Response(
+                    {"error": "Payment required to download report. Basic tier requires payment."},
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
+
         if not hasattr(project, 'report'):
             raise Http404("Report not found.")
         blocked = _quality_gate_failure(project.report)
@@ -1883,6 +1896,18 @@ class ExportDocxView(views.APIView):
     )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
+        if not project.is_pro:
+            has_paid = project.payment_orders.filter(
+                user=request.user,
+                order_type='digital',
+                status='paid',
+                digital_files_unlocked=True
+            ).exists()
+            if not has_paid:
+                return Response(
+                    {"error": "Payment required before downloading on the Basic tier."},
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
         blocked = _quality_gate_failure(project.report)
@@ -1925,6 +1950,18 @@ class ExportPdfView(views.APIView):
     )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
+        if not project.is_pro:
+            has_paid = project.payment_orders.filter(
+                user=request.user,
+                order_type='digital',
+                status='paid',
+                digital_files_unlocked=True
+            ).exists()
+            if not has_paid:
+                return Response(
+                    {"error": "Payment required before downloading on the Basic tier."},
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
         blocked = _quality_gate_failure(project.report)

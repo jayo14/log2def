@@ -12,6 +12,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiTypes,
 from .feature_flags import is_feature_enabled, require_feature_flag
 from .models import ReportProject, PaymentOrder, SquadWebhookEvent, Report
 from .serializers import PaymentOrderSerializer
+from .enums import UserTier
 from .squad_service import SquadError, initiate_transaction, verify_transaction, verify_webhook_signature
 from .telegram_service import send_payment_notification
 from .report_generator import generate_full_report
@@ -53,6 +54,22 @@ class SquadInitializeView(views.APIView):
             return Response(
                 {'error': 'Invalid order_type. Must be "digital" or "delivery".'},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Pro tier enforcement: No payment required for digital, delivery is disabled
+        if project.is_pro:
+            if order_type == 'delivery':
+                return Response(
+                    {'error': 'Physical delivery is not available on the Pro tier.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                {
+                    'message': 'Pro tier includes free digital downloads. No payment is required.',
+                    'is_pro': True,
+                    'digital_unlocked': True,
+                },
+                status=status.HTTP_200_OK,
             )
 
         # Prices are controlled exclusively by the backend — never trust the client
@@ -501,17 +518,26 @@ class SecureDigitalDownloadView(views.APIView):
             return Response({'error': 'Invalid format. Use "pdf" or "docx".'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # Find a paid digital order for this project/user
-        try:
+        # Enforce tier: Pro tier does not need to make payments to download
+        order = None
+        if not project.is_pro:
+            try:
+                order = project.payment_orders.filter(
+                    user=request.user,
+                    order_type='digital',
+                    status='paid',
+                    digital_files_unlocked=True,
+                ).latest('paid_at')
+            except PaymentOrder.DoesNotExist:
+                return Response({'error': 'No paid digital order found for this project. Please complete payment.'},
+                                status=status.HTTP_403_FORBIDDEN)
+        else:
             order = project.payment_orders.filter(
                 user=request.user,
                 order_type='digital',
                 status='paid',
                 digital_files_unlocked=True,
-            ).latest('paid_at')
-        except PaymentOrder.DoesNotExist:
-            return Response({'error': 'No paid digital order found for this project.'},
-                            status=status.HTTP_403_FORBIDDEN)
+            ).order_by('-paid_at').first()
 
         # Reuse existing generated files instead of regenerating unnecessarily
         try:
@@ -530,8 +556,9 @@ class SecureDigitalDownloadView(views.APIView):
                 if not resolved_path.startswith(media_root):
                     return Response({'error': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
                 filename = os.path.basename(resolved_path)
-                order.download_count += 1
-                order.save(update_fields=['download_count'])
+                if order:
+                    order.download_count += 1
+                    order.save(update_fields=['download_count'])
                 return FileResponse(
                     open(resolved_path, 'rb'),
                     as_attachment=True,
@@ -550,8 +577,9 @@ class SecureDigitalDownloadView(views.APIView):
                 if not resolved_path.startswith(media_root):
                     return Response({'error': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
                 filename = os.path.basename(resolved_path)
-                order.download_count += 1
-                order.save(update_fields=['download_count'])
+                if order:
+                    order.download_count += 1
+                    order.save(update_fields=['download_count'])
                 return FileResponse(
                     open(resolved_path, 'rb'),
                     as_attachment=True,
