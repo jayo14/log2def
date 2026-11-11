@@ -29,14 +29,22 @@ const nextConfig: NextConfig = {
       ? `${backendTarget}/:path*`
       : `${backendTarget}/api/:path*`;
 
+    const backendRoot = backendTarget.endsWith('/api')
+      ? backendTarget.replace(/\/api$/, '')
+      : backendTarget;
+
     return [
       {
         source: '/api/:path*',
         destination,
       },
       {
+        source: '/media/:path*',
+        destination: `${backendRoot}/media/:path*`,
+      },
+      {
         source: '/health',
-        destination: `${backendTarget}/health/`,
+        destination: `${backendRoot}/health/`,
       },
     ];
   },
