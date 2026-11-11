@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.views import (
     SpectacularAPIView, 
@@ -13,6 +13,8 @@ from drf_spectacular.views import (
 @csrf_exempt
 def health_check(request):
     """Ultra-fast, zero-overhead health check endpoint for keep-alive pings and frontend warmup."""
+    if request.method == 'HEAD':
+        return HttpResponse(status=200)
     return JsonResponse({'status': 'ok', 'service': 'log2def-backend'})
 
 urlpatterns = [

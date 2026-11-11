@@ -697,6 +697,17 @@ def _process_source_document_inner(doc_id: int):
                     temp_download_path = tf.name
             except Exception as d_err:
                 logger.warning(f"Could not download file {doc.file.name} from storage: {d_err}")
+
+    # If this is an uploaded document (not a typed note) and file is missing from disk & storage:
+    if doc.file_type != 'note' and (not file_path or not os.path.exists(file_path)):
+        doc.status = 'error'
+        doc.error_message = (
+            "Source document file is missing from both server disk and cloud storage. "
+            "It may have been cleared during a server container restart. Please re-upload this document."
+        )
+        doc.save(update_fields=['status', 'error_message'])
+        logger.error(f"Cannot process doc {doc.id} ({doc.original_filename}): File missing from both disk and storage.")
+        return False
     
     try:
         from .completeness import check_project_completeness

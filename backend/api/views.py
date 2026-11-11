@@ -689,6 +689,42 @@ class DocumentReprocessView(views.APIView):
     def post(self, request, project_id, doc_id):
         project = get_user_project(request.user, project_id)
         doc = get_object_or_404(SourceDocument, id=doc_id, project=project)
+
+        # Pre-check: Ensure the file actually exists before wiping existing extracted data
+        file_available = False
+        if doc.file_type == 'note':
+            file_available = True
+        elif doc.file:
+            try:
+                if os.path.exists(doc.file.path):
+                    file_available = True
+            except Exception:
+                pass
+            if not file_available:
+                from .storage import download_object
+                try:
+                    content = download_object(doc.file.name)
+                    if content:
+                        file_available = True
+                except Exception:
+                    pass
+
+        if not file_available:
+            doc.status = 'error'
+            doc.error_message = (
+                "The file for this document is not found on the server or cloud storage. "
+                "Please re-upload this document."
+            )
+            doc.save(update_fields=['status', 'error_message'])
+            return Response(
+                {
+                    "error": doc.error_message,
+                    "reupload_required": True,
+                    "document": SourceDocumentSerializer(doc).data
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         LogbookEntry.objects.filter(source_page__document=doc).delete()
         doc.extracted_pages.all().delete()
         process_source_document(doc.id)
