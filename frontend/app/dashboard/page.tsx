@@ -2347,8 +2347,24 @@ export default function DashboardPage() {
       setReadProgress(totalDocs);
 
       if (dbEntries && dbEntries.length > 0) {
+        const dayRank: Record<string, number> = {
+          monday: 1, mon: 1,
+          tuesday: 2, tue: 2, tues: 2,
+          wednesday: 3, wed: 3,
+          thursday: 4, thu: 4, thur: 4, thurs: 4,
+          friday: 5, fri: 5,
+        };
+        const sorted = [...dbEntries].sort((a: any, b: any) => {
+          const wA = Number(a.week_number) || 1;
+          const wB = Number(b.week_number) || 1;
+          if (wA !== wB) return wA - wB;
+          const rA = dayRank[String(a.day_of_week || '').toLowerCase().trim()] || (Number(a.order) ?? 99);
+          const rB = dayRank[String(b.day_of_week || '').toLowerCase().trim()] || (Number(b.order) ?? 99);
+          return rA - rB;
+        });
+
         setEntries(
-          dbEntries.map((e: any) => ({
+          sorted.map((e: any) => ({
             id: e.id,
             w: e.week_number || 1,
             t: e.verified_text || e.raw_text || e.activity_summary || '',
@@ -2359,7 +2375,7 @@ export default function DashboardPage() {
             ok: e.is_verified ? 1 : 0,
           }))
         );
-        showToast(`AI OCR reading complete: ${dbEntries.length} entries extracted & structured`);
+        showToast(`AI OCR reading complete: ${sorted.length} entries extracted across weeks (5 per week)`);
       } else {
         showToast('Pages scanned. You can confirm or add weekly entries directly below.');
       }
