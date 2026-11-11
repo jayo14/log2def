@@ -86,17 +86,27 @@ export const useReportStore = create<ReportState>((set, get) => ({
     set({ isLoadingReport: true, error: null });
     try {
       const data = await projectsApi.getReport(projectId);
-      set({ report: data, isLoadingReport: false });
-      if (data.sections && data.sections.length > 0 && !get().activeSectionId) {
-        const first = data.sections[0];
-        set((state) => ({
-          activeSectionId: first.id,
-          sectionDrafts: { ...state.sectionDrafts, [first.id]: first.content || '' },
-        }));
+      const drafts: Record<number, string> = {};
+      if (data.sections && data.sections.length > 0) {
+        data.sections.forEach((s: any) => {
+          drafts[s.id] = s.content || '';
+        });
       }
+      set({
+        report: data,
+        isLoadingReport: false,
+        activeSectionId: data.sections && data.sections.length > 0 ? data.sections[0].id : null,
+        sectionDrafts: drafts,
+      });
       return data;
     } catch (err: any) {
-      set({ report: null, isLoadingReport: false, error: err.message || 'Report not found' });
+      set({
+        report: null,
+        activeSectionId: null,
+        sectionDrafts: {},
+        isLoadingReport: false,
+        error: err.message || 'Report not found',
+      });
       throw err;
     }
   },

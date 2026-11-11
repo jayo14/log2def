@@ -11,6 +11,14 @@ export interface ProjectState {
   aiStatus: any | null;
   error: string | null;
 
+  // Multi-report switching & workspace caching
+  isSwitchingProject: boolean;
+  switchingProjectId: number | null;
+  workspaceCache: Record<number, any>;
+  setWorkspaceCache: (projectId: number | string, data: any) => void;
+  getWorkspaceFromCache: (projectId: number | string) => any | null;
+  clearWorkspaceCache: (projectId?: number | string) => void;
+
   fetchProjects: () => Promise<any[]>;
   fetchActiveProject: (projectId: number | string) => Promise<any>;
   ensureActiveProject: () => Promise<any>;
@@ -72,8 +80,52 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   pageStatus: null,
   lastStateHash: '',
   error: null,
+  isSwitchingProject: false,
+  switchingProjectId: null,
+  workspaceCache: {},
 
-  clearActiveProject: () => set({ activeProject: null, completeness: null, error: null }),
+  setWorkspaceCache: (projectId: number | string, data: any) => {
+    const numId = Number(projectId);
+    set((state) => ({
+      workspaceCache: {
+        ...state.workspaceCache,
+        [numId]: { ...data, cachedAt: Date.now() },
+      },
+    }));
+  },
+
+  getWorkspaceFromCache: (projectId: number | string) => {
+    const numId = Number(projectId);
+    const cached = get().workspaceCache[numId];
+    if (!cached) return null;
+    // 3 minutes TTL for stale-while-revalidate
+    if (Date.now() - (cached.cachedAt || 0) > 180_000) {
+      return null;
+    }
+    return cached;
+  },
+
+  clearWorkspaceCache: (projectId?: number | string) => {
+    if (projectId !== undefined) {
+      const numId = Number(projectId);
+      set((state) => {
+        const next = { ...state.workspaceCache };
+        delete next[numId];
+        return { workspaceCache: next };
+      });
+    } else {
+      set({ workspaceCache: {} });
+    }
+  },
+
+  clearActiveProject: () =>
+    set({
+      activeProject: null,
+      completeness: null,
+      error: null,
+      isSwitchingProject: false,
+      switchingProjectId: null,
+    }),
   setError: (error) => set({ error }),
 
   fetchProjects: async () => {
@@ -240,15 +292,34 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   switchProject: async (projectId: number | string) => {
-    set({ error: null });
+    const numId = Number(projectId);
+    set({
+      error: null,
+      isSwitchingProject: true,
+      switchingProjectId: numId,
+    });
     try {
+      // Optimistically resolve project from list if available
+      const existing = get().projects.find((p) => p.id === numId);
+      if (existing) {
+        set({ activeProject: existing });
+      }
+
       const full = await get().fetchActiveProject(projectId);
+      set({
+        isSwitchingProject: false,
+        switchingProjectId: null,
+      });
       if (typeof window !== 'undefined' && full?.id) {
         localStorage.setItem('log2def_active_project_id', String(full.id));
       }
       return full;
     } catch (err: any) {
-      set({ error: err.message || 'Failed to switch project' });
+      set({
+        error: err.message || 'Failed to switch project',
+        isSwitchingProject: false,
+        switchingProjectId: null,
+      });
       throw err;
     }
   },
@@ -257,6 +328,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ error: null });
     try {
       const updated = await projectsApi.update(projectId, data);
+      get().clearWorkspaceCache(projectId);
       set((state) => ({
         activeProject: state.activeProject ? { ...state.activeProject, ...updated } : updated,
         projects: state.projects.map((p) => (p.id === Number(projectId) ? { ...p, ...updated } : p)),
@@ -272,6 +344,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ error: null });
     try {
       await projectsApi.delete(projectId);
+      get().clearWorkspaceCache(projectId);
       const remaining = get().projects.filter((p) => p.id !== Number(projectId));
       let nextActive = get().activeProject;
       if (nextActive?.id === Number(projectId)) {

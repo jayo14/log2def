@@ -175,6 +175,11 @@ export default function DashboardPage() {
     fetchPayments,
     initiateSquadPayment,
     verifySquadPayment,
+    isSwitchingProject,
+    switchingProjectId,
+    getWorkspaceFromCache,
+    setWorkspaceCache,
+    clearWorkspaceCache,
   } = useProjectStore();
 
   const {
@@ -356,7 +361,23 @@ export default function DashboardPage() {
   const [isCreatingReport, setIsCreatingReport] = useState<boolean>(false);
   const [projectToDelete, setProjectToDelete] = useState<any | null>(null);
   const [reportsFilter, setReportsFilter] = useState<'all' | 'ready' | 'in_progress'>('all');
+  const [projectSearchQuery, setProjectSearchQuery] = useState<string>('');
   const loadedProjectIdRef = useRef<number | null>(null);
+  const switchSequenceRef = useRef<number>(0);
+  const isSwitchingRef = useRef<boolean>(false);
+  const switchingToIdRef = useRef<number | null>(null);
+
+  // Close project switcher dropdown on Escape key
+  useEffect(() => {
+    if (!isProjectDropdownOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsProjectDropdownOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isProjectDropdownOpen]);
 
   useEffect(() => {
     try {
@@ -378,7 +399,7 @@ export default function DashboardPage() {
     const pid =
       activeProject?.id ||
       useProjectStore.getState().activeProject?.id;
-    if (!pid) return;
+    if (!pid || isSwitchingRef.current || loadedProjectIdRef.current === pid) return;
 
     let cancelled = false;
     setIntakeLoading(true);
@@ -457,7 +478,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const pid = activeProject?.id || useProjectStore.getState().activeProject?.id;
-    if (!pid) return;
+    if (!pid || isSwitchingRef.current || loadedProjectIdRef.current === pid) return;
     if (typeof projectsApi?.getReportImages === 'function') {
       projectsApi.getReportImages(pid)
         .then((items) => setReportImages(items || []))
@@ -703,69 +724,363 @@ export default function DashboardPage() {
     return edits;
   };
 
-  // Anti-bleed workspace loader: cleanly purges previous project memory and hydrates target project
-  const loadProjectWorkspace = useCallback(
-    async (projId: number, options?: { targetStep?: number; keepFlow?: boolean }) => {
-      if (!projId) return;
-      loadedProjectIdRef.current = projId;
+  // Zero-bleed workspace state reset: cleanly purges all memory of previous report
+  const resetAllWorkspaceState = useCallback(() => {
+    setPages([]);
+    setEntries([]);
+    setGenState(0);
+    setGenProgress(0);
+    setGenError(null);
+    setChapterEdits({});
+    resetReportState();
+    setIntake({});
+    setReportImages([]);
+    setReadDone(false);
+    setReading(false);
+    setReadProgress(0);
+    setHasPaidDigital(false);
+    setPaymentSuccess(null);
+    setShortDurationConfirmed(false);
+    setCurrentSectionIdx(0);
 
-      // 1. Immediately reset state from any previous project to guarantee zero state bleed
-      setPages([]);
-      setEntries([]);
-      setGenState(0);
-      setGenProgress(0);
-      setGenError(null);
-      setChapterEdits({});
-      resetReportState();
-      setIntake({});
-      setReportImages([]);
-      setReadDone(false);
-      setReading(false);
-      setReadProgress(0);
-      setHasPaidDigital(false);
-      setPaymentSuccess(null);
-      setShortDurationConfirmed(false);
-      setCurrentSectionIdx(0);
+    // Reset Step 4 Organisation state
+    setOrgScreen(1);
+    setOrgWhat('');
+    setOrgWhen('');
+    setOrgWhere('');
+    setOrgObjectives('');
+    setOrgPasteMode(false);
+    setOrgPasteText('');
+    setOrgNotSure(false);
+    setHeadTitle('');
+    setOrgUnits(['Technical Department', 'Operations Unit', 'Administration']);
+    setStudentUnit('');
+    setSupervisorTitle('');
+    setCustomTreeText('');
+    setIsEditingTree(false);
 
-      // Reset Step 4 Organisation state
-      setOrgWhat('');
-      setOrgWhen('');
-      setOrgWhere('');
-      setOrgObjectives('');
-      setOrgPasteMode(false);
-      setOrgPasteText('');
-      setOrgNotSure(false);
-      setHeadTitle('');
-      setOrgUnits(['Technical Department', 'Operations Unit', 'Administration']);
-      setStudentUnit('');
-      setSupervisorTitle('');
-      setCustomTreeText('');
-      setIsEditingTree(false);
+    // Reset Step 5 Experience state
+    setExperienceDuties('');
+    setExperienceAdditional('');
+    setExperienceTools(['VS Code', 'Git', 'Linux', 'Python']);
+    setChallengesNone(true);
+    setChallengeText('');
+    setSolutionText('');
+    setChallenge2Text('');
+    setSolution2Text('');
+    setShowSecondPair(false);
+    setSelectedRecommendations([]);
+    setCustomRecommendation('');
 
-      // Reset Step 5 Experience state
-      setExperienceDuties('');
-      setExperienceAdditional('');
-      setExperienceTools(['VS Code', 'Git', 'Linux', 'Python']);
-      setChallengesNone(true);
-      setChallengeText('');
-      setSolutionText('');
-      setChallenge2Text('');
-      setSolution2Text('');
-      setShowSecondPair(false);
-      setSelectedRecommendations([]);
-      setCustomRecommendation('');
+    // Reset Step 6 Extras state
+    setDedicationText('');
+    setAcknowledgementText('');
 
-      // Reset Step 6 Extras state
-      setDedicationText('');
-      setAcknowledgementText('');
+    // Clear autosave dirty check hashes
+    lastSavedDetailsRef.current = '';
+    lastSavedStep4Ref.current = '';
+    lastSavedStep5Ref.current = '';
+    lastSavedStep6Ref.current = '';
+  }, [resetReportState]);
 
+  // Apply workspace data cleanly into state and synchronize autosave baseline hashes
+  const applyWorkspaceData = useCallback(
+    (
+      freshProj: any,
+      entriesData: any[],
+      repData: any,
+      paymentsData: any[],
+      intakeData: any,
+      imagesData: any[]
+    ) => {
+      // 1. Hydrate project details & source documents
+      if (freshProj) {
+        const loadedDetails = {
+          name: freshProj.full_name || '',
+          matric: freshProj.matric_number || '',
+          dept: freshProj.department || '',
+          fac: freshProj.college || freshProj.faculty_school || 'College of Basic Science',
+          degree: freshProj.degree || '',
+          inst: freshProj.university_name || '',
+          co: freshProj.organization_name || '',
+          addr: freshProj.organization_address || '',
+          unit: freshProj.industry_department || '',
+          start: freshProj.training_start_date ? freshProj.training_start_date.slice(0, 10) : '',
+          end: freshProj.training_end_date ? freshProj.training_end_date.slice(0, 10) : '',
+          sup: freshProj.industry_supervisor_name || '',
+          isup: freshProj.institution_supervisor_name || '',
+        };
+        setDetails(loadedDetails);
+        lastSavedDetailsRef.current = JSON.stringify(loadedDetails);
+
+        if (freshProj.source_documents && freshProj.source_documents.length > 0) {
+          setPages(
+            freshProj.source_documents.map((d: any) => ({
+              id: d.id,
+              n: d.original_filename || `Page ${d.page_index + 1}`,
+              pdf: d.file_type === 'pdf',
+              th:
+                d.presigned_url ||
+                (d.file
+                  ? d.file.startsWith('http')
+                    ? d.file
+                    : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${d.file.startsWith('/') ? '' : '/'}${d.file}`
+                  : ''),
+              status: d.status,
+            }))
+          );
+          setReadDone(true);
+        } else {
+          setPages([]);
+          setReadDone(false);
+        }
+      } else {
+        setPages([]);
+        setReadDone(false);
+      }
+
+      // 2. Hydrate logbook entries
+      if (entriesData && entriesData.length > 0) {
+        setEntries(
+          entriesData.map((e: any) => ({
+            id: e.id,
+            w: e.week_number || 1,
+            t: e.verified_text || e.raw_text || e.activity_summary || '',
+            area: e.technical_area || 'Practical Engineering',
+            tools: e.tools_used || '',
+            u:
+              e.is_flagged ||
+              (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75)
+                ? 1
+                : 0,
+            ph: e.department_unit || 'activity details',
+            ok: e.is_verified ? 1 : 0,
+          }))
+        );
+      } else {
+        setEntries([]);
+      }
+
+      // 3. Hydrate report sections and compiled state
+      if (repData && repData.sections && repData.sections.length > 0) {
+        const hasContent = repData.sections.some(
+          (s: any) => s.content && s.content.trim().length > 20
+        );
+        if (hasContent) {
+          setGenState(2);
+          setChapterEdits(mapBackendSectionsToChapters(repData.sections));
+        } else {
+          setGenState(0);
+          setChapterEdits({});
+        }
+        useReportStore.setState({
+          report: repData,
+          activeSectionId: repData.sections[0]?.id || null,
+          sectionDrafts: repData.sections.reduce((acc: any, s: any) => {
+            acc[s.id] = s.content || '';
+            return acc;
+          }, {}),
+          isLoadingReport: false,
+        });
+      } else {
+        setGenState(0);
+        setChapterEdits({});
+        useReportStore.getState().resetReportState();
+      }
+
+      // 4. Hydrate payment orders
+      if (paymentsData && paymentsData.length > 0) {
+        const isPaid = paymentsData.some((p: any) => p.status === 'paid');
+        setHasPaidDigital(isPaid);
+        useProjectStore.setState({ payments: paymentsData });
+      } else {
+        setHasPaidDigital(false);
+        useProjectStore.setState({ payments: [] });
+      }
+
+      // 5. Hydrate guided intake answers
+      if (intakeData) {
+        const rawIntake = intakeData as any;
+        const ans = (rawIntake?.answers || rawIntake || {}) as Record<string, any>;
+        setIntake(ans);
+        setOrgWhat(ans.organisation_what || '');
+        setOrgNotSure(Boolean(ans.organisation_not_sure));
+        if (ans.organisation_when_where) {
+          const match = ans.organisation_when_where.match(/^(\d{4})\s*(.*)$/);
+          if (match) {
+            setOrgWhen(match[1]);
+            setOrgWhere(match[2] || '');
+          } else {
+            setOrgWhen('');
+            setOrgWhere(ans.organisation_when_where);
+          }
+        } else {
+          setOrgWhen('');
+          setOrgWhere('');
+        }
+        setOrgObjectives(ans.organisation_objectives || '');
+        if (ans.organisation_paste_text) {
+          setOrgPasteText(ans.organisation_paste_text);
+          if (!ans.organisation_objectives || ans.organisation_objectives === ans.organisation_paste_text) {
+            setOrgPasteMode(true);
+          } else {
+            setOrgPasteMode(false);
+          }
+        } else {
+          setOrgPasteText('');
+          setOrgPasteMode(false);
+        }
+        setHeadTitle(ans.head_title || '');
+        if (Array.isArray(ans.organisation_units) && ans.organisation_units.length > 0) {
+          setOrgUnits(ans.organisation_units);
+        } else {
+          setOrgUnits(['Technical Department', 'Operations Unit', 'Administration']);
+        }
+        setStudentUnit(ans.student_unit || freshProj?.placement_department || '');
+        setSupervisorTitle(ans.supervisor_title || freshProj?.industry_supervisor_title || '');
+        setCustomTreeText(ans.organogram_tree || '');
+
+        setExperienceDuties(ans.duties || '');
+        setExperienceAdditional(ans.additional_experience || '');
+        if (ans.tools_used) {
+          const tools = ans.tools_used.split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (tools.length > 0) setExperienceTools(tools);
+        } else if (freshProj?.tools_used) {
+          const tools = freshProj.tools_used.split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (tools.length > 0) setExperienceTools(tools);
+        } else {
+          setExperienceTools(['VS Code', 'Git', 'Linux', 'Python']);
+        }
+
+        if (ans.challenge_pairs) {
+          setChallengesNone(Boolean(ans.challenge_pairs.none));
+          if (Array.isArray(ans.challenge_pairs.pairs) && ans.challenge_pairs.pairs.length > 0) {
+            setChallengeText(ans.challenge_pairs.pairs[0].challenge || '');
+            setSolutionText(ans.challenge_pairs.pairs[0].solution || '');
+            if (ans.challenge_pairs.pairs.length > 1) {
+              setShowSecondPair(true);
+              setChallenge2Text(ans.challenge_pairs.pairs[1].challenge || '');
+              setSolution2Text(ans.challenge_pairs.pairs[1].solution || '');
+            } else {
+              setShowSecondPair(false);
+              setChallenge2Text('');
+              setSolution2Text('');
+            }
+          } else {
+            setShowSecondPair(false);
+            setChallengeText('');
+            setSolutionText('');
+            setChallenge2Text('');
+            setSolution2Text('');
+          }
+        } else {
+          setChallengesNone(true);
+          setShowSecondPair(false);
+          setChallengeText('');
+          setSolutionText('');
+          setChallenge2Text('');
+          setSolution2Text('');
+        }
+
+        if (ans.recommendations) {
+          const recLines = ans.recommendations.split('\n').map((s: string) => s.trim()).filter(Boolean);
+          setSelectedRecommendations(recLines.filter((l: string) => RECOMMENDATION_SUGGESTIONS.includes(l)));
+          const custom = recLines.filter((l: string) => !RECOMMENDATION_SUGGESTIONS.includes(l)).join('\n');
+          setCustomRecommendation(custom);
+        } else {
+          setSelectedRecommendations([]);
+          setCustomRecommendation('');
+        }
+
+        setDedicationText(ans.dedication || '');
+        setAcknowledgementText(ans.acknowledgement || '');
+
+        // Sync autosave refs with the clean loaded answers
+        lastSavedStep4Ref.current = JSON.stringify({
+          organisation_what: ans.organisation_what || '',
+          organisation_not_sure: Boolean(ans.organisation_not_sure),
+          organisation_when_where: ans.organisation_when_where || '',
+          organisation_objectives: ans.organisation_objectives || '',
+          organisation_paste_text: ans.organisation_paste_text || '',
+          head_title: ans.head_title || '',
+          organisation_units: ans.organisation_units || [],
+          student_unit: ans.student_unit || '',
+          supervisor_title: ans.supervisor_title || '',
+          organogram_tree: ans.organogram_tree || '',
+        });
+        lastSavedStep5Ref.current = JSON.stringify({
+          duties: ans.duties || '',
+          additional_experience: ans.additional_experience || '',
+          tools_used: ans.tools_used || '',
+          challenge_pairs: ans.challenge_pairs || null,
+          recommendations: ans.recommendations || '',
+        });
+        lastSavedStep6Ref.current = JSON.stringify({
+          dedication: ans.dedication || '',
+          acknowledgement: ans.acknowledgement || '',
+        });
+      } else {
+        setIntake({});
+        setOrgWhat('');
+        setOrgWhen('');
+        setOrgWhere('');
+        setOrgObjectives('');
+        setOrgPasteMode(false);
+        setOrgPasteText('');
+        setOrgNotSure(false);
+        setHeadTitle('');
+        setOrgUnits(['Technical Department', 'Operations Unit', 'Administration']);
+        setStudentUnit(freshProj?.placement_department || '');
+        setSupervisorTitle(freshProj?.industry_supervisor_title || '');
+        setCustomTreeText('');
+        setIsEditingTree(false);
+        setExperienceDuties('');
+        setExperienceAdditional('');
+        if (freshProj?.tools_used) {
+          const tools = freshProj.tools_used.split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (tools.length > 0) setExperienceTools(tools);
+        } else {
+          setExperienceTools(['VS Code', 'Git', 'Linux', 'Python']);
+        }
+        setChallengesNone(true);
+        setChallengeText('');
+        setSolutionText('');
+        setChallenge2Text('');
+        setSolution2Text('');
+        setShowSecondPair(false);
+        setSelectedRecommendations([]);
+        setCustomRecommendation('');
+        setDedicationText('');
+        setAcknowledgementText('');
+      }
+
+      // 6. Hydrate report images
+      if (imagesData && Array.isArray(imagesData)) {
+        setReportImages(imagesData);
+      } else {
+        setReportImages([]);
+      }
+
+      // 7. Update active project in store
+      if (freshProj) {
+        useProjectStore.setState({ activeProject: freshProj });
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('log2def_active_project_id', String(freshProj.id));
+        }
+      }
+    },
+    []
+  );
+
+  // Background revalidation: update cache silently without disrupting UI
+  const revalidateWorkspaceInBackground = useCallback(
+    async (projId: number, expectedSwitchSeq: number) => {
       try {
-        // 2. Fetch fresh project and all associated records concurrently
         const [freshProj, entriesData, repData, paymentsData, intakeData, imagesData] = await Promise.all([
-          fetchActiveProject(projId).catch(() => null),
-          fetchLogbookEntries(projId).catch(() => []),
-          fetchReport(projId).catch(() => null),
-          fetchPayments(projId).catch(() => []),
+          projectsApi.get(projId).catch(() => null),
+          projectsApi.getLogbookEntries(projId).catch(() => []),
+          projectsApi.getReport(projId).catch(() => null),
+          projectsApi.getPayments(projId).catch(() => []),
           typeof projectsApi?.getGuidedIntake === 'function'
             ? projectsApi.getGuidedIntake(projId).catch(() => null)
             : Promise.resolve(null),
@@ -774,194 +1089,169 @@ export default function DashboardPage() {
             : Promise.resolve([]),
         ]);
 
-        // 3. Hydrate project details & source documents
+        if (expectedSwitchSeq !== switchSequenceRef.current) return;
+
         if (freshProj) {
-          const loadedDetails = {
-            name: freshProj.full_name || '',
-            matric: freshProj.matric_number || '',
-            dept: freshProj.department || '',
-            fac: freshProj.college || freshProj.faculty_school || 'College of Basic Science',
-            degree: freshProj.degree || '',
-            inst: freshProj.university_name || '',
-            co: freshProj.organization_name || '',
-            addr: freshProj.organization_address || '',
-            unit: freshProj.industry_department || '',
-            start: freshProj.training_start_date ? freshProj.training_start_date.slice(0, 10) : '',
-            end: freshProj.training_end_date ? freshProj.training_end_date.slice(0, 10) : '',
-            sup: freshProj.industry_supervisor_name || '',
-            isup: freshProj.institution_supervisor_name || '',
-          };
-          setDetails(loadedDetails);
-          lastSavedDetailsRef.current = JSON.stringify(loadedDetails);
+          useProjectStore.getState().setWorkspaceCache(projId, {
+            project: freshProj,
+            entries: entriesData,
+            report: repData,
+            payments: paymentsData,
+            intake: intakeData,
+            images: imagesData,
+          });
+        }
+      } catch (err) {
+        console.warn('Background workspace revalidation failed:', err);
+      }
+    },
+    []
+  );
 
-          if (freshProj.source_documents && freshProj.source_documents.length > 0) {
-            setPages(
-              freshProj.source_documents.map((d: any) => ({
-                id: d.id,
-                n: d.original_filename || `Page ${d.page_index + 1}`,
-                pdf: d.file_type === 'pdf',
-                th:
-                  d.presigned_url ||
-                  (d.file
-                    ? d.file.startsWith('http')
-                      ? d.file
-                      : `${getApiBaseUrl().replace(/\/api\/?$/, '')}${d.file.startsWith('/') ? '' : '/'}${d.file}`
-                    : ''),
-                status: d.status,
-              }))
-            );
-            setReadDone(true);
-          }
+  // Fast, anti-bleed workspace loader with caching & race-condition cancellation
+  const loadProjectWorkspace = useCallback(
+    async (
+      projId: number,
+      options?: { targetStep?: number; keepFlow?: boolean; forceFresh?: boolean }
+    ) => {
+      if (!projId) return;
+
+      // Immediately cancel any pending autosave timers
+      if (detailsDebounceTimer.current) {
+        clearTimeout(detailsDebounceTimer.current);
+        detailsDebounceTimer.current = null;
+      }
+
+      switchSequenceRef.current += 1;
+      const thisSwitchSeq = switchSequenceRef.current;
+
+      isSwitchingRef.current = true;
+      switchingToIdRef.current = projId;
+      loadedProjectIdRef.current = projId;
+
+      // 1. Check workspace cache for instant 0ms switching
+      const cached = !options?.forceFresh
+        ? useProjectStore.getState().getWorkspaceFromCache(projId)
+        : null;
+
+      if (cached) {
+        applyWorkspaceData(
+          cached.project,
+          cached.entries || [],
+          cached.report,
+          cached.payments || [],
+          cached.intake,
+          cached.images || []
+        );
+
+        isSwitchingRef.current = false;
+        switchingToIdRef.current = null;
+
+        if (options?.targetStep !== undefined) {
+          setStep(options.targetStep);
+          setInFlow(true);
         }
 
-        // 4. Hydrate logbook entries
-        if (entriesData && entriesData.length > 0) {
-          setEntries(
-            entriesData.map((e: any) => ({
-              id: e.id,
-              w: e.week_number || 1,
-              t: e.verified_text || e.raw_text || e.activity_summary || '',
-              area: e.technical_area || 'Practical Engineering',
-              tools: e.tools_used || '',
-              u:
-                e.is_flagged ||
-                (e.confidence_scores?.overall !== undefined && e.confidence_scores?.overall < 0.75)
-                  ? 1
-                  : 0,
-              ph: e.department_unit || 'activity details',
-              ok: e.is_verified ? 1 : 0,
-            }))
-          );
+        // Revalidate in background
+        revalidateWorkspaceInBackground(projId, thisSwitchSeq);
+        return;
+      }
+
+      // 2. Cache miss: Clean slate reset to guarantee zero cross-report bleeding
+      resetAllWorkspaceState();
+
+      try {
+        // Fetch all project records concurrently in ONE single network batch
+        const [freshProj, entriesData, repData, paymentsData, intakeData, imagesData] = await Promise.all([
+          projectsApi.get(projId).catch(() => null),
+          projectsApi.getLogbookEntries(projId).catch(() => []),
+          projectsApi.getReport(projId).catch(() => null),
+          projectsApi.getPayments(projId).catch(() => []),
+          typeof projectsApi?.getGuidedIntake === 'function'
+            ? projectsApi.getGuidedIntake(projId).catch(() => null)
+            : Promise.resolve(null),
+          typeof projectsApi?.getReportImages === 'function'
+            ? projectsApi.getReportImages(projId).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+
+        // If a newer switch was initiated while in-flight, discard this obsolete response
+        if (thisSwitchSeq !== switchSequenceRef.current) {
+          return;
         }
 
-        // 5. Hydrate report sections and compiled state
-        if (repData && repData.sections && repData.sections.length > 0) {
-          const hasContent = repData.sections.some(
-            (s: any) => s.content && s.content.trim().length > 20
-          );
-          if (hasContent) {
-            setGenState(2);
-            setChapterEdits(mapBackendSectionsToChapters(repData.sections));
-          }
+        // Store into workspace cache
+        if (freshProj) {
+          useProjectStore.getState().setWorkspaceCache(projId, {
+            project: freshProj,
+            entries: entriesData,
+            report: repData,
+            payments: paymentsData,
+            intake: intakeData,
+            images: imagesData,
+          });
         }
 
-        // 6. Hydrate payment orders
-        if (paymentsData && paymentsData.length > 0) {
-          const isPaid = paymentsData.some((p: any) => p.status === 'paid');
-          if (isPaid) {
-            setHasPaidDigital(true);
-          }
-        }
+        // Hydrate data into state cleanly
+        applyWorkspaceData(
+          freshProj,
+          entriesData,
+          repData,
+          paymentsData,
+          intakeData,
+          imagesData
+        );
 
-        // 7. Hydrate guided intake answers
-        if (intakeData) {
-          const rawIntake = intakeData as any;
-          const ans = (rawIntake?.answers || rawIntake || {}) as Record<string, any>;
-          setIntake(ans);
-          if (ans.organisation_what) setOrgWhat(ans.organisation_what);
-          if (ans.organisation_not_sure !== undefined)
-            setOrgNotSure(Boolean(ans.organisation_not_sure));
-          if (ans.organisation_when_where) {
-            const match = ans.organisation_when_where.match(/^(\d{4})\s*(.*)$/);
-            if (match) {
-              setOrgWhen(match[1]);
-              if (match[2]) setOrgWhere(match[2]);
-            } else {
-              setOrgWhere(ans.organisation_when_where);
-            }
-          }
-          if (ans.organisation_objectives) setOrgObjectives(ans.organisation_objectives);
-          if (ans.organisation_paste_text) {
-            setOrgPasteText(ans.organisation_paste_text);
-            if (
-              !ans.organisation_objectives ||
-              ans.organisation_objectives === ans.organisation_paste_text
-            ) {
-              setOrgPasteMode(true);
-            }
-          }
-          if (ans.head_title) setHeadTitle(ans.head_title);
-          if (Array.isArray(ans.organisation_units) && ans.organisation_units.length > 0) {
-            setOrgUnits(ans.organisation_units);
-          }
-          if (ans.student_unit) setStudentUnit(ans.student_unit);
-          if (ans.supervisor_title) setSupervisorTitle(ans.supervisor_title);
-          if (ans.organogram_tree) setCustomTreeText(ans.organogram_tree);
-
-          if (ans.duties) setExperienceDuties(ans.duties);
-          if (ans.challenge_pairs) {
-            setChallengesNone(Boolean(ans.challenge_pairs.none));
-            if (Array.isArray(ans.challenge_pairs.pairs) && ans.challenge_pairs.pairs.length > 0) {
-              setChallengeText(ans.challenge_pairs.pairs[0].challenge || '');
-              setSolutionText(ans.challenge_pairs.pairs[0].solution || '');
-              if (ans.challenge_pairs.pairs.length > 1) {
-                setShowSecondPair(true);
-                setChallenge2Text(ans.challenge_pairs.pairs[1].challenge || '');
-                setSolution2Text(ans.challenge_pairs.pairs[1].solution || '');
-              }
-            }
-          }
-          if (ans.recommendations) {
-            const recLines = ans.recommendations
-              .split('\n')
-              .map((s: string) => s.trim())
-              .filter(Boolean);
-            setSelectedRecommendations(
-              recLines.filter((l: string) => RECOMMENDATION_SUGGESTIONS.includes(l))
-            );
-            const custom = recLines
-              .filter((l: string) => !RECOMMENDATION_SUGGESTIONS.includes(l))
-              .join('\n');
-            if (custom) setCustomRecommendation(custom);
-          }
-          if (ans.dedication) setDedicationText(ans.dedication);
-          if (ans.acknowledgement) setAcknowledgementText(ans.acknowledgement);
-        }
-
-        // 8. Hydrate report images
-        if (imagesData && Array.isArray(imagesData)) {
-          setReportImages(imagesData);
-        }
-
-        // 9. Handle explicit navigation options
         if (options?.targetStep !== undefined) {
           setStep(options.targetStep);
           setInFlow(true);
         }
       } catch (err) {
         console.error('Failed to load project workspace:', err);
+      } finally {
+        if (thisSwitchSeq === switchSequenceRef.current) {
+          isSwitchingRef.current = false;
+          switchingToIdRef.current = null;
+        }
       }
     },
     [
-      fetchActiveProject,
-      fetchLogbookEntries,
-      fetchReport,
-      fetchPayments,
-      resetReportState,
-      userFullName,
+      resetAllWorkspaceState,
+      applyWorkspaceData,
+      revalidateWorkspaceInBackground,
     ]
   );
 
-  // Switch project handler with workspace rehydration and optional navigation
+  // Switch project handler with instant responsiveness and race protection
   const handleSwitchProject = useCallback(
     async (projectId: number, targetView?: 'wizard' | 'report' | 'dashboard') => {
+      if (isSwitchingRef.current && switchingToIdRef.current === projectId) {
+        return; // Already switching to this project
+      }
       try {
-        await switchProject(projectId);
         await loadProjectWorkspace(projectId);
         if (targetView === 'wizard') {
           const freshStoreProj = useProjectStore.getState().activeProject;
           const hasDocs = (freshStoreProj?.source_documents?.length || 0) > 0;
-          goToFlow(hasDocs ? 2 : 1);
+          setStep(hasDocs ? 2 : 1);
+          setInFlow(true);
+          if (scrRef.current) scrRef.current.scrollTop = 0;
         } else if (targetView === 'report') {
           setLogbookView('report');
-          switchTab('logbooks');
+          setCurrentTab('logbooks');
+          setInFlow(false);
+          if (scrRef.current) scrRef.current.scrollTop = 0;
         }
-        showToast('Switched project successfully');
+        const active = useProjectStore.getState().activeProject;
+        const nameOrTitle = active?.full_name
+          ? `${active.full_name} (${active.title})`
+          : active?.title || 'Report';
+        showToast(`Switched to ${nameOrTitle}`);
       } catch (err: any) {
         showToast(err.message || 'Failed to switch project');
       }
     },
-    [switchProject, loadProjectWorkspace, showToast]
+    [loadProjectWorkspace, showToast]
   );
 
   // Initialize and synchronize project from PostgreSQL database on mount
@@ -988,14 +1278,14 @@ export default function DashboardPage() {
 
   // Synchronize workspace whenever active project changes externally
   useEffect(() => {
-    if (activeProject?.id && loadedProjectIdRef.current !== activeProject.id) {
+    if (activeProject?.id && loadedProjectIdRef.current !== activeProject.id && !isSwitchingRef.current) {
       loadProjectWorkspace(activeProject.id);
     }
   }, [activeProject?.id, loadProjectWorkspace]);
 
   // Synchronize state directly from active database project
   useEffect(() => {
-    if (!activeProject) return;
+    if (!activeProject || isSwitchingRef.current) return;
 
     setDetails((prev) => {
       const next = {
@@ -1037,6 +1327,8 @@ export default function DashboardPage() {
           };
         })
       );
+    } else {
+      setPages([]);
     }
 
     if (activeProject.logbook_entries && activeProject.logbook_entries.length > 0) {
@@ -1053,29 +1345,30 @@ export default function DashboardPage() {
         }))
       );
       setReadDone(true);
+    } else {
+      setEntries([]);
+      setReadDone(false);
     }
 
-    if (activeProject.placement_department) {
-      setStudentUnit((prev) => prev || activeProject.placement_department || '');
-    }
-    if (activeProject.industry_supervisor_title) {
-      setSupervisorTitle((prev) => prev || activeProject.industry_supervisor_title || '');
-    }
+    setStudentUnit(activeProject.placement_department || '');
+    setSupervisorTitle(activeProject.industry_supervisor_title || '');
     if (activeProject.tools_used) {
       const tools = activeProject.tools_used.split(',').map((s: string) => s.trim()).filter(Boolean);
-      if (tools.length > 0) setExperienceTools((prev) => (prev.length === 0 || prev.join(',') === 'VS Code,Git,Linux,Python' ? tools : prev));
+      if (tools.length > 0) setExperienceTools(tools);
+    } else {
+      setExperienceTools(['VS Code', 'Git', 'Linux', 'Python']);
     }
   }, [activeProject, userFullName]);
 
-  // Synchronize compiled report sections from PostgreSQL.
-  // Seed chapter drafts from the DB, but never overwrite sections the user has
-  // already edited locally. Blindly clobbering chapterEdits on every dbReport
-  // change (which happens after each autosave + refetch) throws away unsaved
-  // edits and, on the next section switch, resets the editor to the top.
+  // Synchronize compiled report sections from PostgreSQL
   useEffect(() => {
+    if (isSwitchingRef.current) return;
     if (dbReport && dbReport.sections && dbReport.sections.length > 0) {
       setGenState(2);
       setChapterEdits((prev) => {
+        if (Object.keys(prev).length === 0) {
+          return mapBackendSectionsToChapters(dbReport.sections);
+        }
         const next: Record<number, string> = { ...prev };
         let changed = false;
         dbReport.sections.forEach((s: any, idx: number) => {
@@ -1113,13 +1406,14 @@ export default function DashboardPage() {
   // Auto-save student details directly to database (debounced and dirty-checked)
   const detailsDebounceTimer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (!isHydrated || !activeProject?.id) return;
+    if (!isHydrated || !activeProject?.id || isSwitchingRef.current) return;
 
     const serialized = JSON.stringify(details);
     if (serialized === lastSavedDetailsRef.current) return;
 
     if (detailsDebounceTimer.current) clearTimeout(detailsDebounceTimer.current);
     detailsDebounceTimer.current = setTimeout(async () => {
+      if (isSwitchingRef.current) return;
       const currentSerialized = JSON.stringify(details);
       if (currentSerialized === lastSavedDetailsRef.current) return;
       lastSavedDetailsRef.current = currentSerialized;
@@ -1466,7 +1760,7 @@ export default function DashboardPage() {
   // 6. Restore payment state from backend on load
   useEffect(() => {
     const restorePaymentState = async () => {
-      if (!activeProject?.id) return;
+      if (!activeProject?.id || isSwitchingRef.current) return;
       try {
         const payments = await fetchPayments(activeProject.id);
         const paidDigital = (payments || []).find(
@@ -1476,8 +1770,8 @@ export default function DashboardPage() {
           (p: any) => p.order_type === 'delivery' && p.status === 'paid'
         );
 
+        setHasPaidDigital(Boolean(paidDigital));
         if (paidDigital) {
-          setHasPaidDigital(true);
           setPaymentSuccess({
             type: 'digital',
             txRef: paidDigital.transaction_reference || paidDigital.order_reference,
@@ -1494,6 +1788,8 @@ export default function DashboardPage() {
               phone: paidDelivery.phone_number || '',
             },
           });
+        } else {
+          setPaymentSuccess(null);
         }
       } catch (err) {
         // Silently fail - payments will be fetched when needed
@@ -1576,6 +1872,7 @@ export default function DashboardPage() {
   };
 
   const saveStep2Data = useCallback(async () => {
+    if (isSwitchingRef.current) return;
     const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
     if (!projId) return;
 
@@ -1609,6 +1906,7 @@ export default function DashboardPage() {
 
   const saveStep4Data = useCallback(
     async (overrides?: Record<string, any>) => {
+      if (isSwitchingRef.current) return;
       const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
       if (!projId) return;
 
@@ -1671,6 +1969,7 @@ export default function DashboardPage() {
 
   const saveStep5Data = useCallback(
     async (overrides?: Record<string, any>) => {
+      if (isSwitchingRef.current) return;
       const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
       if (!projId) return;
 
@@ -1744,6 +2043,7 @@ export default function DashboardPage() {
   );
 
   const saveStep6Data = useCallback(async () => {
+    if (isSwitchingRef.current) return;
     const projId = activeProject?.id || useProjectStore.getState().activeProject?.id;
     if (!projId) return;
 
@@ -1769,7 +2069,7 @@ export default function DashboardPage() {
 
   // Debounced autosave effects per step
   useEffect(() => {
-    if (step !== 2 || !activeProject?.id) return;
+    if (step !== 2 || !activeProject?.id || isSwitchingRef.current) return;
     const timer = setTimeout(() => {
       saveStep2Data();
     }, 800);
@@ -1777,7 +2077,7 @@ export default function DashboardPage() {
   }, [step, activeProject?.id, details, saveStep2Data]);
 
   useEffect(() => {
-    if (step !== 4 || !activeProject?.id) return;
+    if (step !== 4 || !activeProject?.id || isSwitchingRef.current) return;
     const timer = setTimeout(() => {
       saveStep4Data();
     }, 700);
@@ -1802,7 +2102,7 @@ export default function DashboardPage() {
   ]);
 
   useEffect(() => {
-    if (step !== 5 || !activeProject?.id) return;
+    if (step !== 5 || !activeProject?.id || isSwitchingRef.current) return;
     const timer = setTimeout(() => {
       saveStep5Data();
     }, 700);
@@ -1825,7 +2125,7 @@ export default function DashboardPage() {
   ]);
 
   useEffect(() => {
-    if (step !== 6 || !activeProject?.id) return;
+    if (step !== 6 || !activeProject?.id || isSwitchingRef.current) return;
     const timer = setTimeout(() => {
       saveStep6Data();
     }, 700);
@@ -4082,43 +4382,123 @@ export default function DashboardPage() {
   // MULTI-REPORT PROJECT MANAGEMENT & SWITCHER
   // ==========================================
   const renderProjectSwitcher = () => {
+    const isCurrentlySwitching = isSwitchingProject || isSwitchingRef.current;
+    const currentActiveId = activeProject?.id;
+
+    // Filter projects based on projectSearchQuery
+    const query = projectSearchQuery.trim().toLowerCase();
+    const filteredProjects = projects.filter((p) => {
+      if (!query) return true;
+      const titleMatch = (p.title || '').toLowerCase().includes(query);
+      const nameMatch = (p.full_name || '').toLowerCase().includes(query);
+      const matricMatch = (p.matric_number || '').toLowerCase().includes(query);
+      const orgMatch = (p.organization_name || '').toLowerCase().includes(query);
+      return titleMatch || nameMatch || matricMatch || orgMatch;
+    });
+
+    const activeTitle = activeProject?.full_name
+      ? `${activeProject.title || 'SIWES Report'} · ${activeProject.full_name}`
+      : activeProject?.title || 'SIWES Technical Report';
+
+    const isPaidActive =
+      activeProject?.is_paid ||
+      (activeProject?.payment_orders &&
+        activeProject.payment_orders.some((po: any) => po.status === 'paid'));
+    const isReadyActive = activeProject?.report_status === 'ready';
+
     return (
       <div style={{ position: 'relative', display: 'inline-block' }}>
+        {/* Trigger Button */}
         <button
           type="button"
-          onClick={() => setIsProjectDropdownOpen((prev) => !prev)}
+          onClick={() => {
+            setIsProjectDropdownOpen((prev) => {
+              if (!prev) setProjectSearchQuery('');
+              return !prev;
+            });
+          }}
+          disabled={isCurrentlySwitching}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '6px',
-            maxWidth: '190px',
-            padding: '4px 10px',
-            borderRadius: '16px',
-            background: 'rgba(6, 107, 77, 0.08)',
-            border: '1px solid rgba(6, 107, 77, 0.16)',
+            gap: '8px',
+            maxWidth: 'clamp(180px, 32vw, 300px)',
+            padding: '5px 12px',
+            borderRadius: '20px',
+            background: isCurrentlySwitching ? 'rgba(6, 107, 77, 0.04)' : 'rgba(6, 107, 77, 0.08)',
+            border: '1px solid rgba(6, 107, 77, 0.18)',
             color: 'var(--ink)',
             fontSize: '12.5px',
             fontWeight: 700,
-            cursor: 'pointer',
+            cursor: isCurrentlySwitching ? 'wait' : 'pointer',
+            transition: 'all 0.15s ease',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
           }}
           aria-expanded={isProjectDropdownOpen}
+          aria-haspopup="dialog"
           aria-label="Switch Technical Report"
         >
-          <span className="ms" style={{ fontSize: '15px', color: 'var(--g)' }}>
-            folder
+          {isCurrentlySwitching ? (
+            <span
+              className="ms"
+              style={{
+                fontSize: '16px',
+                color: 'var(--g)',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            >
+              sync
+            </span>
+          ) : (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                background: isPaidActive ? '#066b4d' : isReadyActive ? '#0fa37a' : 'rgba(6, 107, 77, 0.2)',
+                color: '#fff',
+                fontSize: '11px',
+                flexShrink: 0,
+              }}
+            >
+              <span className="ms" style={{ fontSize: '13px' }}>
+                folder
+              </span>
+            </span>
+          )}
+
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+              textAlign: 'left',
+            }}
+          >
+            {isCurrentlySwitching ? 'Switching report...' : activeTitle}
           </span>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeProject?.full_name
-              ? `${activeProject.full_name} · ${activeProject.title}`
-              : activeProject?.title || 'Technical Report'}
-          </span>
-          <span className="ms" style={{ fontSize: '15px', color: 'var(--mut)' }}>
-            {isProjectDropdownOpen ? 'arrow_drop_up' : 'arrow_drop_down'}
+
+          <span
+            className="ms"
+            style={{
+              fontSize: '16px',
+              color: 'var(--mut)',
+              transition: 'transform 0.2s ease',
+              transform: isProjectDropdownOpen ? 'rotate(180deg)' : 'none',
+              flexShrink: 0,
+            }}
+          >
+            expand_more
           </span>
         </button>
 
         {isProjectDropdownOpen && (
           <>
+            {/* Backdrop overlay */}
             <div
               style={{
                 position: 'fixed',
@@ -4127,47 +4507,64 @@ export default function DashboardPage() {
                 right: 0,
                 bottom: 0,
                 zIndex: 998,
+                background: 'rgba(0,0,0,0.15)',
               }}
               onClick={() => setIsProjectDropdownOpen(false)}
             />
+
+            {/* Dropdown panel */}
             <div
               style={{
                 position: 'absolute',
-                top: 'calc(100% + 6px)',
+                top: 'calc(100% + 8px)',
                 left: '50%',
                 transform: 'translateX(-50%)',
-                width: '320px',
-                maxWidth: 'calc(100vw - 32px)',
-                background: '#fff',
-                borderRadius: '14px',
-                boxShadow: '0 12px 32px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.06)',
-                border: '1px solid var(--line)',
+                width: '360px',
+                maxWidth: 'calc(100vw - 24px)',
+                background: '#ffffff',
+                borderRadius: '16px',
+                boxShadow: '0 16px 40px -8px rgba(15, 23, 41, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08)',
                 zIndex: 999,
                 overflow: 'hidden',
                 textAlign: 'left',
+                animation: 'fade 0.18s ease-out',
               }}
             >
+              {/* Header */}
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  padding: '10px 14px',
+                  padding: '12px 16px',
                   borderBottom: '1px solid var(--line)',
-                  background: 'var(--bg)',
+                  background: '#faf9f5',
                 }}
               >
-                <span
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    color: 'var(--mut)',
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  Reports ({projects.length})
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      color: 'var(--ink)',
+                      letterSpacing: '-0.01em',
+                    }}
+                  >
+                    Switch Report
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: 'var(--gd)',
+                      background: 'rgba(6, 107, 77, 0.1)',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                    }}
+                  >
+                    {projects.length} {projects.length === 1 ? 'report' : 'reports'}
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -4178,101 +4575,281 @@ export default function DashboardPage() {
                     background: 'none',
                     border: 'none',
                     color: 'var(--gd)',
-                    fontSize: '12px',
+                    fontSize: '12.5px',
                     fontWeight: 700,
                     cursor: 'pointer',
-                    padding: 0,
+                    padding: '2px 6px',
+                    borderRadius: '6px',
                   }}
                 >
                   Manage
                 </button>
               </div>
 
-              <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
-                {projects.map((proj) => {
-                  const isActive = proj.id === activeProject?.id;
-                  const isPaid =
-                    proj.is_paid ||
-                    (proj.payment_orders &&
-                      proj.payment_orders.some((po: any) => po.status === 'paid'));
-                  const statusLabel = isPaid
-                    ? 'Paid & Ready'
-                    : proj.report_status === 'ready'
-                    ? 'Report Ready'
-                    : (proj.source_documents?.length || 0) > 0
-                    ? `${proj.source_documents.length} pages`
-                    : 'Draft';
-
-                  return (
-                    <button
-                      key={proj.id}
-                      type="button"
-                      onClick={() => {
-                        setIsProjectDropdownOpen(false);
-                        if (!isActive) {
-                          handleSwitchProject(proj.id);
-                        }
-                      }}
+              {/* Search input (shown when >= 2 projects) */}
+              {projects.length >= 2 && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderBottom: '1px solid var(--line)',
+                    background: '#fff',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: 'var(--paper, #f8f6f1)',
+                      borderRadius: '8px',
+                      padding: '4px 10px',
+                      border: '1px solid var(--line)',
+                    }}
+                  >
+                    <span className="ms" style={{ fontSize: '16px', color: 'var(--mut)' }}>
+                      search
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Search reports or students..."
+                      value={projectSearchQuery}
+                      onChange={(e) => setProjectSearchQuery(e.target.value)}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
                         width: '100%',
-                        padding: '10px 14px',
-                        background: isActive ? 'rgba(6, 107, 77, 0.06)' : 'transparent',
                         border: 'none',
-                        borderBottom: '1px solid var(--line)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        transition: 'background 0.15s ease',
+                        background: 'transparent',
+                        fontSize: '12.5px',
+                        color: 'var(--ink)',
+                        outline: 'none',
+                        fontFamily: 'inherit',
                       }}
-                    >
-                      <div style={{ minWidth: 0, flex: 1, paddingRight: '8px' }}>
-                        <div>
-                          <div
-                            style={{
-                              fontSize: '13.5px',
-                              fontWeight: isActive ? 800 : 600,
-                              color: 'var(--ink)',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {proj.title || 'SIWES Technical Report'}
-                          </div>
-                          {proj.full_name && (
-                            <div style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--gd)', marginTop: '1px' }}>
-                              👤 {proj.full_name}
-                            </div>
-                          )}
-                          <div style={{ fontSize: '11px', color: 'var(--mut)', marginTop: '1px' }}>
-                            {proj.organization_name || 'No company'} · {statusLabel}
-                          </div>
-                        </div>
-                      </div>
-                      {isActive && (
-                        <span
-                          className="ms"
-                          style={{ color: 'var(--g)', fontSize: '18px', flexShrink: 0 }}
-                        >
-                          check
+                      autoFocus={projects.length > 3}
+                    />
+                    {projectSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setProjectSearchQuery('')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--mut)',
+                          padding: 0,
+                          display: 'flex',
+                        }}
+                      >
+                        <span className="ms" style={{ fontSize: '15px' }}>
+                          close
                         </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
+              {/* Projects List */}
               <div
                 style={{
-                  padding: '8px 10px',
-                  background: 'var(--bg)',
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                }}
+              >
+                {filteredProjects.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '24px 16px',
+                      textAlign: 'center',
+                      color: 'var(--mut)',
+                      fontSize: '13px',
+                    }}
+                  >
+                    <span
+                      className="ms"
+                      style={{ fontSize: '28px', color: '#c4bfb2', display: 'block', marginBottom: '4px' }}
+                    >
+                      search_off
+                    </span>
+                    No reports match &ldquo;{projectSearchQuery}&rdquo;
+                  </div>
+                ) : (
+                  filteredProjects.map((proj) => {
+                    const isActive = proj.id === currentActiveId;
+                    const isTargetLoading =
+                      isCurrentlySwitching &&
+                      (switchingProjectId === proj.id || switchingToIdRef.current === proj.id);
+                    const isPaid =
+                      proj.is_paid ||
+                      (proj.payment_orders &&
+                        proj.payment_orders.some((po: any) => po.status === 'paid'));
+                    const statusLabel = isPaid
+                      ? 'Paid & Ready'
+                      : proj.report_status === 'ready'
+                      ? 'Report Ready'
+                      : (proj.source_documents?.length || 0) > 0
+                      ? `${proj.source_documents.length} pages`
+                      : 'Draft';
+
+                    return (
+                      <button
+                        key={proj.id}
+                        type="button"
+                        disabled={isCurrentlySwitching}
+                        onClick={() => {
+                          if (isCurrentlySwitching) return;
+                          setIsProjectDropdownOpen(false);
+                          if (!isActive) {
+                            handleSwitchProject(proj.id);
+                          }
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          width: '100%',
+                          padding: '11px 16px',
+                          background: isActive
+                            ? 'rgba(6, 107, 77, 0.07)'
+                            : isTargetLoading
+                            ? 'rgba(6, 107, 77, 0.03)'
+                            : 'transparent',
+                          border: 'none',
+                          borderLeft: isActive ? '3px solid var(--g)' : '3px solid transparent',
+                          borderBottom: '1px solid var(--line)',
+                          cursor: isCurrentlySwitching ? 'wait' : 'pointer',
+                          textAlign: 'left',
+                          transition: 'background 0.15s ease',
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1, paddingRight: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div
+                              style={{
+                                fontSize: '13.5px',
+                                fontWeight: isActive ? 800 : 600,
+                                color: 'var(--ink)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {proj.title || 'SIWES Technical Report'}
+                            </div>
+                            {isActive && (
+                              <span
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 800,
+                                  background: 'var(--g)',
+                                  color: '#fff',
+                                  padding: '1px 5px',
+                                  borderRadius: '4px',
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.02em',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                Current
+                              </span>
+                            )}
+                          </div>
+
+                          {proj.full_name && (
+                            <div
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                color: 'var(--gd)',
+                                marginTop: '2px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              👤 {proj.full_name}
+                              {proj.matric_number ? ` · ${proj.matric_number}` : ''}
+                            </div>
+                          )}
+
+                          <div
+                            style={{
+                              fontSize: '11.5px',
+                              color: 'var(--mut)',
+                              marginTop: '2px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <span>{proj.organization_name || 'No company'}</span>
+                            <span>•</span>
+                            <span
+                              style={{
+                                color: isPaid
+                                  ? '#066b4d'
+                                  : proj.report_status === 'ready'
+                                  ? '#0284c7'
+                                  : 'inherit',
+                                fontWeight: isPaid || proj.report_status === 'ready' ? 700 : 500,
+                              }}
+                            >
+                              {statusLabel}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Right side status / spinner */}
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                          {isTargetLoading ? (
+                            <span
+                              className="ms"
+                              style={{
+                                color: 'var(--g)',
+                                fontSize: '18px',
+                                animation: 'spin 0.8s linear infinite',
+                              }}
+                            >
+                              sync
+                            </span>
+                          ) : isActive ? (
+                            <span
+                              className="ms"
+                              style={{
+                                color: 'var(--g)',
+                                fontSize: '20px',
+                              }}
+                            >
+                              check_circle
+                            </span>
+                          ) : (
+                            <span
+                              className="ms"
+                              style={{
+                                color: 'var(--mut)',
+                                fontSize: '18px',
+                                opacity: 0.5,
+                              }}
+                            >
+                              arrow_forward
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div
+                style={{
+                  padding: '10px 14px',
+                  background: '#faf9f5',
                   borderTop: '1px solid var(--line)',
                 }}
               >
                 <button
                   type="button"
+                  disabled={isCurrentlySwitching}
                   onClick={() => {
                     setIsProjectDropdownOpen(false);
                     setIsCreateReportModalOpen(true);
@@ -4283,14 +4860,16 @@ export default function DashboardPage() {
                     justifyContent: 'center',
                     gap: '6px',
                     width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '8px',
+                    padding: '9px 14px',
+                    borderRadius: '10px',
                     background: 'var(--g)',
                     color: '#fff',
                     border: 'none',
                     fontSize: '13px',
                     fontWeight: 700,
-                    cursor: 'pointer',
+                    cursor: isCurrentlySwitching ? 'wait' : 'pointer',
+                    boxShadow: '0 2px 6px rgba(6, 107, 77, 0.25)',
+                    transition: 'background 0.15s ease',
                   }}
                 >
                   <span className="ms" style={{ fontSize: '16px' }}>
@@ -4767,15 +5346,31 @@ export default function DashboardPage() {
                         <button
                           className="btn o w s"
                           type="button"
+                          disabled={isSwitchingProject || isSwitchingRef.current}
                           style={{ flex: 1, minWidth: '160px' }}
                           onClick={() =>
                             handleSwitchProject(proj.id, isReady ? 'report' : 'wizard')
                           }
                         >
-                          <span className="ms" aria-hidden="true">
-                            swap_horiz
+                          <span
+                            className="ms"
+                            aria-hidden="true"
+                            style={
+                              (isSwitchingProject || isSwitchingRef.current) &&
+                              (switchingProjectId === proj.id || switchingToIdRef.current === proj.id)
+                                ? { animation: 'spin 0.8s linear infinite' }
+                                : {}
+                            }
+                          >
+                            {(isSwitchingProject || isSwitchingRef.current) &&
+                            (switchingProjectId === proj.id || switchingToIdRef.current === proj.id)
+                              ? 'sync'
+                              : 'swap_horiz'}
                           </span>
-                          Switch to this Report
+                          {(isSwitchingProject || isSwitchingRef.current) &&
+                          (switchingProjectId === proj.id || switchingToIdRef.current === proj.id)
+                            ? 'Switching...'
+                            : 'Switch to this Report'}
                         </button>
                       )}
 
