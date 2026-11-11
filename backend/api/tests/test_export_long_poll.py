@@ -65,7 +65,8 @@ def test_export_status_timeout_handling():
         project = ReportProject.objects.create(
             user=user,
             title='SIWES Report 3',
-            organization_name='Test Org'
+            organization_name='Test Org',
+            tier='pro'
         )
         Report.objects.create(project=project, version=1)
         client = APIClient()

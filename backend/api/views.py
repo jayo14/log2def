@@ -548,6 +548,17 @@ class ReportImageListView(views.APIView):
         image.original_file.save(upload.name, upload, save=False)
         image.processed_file.save(f"{image.id}{extension}", ContentFile(processed.read(), name=f"{image.id}{extension}"), save=False)
         image.save()
+
+        # Upload image assets to S3 storage if configured
+        try:
+            from .storage import upload_object
+            if image.original_file and os.path.exists(image.original_file.path):
+                upload_object(key=image.original_file.name, body=image.original_file.path, content_type=content_type)
+            if image.processed_file and os.path.exists(image.processed_file.path):
+                upload_object(key=image.processed_file.name, body=image.processed_file.path, content_type=content_type)
+        except Exception as e:
+            logger.warning(f"Could not upload report image to S3: {e}")
+
         return Response(ReportImageSerializer(image).data, status=status.HTTP_201_CREATED)
 
 
@@ -571,7 +582,17 @@ class ReportImageDetailView(views.APIView):
     def delete(self, request, project_id, image_id):
         project = get_user_project(request.user, project_id)
         image = get_object_or_404(ReportImage, project=project, pk=image_id)
+        orig_key = image.original_file.name if image.original_file else None
+        proc_key = image.processed_file.name if image.processed_file else None
         image.delete()
+        try:
+            from .storage import delete_object
+            if orig_key:
+                delete_object(orig_key)
+            if proc_key:
+                delete_object(proc_key)
+        except Exception:
+            pass
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -1736,6 +1757,10 @@ class ExportStatusView(views.APIView):
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
 
+        fmt = (request.query_params.get('format') or request.query_params.get('doc_format') or 'pdf').lower()
+        if fmt not in ['pdf', 'docx']:
+            return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
+
         has_paid = project.payment_orders.filter(
             user=request.user,
             order_type='digital',
@@ -1748,7 +1773,7 @@ class ExportStatusView(views.APIView):
             return Response(
                 {
                     "project_id": project.id,
-                    "format": request.query_params.get('format', 'pdf').lower(),
+                    "format": fmt,
                     "status": "payment_required",
                     "progress_percent": 0,
                     "download_url": None,
@@ -1758,10 +1783,6 @@ class ExportStatusView(views.APIView):
                 },
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
-
-        fmt = request.query_params.get('format', 'pdf').lower()
-        if fmt not in ['pdf', 'docx']:
-            return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check feature flags
         if fmt == 'pdf' and not is_feature_enabled('report_pdf_export'):
@@ -1935,16 +1956,29 @@ class ExportDownloadView(views.APIView):
         file_path = export_dir / expected_filename
 
         if not _export_is_current(file_path, project.report):
+            s3_key = f"projects/{project.id}/exports/{expected_filename}"
+            from .storage import download_object
+            s3_bytes = None
             try:
-                if fmt == 'docx':
-                    generate_docx_report(project.report)
-                else:
-                    export_report_documents(project.report)
-            except Exception as exc:
-                from .document_quality import QualityGateError
-                if isinstance(exc, QualityGateError):
-                    return Response({"error": str(exc), "quality_gate": exc.result}, status=422)
-                raise
+                s3_bytes = download_object(s3_key)
+            except Exception:
+                s3_bytes = None
+
+            if s3_bytes:
+                export_dir.mkdir(parents=True, exist_ok=True)
+                with open(str(file_path), 'wb') as f:
+                    f.write(s3_bytes)
+            else:
+                try:
+                    if fmt == 'docx':
+                        generate_docx_report(project.report)
+                    else:
+                        export_report_documents(project.report)
+                except Exception as exc:
+                    from .document_quality import QualityGateError
+                    if isinstance(exc, QualityGateError):
+                        return Response({"error": str(exc), "quality_gate": exc.result}, status=422)
+                    raise
 
         if not file_path.exists():
             raise Http404(f"Exported file {expected_filename} not found.")
