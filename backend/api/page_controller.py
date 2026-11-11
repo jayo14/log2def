@@ -145,7 +145,13 @@ class CondenseResult:
 
 
 def count_pdf_pages(pdf_path: str) -> int:
-    """Count pages in a rendered PDF using pdfinfo (poppler-utils)."""
+    """Count pages in a rendered PDF using PyMuPDF with pdfinfo fallback."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(pdf_path)
+        return len(doc)
+    except Exception:
+        pass
     try:
         result = subprocess.run(
             ["pdfinfo", pdf_path],
