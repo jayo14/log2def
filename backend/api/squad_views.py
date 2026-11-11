@@ -552,27 +552,42 @@ class SecureDigitalDownloadView(views.APIView):
         expected_filename = f"{clean_title}_v{report.version}.{format_type}"
         export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
         existing_file = export_dir / expected_filename
+        s3_key = f"projects/{project.id}/exports/{expected_filename}"
 
         try:
             target_path = None
             if existing_file.exists() and existing_file.stat().st_size > 0 and existing_file.stat().st_mtime >= report.updated_at.timestamp():
                 target_path = str(existing_file)
             else:
-                if format_type == 'docx':
-                    try:
-                        target_path = generate_docx_report(report, enforce_quality=True)
-                    except QualityGateError as qe:
-                        logger.warning(f"Quality gate warning for project {project.id} during download; falling back to enforce_quality=False: {qe}")
-                        target_path = generate_docx_report(report, enforce_quality=False)
+                # First check if the generated export exists in S3 object storage
+                from .storage import download_object
+                s3_bytes = None
+                try:
+                    s3_bytes = download_object(s3_key)
+                except Exception:
+                    s3_bytes = None
+
+                if s3_bytes:
+                    export_dir.mkdir(parents=True, exist_ok=True)
+                    with open(str(existing_file), 'wb') as f:
+                        f.write(s3_bytes)
+                    target_path = str(existing_file)
                 else:
-                    # PDF
-                    try:
-                        export_result = export_report_documents(report, enforce_quality=True)
-                        target_path = export_result['pdf_path']
-                    except QualityGateError as qe:
-                        logger.warning(f"Quality gate warning for project {project.id} during PDF export; falling back to enforce_quality=False: {qe}")
-                        export_result = export_report_documents(report, enforce_quality=False)
-                        target_path = export_result['pdf_path']
+                    if format_type == 'docx':
+                        try:
+                            target_path = generate_docx_report(report, enforce_quality=True)
+                        except QualityGateError as qe:
+                            logger.warning(f"Quality gate warning for project {project.id} during download; falling back to enforce_quality=False: {qe}")
+                            target_path = generate_docx_report(report, enforce_quality=False)
+                    else:
+                        # PDF
+                        try:
+                            export_result = export_report_documents(report, enforce_quality=True)
+                            target_path = export_result['pdf_path']
+                        except QualityGateError as qe:
+                            logger.warning(f"Quality gate warning for project {project.id} during PDF export; falling back to enforce_quality=False: {qe}")
+                            export_result = export_report_documents(report, enforce_quality=False)
+                            target_path = export_result['pdf_path']
 
             if not target_path or not os.path.exists(target_path):
                 return Response({'error': f'{format_type.upper()} document not available.'},
