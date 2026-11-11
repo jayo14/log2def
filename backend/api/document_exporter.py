@@ -666,6 +666,56 @@ def document_node_to_html(node: dict) -> str:
     return text + children
 
 
+def get_export_filename(project, fmt: str) -> str:
+    """
+    Constructs the standardized export filename:
+    '{matric_number} - {full_name} - technical report.{fmt}'
+    Falls back gracefully if matric number or full name are missing.
+    """
+    intake = getattr(project, 'guided_intake', {}) or {}
+    if not isinstance(intake, dict):
+        intake = {}
+
+    matric = (
+        getattr(project, 'matric_number', '') or
+        intake.get('matric_number') or
+        intake.get('matric') or
+        ''
+    ).strip()
+
+    name = (
+        getattr(project, 'full_name', '') or
+        intake.get('full_name') or
+        intake.get('student_name') or
+        (project.user.get_full_name() if getattr(project, 'user', None) else '') or
+        ''
+    ).strip()
+
+    def sanitize(s: str) -> str:
+        s = re.sub(r'[\\/]', '-', str(s).strip())
+        s = re.sub(r'[\x00-\x1f<>:"|?*]', '', s)
+        return re.sub(r'\s+', ' ', s).strip()
+
+    clean_matric = sanitize(matric)
+    clean_name = sanitize(name)
+
+    parts = []
+    if clean_matric:
+        parts.append(clean_matric)
+    if clean_name:
+        parts.append(clean_name)
+    parts.append("technical report")
+
+    # If neither matric nor name was provided, fall back to clean title or SIWES
+    if len(parts) == 1:
+        raw_title = sanitize(getattr(project, 'title', '') or 'SIWES')
+        if raw_title and raw_title.lower() != 'technical report':
+            parts.insert(0, raw_title)
+
+    base = " - ".join(parts)
+    return f"{base}.{fmt.lower().lstrip('.')}"
+
+
 def generate_docx_report(report: Report, enforce_quality: bool = True) -> str:
     """
     Builds a professional, properly formatted A4 Word document for the SIWES report.
@@ -860,8 +910,7 @@ def generate_docx_report(report: Report, enforce_quality: bool = True) -> str:
     export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(report.project.id) / "exports"
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', report.project.title or "SIWES_Report")
-    docx_filename = f"{clean_title}_v{report.version}.docx"
+    docx_filename = get_export_filename(report.project, "docx")
     docx_path = export_dir / docx_filename
 
     doc.save(str(docx_path))

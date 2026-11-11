@@ -455,5 +455,38 @@ def test_data_uri_image_handling_in_html_parser():
     parser.feed(f'<p><img src="{large_uri}" alt="Logo" /></p>')
 
 
+def test_export_filename_standard_format():
+    """Verify export filename follows '[matric] - [full_name] - technical report.[fmt]' standard."""
+    from api.document_exporter import get_export_filename
+
+    dummy = type('Dummy', (), {
+        'matric_number': '240303010033',
+        'full_name': 'Amida Hameed',
+        'guided_intake': {},
+        'title': 'SIWES Technical Report #3',
+        'user': None
+    })()
+
+    pdf_name = get_export_filename(dummy, 'pdf')
+    docx_name = get_export_filename(dummy, 'docx')
+
+    assert pdf_name == "240303010033 - Amida Hameed - technical report.pdf"
+    assert docx_name == "240303010033 - Amida Hameed - technical report.docx"
+
+    # Test slashes in matric number are safely sanitized
+    dummy_slash = type('Dummy', (), {
+        'matric_number': 'LASU/2026/001',
+        'full_name': 'Ayobami Dayo',
+        'guided_intake': {},
+        'title': 'Report',
+        'user': None
+    })()
+
+    slash_pdf = get_export_filename(dummy_slash, 'pdf')
+    assert slash_pdf == "LASU-2026-001 - Ayobami Dayo - technical report.pdf"
+    assert "/" not in slash_pdf
+
+
+
 
 

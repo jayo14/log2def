@@ -16,7 +16,7 @@ from .enums import UserTier
 from .squad_service import SquadError, initiate_transaction, verify_transaction, verify_webhook_signature
 from .telegram_service import send_payment_notification
 from .report_generator import generate_full_report
-from .document_exporter import generate_docx_report, export_report_documents
+from .document_exporter import generate_docx_report, export_report_documents, get_export_filename
 from .document_quality import QualityGateError
 from pathlib import Path
 import re
@@ -548,24 +548,38 @@ class SecureDigitalDownloadView(views.APIView):
         except Report.DoesNotExist:
             report = generate_full_report(project)
 
-        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
-        expected_filename = f"{clean_title}_v{report.version}.{format_type}"
+        expected_filename = get_export_filename(project, format_type)
         export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
         existing_file = export_dir / expected_filename
         s3_key = f"projects/{project.id}/exports/{expected_filename}"
+
+        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
+        legacy_filename = f"{clean_title}_v{report.version}.{format_type}"
+        legacy_file = export_dir / legacy_filename
+        legacy_s3_key = f"projects/{project.id}/exports/{legacy_filename}"
 
         try:
             target_path = None
             if existing_file.exists() and existing_file.stat().st_size > 0 and existing_file.stat().st_mtime >= report.updated_at.timestamp():
                 target_path = str(existing_file)
+            elif legacy_file.exists() and legacy_file.stat().st_size > 0 and legacy_file.stat().st_mtime >= report.updated_at.timestamp():
+                try:
+                    import shutil
+                    shutil.copy2(str(legacy_file), str(existing_file))
+                    target_path = str(existing_file)
+                except Exception:
+                    target_path = str(legacy_file)
             else:
                 # First check if the generated export exists in S3 object storage
                 from .storage import download_object
                 s3_bytes = None
-                try:
-                    s3_bytes = download_object(s3_key)
-                except Exception:
-                    s3_bytes = None
+                for key_to_try in [s3_key, legacy_s3_key]:
+                    try:
+                        s3_bytes = download_object(key_to_try)
+                        if s3_bytes:
+                            break
+                    except Exception:
+                        s3_bytes = None
 
                 if s3_bytes:
                     export_dir.mkdir(parents=True, exist_ok=True)

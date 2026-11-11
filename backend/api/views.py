@@ -56,7 +56,7 @@ from .serializers import (
 )
 from .document_processor import process_source_document
 from .report_generator import generate_full_report, regenerate_single_section
-from .document_exporter import generate_docx_report, export_report_documents
+from .document_exporter import generate_docx_report, export_report_documents, get_export_filename
 from .defence_generator import (
     generate_defence_questions,
     generate_presentation_slides,
@@ -1801,10 +1801,15 @@ class ExportStatusView(views.APIView):
         trigger = request.query_params.get('trigger', 'false').lower() in ('true', '1')
         key = (project.id, fmt)
 
-        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
-        expected_filename = f"{clean_title}_v{project.report.version}.{fmt}"
+        expected_filename = get_export_filename(project, fmt)
         export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
         file_path = export_dir / expected_filename
+
+        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
+        legacy_filename = f"{clean_title}_v{project.report.version}.{fmt}"
+        legacy_path = export_dir / legacy_filename
+        if not file_path.exists() and legacy_path.exists() and legacy_path.stat().st_size > 0:
+            file_path = legacy_path
 
         job = EXPORT_JOBS.get(key)
 
@@ -1950,19 +1955,28 @@ class ExportDownloadView(views.APIView):
         if fmt == 'docx' and not is_feature_enabled('report_docx_export'):
             return Response({"detail": "DOCX export is currently disabled."}, status=status.HTTP_404_NOT_FOUND)
 
-        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
-        expected_filename = f"{clean_title}_v{project.report.version}.{fmt}"
+        expected_filename = get_export_filename(project, fmt)
         export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
         file_path = export_dir / expected_filename
 
+        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
+        legacy_filename = f"{clean_title}_v{project.report.version}.{fmt}"
+        legacy_path = export_dir / legacy_filename
+        if not file_path.exists() and legacy_path.exists() and legacy_path.stat().st_size > 0:
+            file_path = legacy_path
+
         if not _export_is_current(file_path, project.report):
             s3_key = f"projects/{project.id}/exports/{expected_filename}"
+            legacy_s3_key = f"projects/{project.id}/exports/{legacy_filename}"
             from .storage import download_object
             s3_bytes = None
-            try:
-                s3_bytes = download_object(s3_key)
-            except Exception:
-                s3_bytes = None
+            for key_to_try in [s3_key, legacy_s3_key]:
+                try:
+                    s3_bytes = download_object(key_to_try)
+                    if s3_bytes:
+                        break
+                except Exception:
+                    s3_bytes = None
 
             if s3_bytes:
                 export_dir.mkdir(parents=True, exist_ok=True)

@@ -3049,7 +3049,7 @@ export default function DashboardPage() {
 
       const blob = await res.blob();
       const filename =
-        res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] ||
+        res.headers.get('content-disposition')?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)?.[1]?.replace(/^"|"$/g, '') ||
         `SIWES_Report_${projId}.${fmt}`;
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
