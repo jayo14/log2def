@@ -11,7 +11,7 @@ from .views import (
     ReportDetailView, ReportGenerateView, ReportPageStatusView, SectionUpdateView, SectionRegenerateView,
     ReportVersionListView, ReportVersionRevertView,
     ExportDocxView, ExportPdfView, ExportStatusView, ExportDownloadView,
-    InstitutionLogoView,
+    InstitutionLogoView, OrganogramMediaView,
     DefenceGenerateView, DefenceQuestionListView, DefenceQuestionDetailView, DefenceSessionView,
     DefenceSlidesView, DefenceScriptView, PaymentOrderListCreateView,
     AnalyticsEventView
@@ -99,6 +99,8 @@ urlpatterns = [
     path('institutions/<str:institution_code>/logo', InstitutionLogoView.as_view()),
 
     # Report & Sections
+    path('projects/<int:project_id>/organogram/', OrganogramMediaView.as_view(), name='project-organogram'),
+    path('projects/<int:project_id>/organogram', OrganogramMediaView.as_view()),
     path('projects/<int:project_id>/report/page-status/', ReportPageStatusView.as_view(), name='report-page-status'),
     path('projects/<int:project_id>/report/page-status', ReportPageStatusView.as_view()),
     path('projects/<int:project_id>/report/', ReportDetailView.as_view(), name='report-detail'),

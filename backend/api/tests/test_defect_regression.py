@@ -387,3 +387,38 @@ def test_build_organogram_from_structure():
     assert "Lead Systems Architect" in narrative
 
 
+@pytest.mark.django_db
+def test_organogram_media_view_dynamic_generation():
+    import uuid
+    from django.contrib.auth import get_user_model
+    from rest_framework.test import APIClient
+    from api.models import ReportProject
+
+    User = get_user_model()
+    user = User.objects.create_user(username=f"org_user_{uuid.uuid4().hex[:8]}", password="password123")
+    project = ReportProject.objects.create(
+        user=user,
+        title="SIWES Project Test",
+        organization_name="105 Technology & Communications",
+        guided_intake={
+            "head_title": "Managing Director",
+            "organisation_units": ["Engineering", "Operations", "Finance"],
+            "student_unit": "Engineering",
+            "supervisor_title": "Principal Architect",
+        }
+    )
+
+    client = APIClient()
+    # Test request to media URL
+    res = client.get(f"/media/organograms/organogram_proj_{project.id}.png")
+    assert res.status_code == 200
+    assert res["Content-Type"] == "image/png"
+    assert len(res.content) > 100
+
+    # Test request to API URL
+    api_res = client.get(f"/api/projects/{project.id}/organogram/")
+    assert api_res.status_code == 200
+    assert api_res["Content-Type"] == "image/png"
+    assert len(api_res.content) > 100
+
+

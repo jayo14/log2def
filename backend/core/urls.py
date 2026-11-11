@@ -35,6 +35,11 @@ urlpatterns = [
     path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
 
+from api.views import OrganogramMediaView
+urlpatterns += [
+    path('media/organograms/<str:filename>', OrganogramMediaView.as_view(), name='organogram-media'),
+]
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 else:

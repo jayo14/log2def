@@ -13,7 +13,7 @@ from django.db import transaction
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from rest_framework import generics, status, views, serializers
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -2451,3 +2451,81 @@ class AnalyticsEventView(views.APIView):
             "id", "step_name", "screen_id", "event_type", "metadata", "created_at"
         ))
         return Response({"events": events})
+
+
+class OrganogramMediaView(views.APIView):
+    """
+    Serves project organogram chart images.
+    If the image is missing on disk (e.g. fresh container on Render), dynamically
+    synthesizes the chart PNG from project intake facts, uploads to S3, and caches it locally.
+    """
+    permission_classes = (AllowAny,)
+
+    def get(self, request, filename=None, project_id=None):
+        if project_id is None and filename:
+            match = re.match(r'organogram_proj_(\d+)\.png$', filename)
+            if match:
+                project_id = int(match.group(1))
+
+        if project_id is None:
+            from django.views.static import serve
+            return serve(request, f"organograms/{filename}" if filename else "", document_root=settings.MEDIA_ROOT)
+
+        filename = f"organogram_proj_{project_id}.png"
+        media_path = Path(settings.MEDIA_ROOT) / "organograms" / filename
+
+        # 1. Check local filesystem cache
+        if media_path.exists() and media_path.stat().st_size > 0:
+            with open(media_path, 'rb') as f:
+                resp = HttpResponse(f.read(), content_type='image/png')
+                resp['Cache-Control'] = 'public, max-age=86400'
+                return resp
+
+        # 2. Check S3 object storage
+        s3_key = f"organograms/{filename}"
+        try:
+            from .storage import download_object
+            s3_data = download_object(s3_key)
+            if s3_data:
+                media_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(media_path, 'wb') as f:
+                    f.write(s3_data)
+                resp = HttpResponse(s3_data, content_type='image/png')
+                resp['Cache-Control'] = 'public, max-age=86400'
+                return resp
+        except Exception:
+            pass
+
+        # 3. Dynamic synthesis from project intake facts
+        from .models import ReportProject
+        project = ReportProject.objects.filter(id=project_id).first()
+        if not project:
+            raise Http404("Project not found")
+
+        intake = getattr(project, 'guided_intake', {}) or {}
+        if not isinstance(intake, dict):
+            intake = {}
+
+        head_title = intake.get("head_title") or "Managing Director"
+        units = intake.get("organisation_units") or ["Technical Department", "Operations", "Administration"]
+        placement_unit = intake.get("student_unit") or project.placement_department or "Technical Department"
+        supervisor_title = intake.get("supervisor_title") or "Technical Lead"
+        student_role = "SIWES Intern"
+
+        from .organogram_builder import render_organogram_chart_png
+        render_organogram_chart_png(
+            project_id=project.id,
+            head_title=head_title,
+            units=units,
+            placement_unit=placement_unit,
+            supervisor_title=supervisor_title,
+            student_role=student_role,
+        )
+
+        if media_path.exists() and media_path.stat().st_size > 0:
+            with open(media_path, 'rb') as f:
+                resp = HttpResponse(f.read(), content_type='image/png')
+                resp['Cache-Control'] = 'public, max-age=86400'
+                return resp
+
+        raise Http404("Could not generate organogram chart")
