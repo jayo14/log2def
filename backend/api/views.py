@@ -1635,6 +1635,8 @@ def run_export_background(project_id: int, fmt: str):
     """
     Background worker thread for asynchronous PDF/DOCX generation.
     """
+    from django.db import close_old_connections
+    close_old_connections()
     key = (project_id, fmt)
     EXPORT_JOBS[key] = {'status': 'processing', 'progress_percent': 35, 'error': None}
     try:
@@ -1656,6 +1658,8 @@ def run_export_background(project_id: int, fmt: str):
             'status': 'failed', 'progress_percent': 0, 'error': str(exc),
             'quality_gate': exc.result if isinstance(exc, QualityGateError) else None,
         }
+    finally:
+        close_old_connections()
 
 
 class ExportStatusView(views.APIView):

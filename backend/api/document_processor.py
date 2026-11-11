@@ -629,6 +629,24 @@ def extract_logbook_entries_from_text(project, page_instance, text: str, fallbac
         )
 
 
+def _get_doc_with_retry(doc_id: int, max_retries: int = 4, delay: float = 2.0):
+    from django.db import close_old_connections, DatabaseError, OperationalError
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            close_old_connections()
+            return SourceDocument.objects.get(id=doc_id)
+        except SourceDocument.DoesNotExist:
+            return None
+        except (OperationalError, DatabaseError) as db_err:
+            last_err = db_err
+            logger.warning(f"Database transient error in worker thread (attempt {attempt + 1}/{max_retries}): {db_err}")
+            time.sleep(delay)
+    if last_err:
+        raise last_err
+    return None
+
+
 def process_source_document(doc_id: int):
     """
     Staged asynchronous processing pipeline for an uploaded document:
@@ -639,9 +657,17 @@ def process_source_document(doc_id: int):
     5. Completeness Check
     Persists per-page status, retries, error reasons, and user-visible progress.
     """
+    from django.db import close_old_connections
+    close_old_connections()
     try:
-        doc = SourceDocument.objects.get(id=doc_id)
-    except SourceDocument.DoesNotExist:
+        return _process_source_document_inner(doc_id)
+    finally:
+        close_old_connections()
+
+
+def _process_source_document_inner(doc_id: int):
+    doc = _get_doc_with_retry(doc_id)
+    if not doc:
         return False
 
     doc.status = 'processing'

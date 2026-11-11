@@ -116,6 +116,15 @@ elif DATABASE_URL:
     if 'channel_binding' in query_params:
         db_options['channel_binding'] = query_params['channel_binding']
 
+    # Keepalives to prevent cloud proxy dropping idle SSL connections and timeout
+    db_options.update({
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
+        'connect_timeout': 10,
+    })
+
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -125,6 +134,8 @@ elif DATABASE_URL:
             'HOST': url.hostname or '',
             'PORT': url.port or 5432,
             'OPTIONS': db_options,
+            'CONN_MAX_AGE': int(os.getenv('CONN_MAX_AGE', '60')),
+            'CONN_HEALTH_CHECKS': True,
         }
     }
 elif os.getenv('DB_NAME'):
