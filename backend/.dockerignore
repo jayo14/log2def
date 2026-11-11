@@ -6,9 +6,14 @@ db.sqlite3
 media/
 staticfiles/
 .env
+.env.*
 .venv/
 venv/
 ENV/
 .git/
 .github/
 *.log
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
