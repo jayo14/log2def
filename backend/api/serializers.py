@@ -168,6 +168,15 @@ class ReportImageSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "original_filename", "order", "width", "height", "low_resolution_warning", "processed_url", "created_at", "updated_at")
 
     def get_processed_url(self, obj):
+        if not obj.processed_file:
+            return None
+        from .storage import get_public_url
+        try:
+            url = get_public_url(obj.processed_file.name)
+            if url:
+                return url
+        except Exception:
+            pass
         return obj.processed_file.url if obj.processed_file else None
 
 
