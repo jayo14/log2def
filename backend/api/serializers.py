@@ -68,9 +68,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             password=validated_data['password']
         )
         if preferred_university:
-            StudentProfile.objects.create(
-                user=user, preferred_university=preferred_university
-            )
+            profile, _ = StudentProfile.objects.get_or_create(user=user)
+            profile.preferred_university = preferred_university
+            profile.save(update_fields=['preferred_university'])
         return user
 
 
@@ -238,7 +238,7 @@ class ReportProjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReportProject
         fields = '__all__'
-        read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake')
+        read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake', 'tier', 'is_pro')
 
     @extend_schema_field(serializers.BooleanField)
     def get_has_report(self, obj):
@@ -277,6 +277,8 @@ class ReportProjectSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_docx_url(self, obj):
+        if not (getattr(obj, 'is_pro', False) or self.get_is_paid(obj)):
+            return None
         if hasattr(obj, 'report') and obj.report.docx_file:
             from .storage import get_public_url
             try:
@@ -287,6 +289,8 @@ class ReportProjectSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.CharField(allow_null=True))
     def get_pdf_url(self, obj):
+        if not (getattr(obj, 'is_pro', False) or self.get_is_paid(obj)):
+            return None
         if hasattr(obj, 'report') and obj.report.pdf_file:
             from .storage import get_public_url
             try:
@@ -309,7 +313,7 @@ class ReportProjectDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReportProject
         fields = '__all__'
-        read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake')
+        read_only_fields = ('user', 'created_at', 'updated_at', 'guided_intake', 'tier', 'is_pro')
 
     @extend_schema_field(serializers.BooleanField)
     def get_is_paid(self, obj):

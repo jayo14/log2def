@@ -274,7 +274,9 @@ class ProjectListCreateView(generics.ListCreateAPIView):
         return ReportProject.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        profile = getattr(self.request.user, 'student_profile', None)
+        user_tier = profile.tier if profile else UserTier.BASIC
+        serializer.save(user=self.request.user, tier=user_tier)
 
 
 @extend_schema_view(
@@ -1683,6 +1685,29 @@ class ExportStatusView(views.APIView):
         fmt = request.query_params.get('format', 'pdf').lower()
         if fmt not in ['pdf', 'docx']:
             return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Tier enforcement: basic users must complete payment to access/poll download links
+        if not project.is_pro:
+            has_paid = project.payment_orders.filter(
+                user=request.user,
+                order_type='digital',
+                status='paid',
+                digital_files_unlocked=True
+            ).exists()
+            if not has_paid:
+                return Response(
+                    {
+                        "project_id": project.id,
+                        "format": fmt,
+                        "status": "payment_required",
+                        "progress_percent": 0,
+                        "download_url": None,
+                        "filename": None,
+                        "error": "Payment required before downloading on the Basic tier.",
+                        "payment_required": True
+                    },
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
 
         # Check feature flags
         if fmt == 'pdf' and not is_feature_enabled('report_pdf_export'):

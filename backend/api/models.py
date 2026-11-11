@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.conf import settings
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from pathlib import Path
 import os
 import shutil
@@ -26,6 +28,12 @@ class StudentProfile(models.Model):
 
     def __str__(self):
         return f"Profile for {self.user.username} ({self.tier})"
+
+
+@receiver(post_save, sender=User)
+def create_or_sync_student_profile(sender, instance, created, **kwargs):
+    if created:
+        StudentProfile.objects.get_or_create(user=instance, defaults={'tier': UserTier.BASIC})
 
 
 class ReportProject(models.Model):
