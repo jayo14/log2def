@@ -26,6 +26,13 @@ def _get_setting(name: str, default=None):
             return val
     return os.getenv(name, default)
 
+def is_storage_configured() -> bool:
+    """Returns True if valid S3 object storage credentials and client are available."""
+    try:
+        return get_s3_client() is not None
+    except Exception:
+        return False
+
 def get_s3_client():
     """
     Returns an S3 client configured for Object Storage (Rumpty Cloud / Neon / AWS).
@@ -37,6 +44,9 @@ def get_s3_client():
     secret_key = _get_setting('AWS_SECRET_ACCESS_KEY')
 
     if not (access_key and secret_key):
+        return None
+
+    if 'YOUR_' in str(secret_key) or 'YOUR_' in str(access_key):
         return None
 
     return boto3.client(
