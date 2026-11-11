@@ -1682,11 +1682,29 @@ def run_export_background(project_id: int, fmt: str):
             EXPORT_JOBS[key] = {'status': 'failed', 'progress_percent': 0, 'error': 'Report not generated'}
             return
 
+        is_paid_or_pro = project.is_pro or project.payment_orders.filter(
+            status='paid', digital_files_unlocked=True
+        ).exists()
+
         if fmt == 'docx':
-            path = generate_docx_report(project.report)
+            try:
+                path = generate_docx_report(project.report, enforce_quality=True)
+            except Exception as e:
+                if is_paid_or_pro:
+                    logger.warning(f"Quality gate error on docx export for project {project_id}; generating with enforce_quality=False: {e}")
+                    path = generate_docx_report(project.report, enforce_quality=False)
+                else:
+                    raise
             EXPORT_JOBS[key] = {'status': 'ready', 'progress_percent': 100, 'error': None, 'path': path}
         else:
-            res = export_report_documents(project.report)
+            try:
+                res = export_report_documents(project.report, enforce_quality=True)
+            except Exception as e:
+                if is_paid_or_pro:
+                    logger.warning(f"Quality gate error on pdf export for project {project_id}; generating with enforce_quality=False: {e}")
+                    res = export_report_documents(project.report, enforce_quality=False)
+                else:
+                    raise
             EXPORT_JOBS[key] = {'status': 'ready', 'progress_percent': 100, 'error': None, 'path': res['pdf_path']}
     except Exception as exc:
         from .document_quality import QualityGateError
@@ -1718,28 +1736,32 @@ class ExportStatusView(views.APIView):
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
 
-        blocked = _quality_gate_failure(project.report)
-        if blocked:
-            return blocked
+        has_paid = project.payment_orders.filter(
+            user=request.user,
+            order_type='digital',
+            status='paid',
+            digital_files_unlocked=True
+        ).exists() if not project.is_pro else True
+
+        # Tier enforcement: basic users must complete payment to access/poll download links
+        if not project.is_pro and not has_paid:
+            return Response(
+                {
+                    "project_id": project.id,
+                    "format": request.query_params.get('format', 'pdf').lower(),
+                    "status": "payment_required",
+                    "progress_percent": 0,
+                    "download_url": None,
+                    "filename": None,
+                    "error": "Payment required before downloading on the Basic tier.",
+                    "payment_required": True
+                },
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
 
         fmt = request.query_params.get('format', 'pdf').lower()
         if fmt not in ['pdf', 'docx']:
             return Response({"error": "Invalid format. Supported: pdf, docx."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Tier enforcement: basic users must complete payment to access/poll download links
-        if not project.is_pro:
-            has_paid = project.payment_orders.filter(
-                user=request.user,
-                order_type='digital',
-                status='paid',
-                digital_files_unlocked=True
-            ).exists()
-            if not has_paid:
-                return Response(
-                    {
-                        "project_id": project.id,
-                        "format": fmt,
-                        "status": "payment_required",
                         "progress_percent": 0,
                         "download_url": None,
                         "filename": None,
@@ -1961,30 +1983,32 @@ class ExportDocxView(views.APIView):
     )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
-        if not project.is_pro:
-            has_paid = project.payment_orders.filter(
-                user=request.user,
-                order_type='digital',
-                status='paid',
-                digital_files_unlocked=True
-            ).exists()
-            if not has_paid:
-                return Response(
-                    {"error": "Payment required before downloading on the Basic tier."},
-                    status=status.HTTP_402_PAYMENT_REQUIRED
-                )
+        has_paid = project.payment_orders.filter(
+            user=request.user,
+            order_type='digital',
+            status='paid',
+            digital_files_unlocked=True
+        ).exists() if not project.is_pro else True
+
+        if not project.is_pro and not has_paid:
+            return Response(
+                {"error": "Payment required before downloading on the Basic tier."},
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
-        blocked = _quality_gate_failure(project.report)
-        if blocked:
-            return blocked
+
         try:
-            docx_path = generate_docx_report(project.report)
+            docx_path = generate_docx_report(project.report, enforce_quality=True)
         except Exception as exc:
             from .document_quality import QualityGateError
             if isinstance(exc, QualityGateError):
-                return Response({"error": str(exc), "quality_gate": exc.result}, status=422)
-            raise
+                if has_paid:
+                    docx_path = generate_docx_report(project.report, enforce_quality=False)
+                else:
+                    return Response({"error": str(exc), "quality_gate": exc.result}, status=422)
+            else:
+                raise
         if not os.path.exists(docx_path):
             raise Http404("Document could not be generated.")
 
@@ -2015,32 +2039,34 @@ class ExportPdfView(views.APIView):
     )
     def get(self, request, project_id):
         project = get_user_project(request.user, project_id)
-        if not project.is_pro:
-            has_paid = project.payment_orders.filter(
-                user=request.user,
-                order_type='digital',
-                status='paid',
-                digital_files_unlocked=True
-            ).exists()
-            if not has_paid:
-                return Response(
-                    {"error": "Payment required before downloading on the Basic tier."},
-                    status=status.HTTP_402_PAYMENT_REQUIRED
-                )
+        has_paid = project.payment_orders.filter(
+            user=request.user,
+            order_type='digital',
+            status='paid',
+            digital_files_unlocked=True
+        ).exists() if not project.is_pro else True
+
+        if not project.is_pro and not has_paid:
+            return Response(
+                {"error": "Payment required before downloading on the Basic tier."},
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
         if not hasattr(project, 'report'):
             return Response({"error": "Report not generated yet."}, status=status.HTTP_400_BAD_REQUEST)
-        blocked = _quality_gate_failure(project.report)
-        if blocked:
-            return blocked
 
         try:
-            export_result = export_report_documents(project.report)
+            export_result = export_report_documents(project.report, enforce_quality=True)
             pdf_path = export_result['pdf_path']
         except Exception as e:
             from .document_quality import QualityGateError
             if isinstance(e, QualityGateError):
-                return Response({"error": str(e), "quality_gate": e.result}, status=422)
-            return Response({"error": f"PDF export failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                if has_paid:
+                    export_result = export_report_documents(project.report, enforce_quality=False)
+                    pdf_path = export_result['pdf_path']
+                else:
+                    return Response({"error": str(e), "quality_gate": e.result}, status=422)
+            else:
+                return Response({"error": f"PDF export failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         resolved_path = os.path.realpath(pdf_path)
         media_root = os.path.realpath(settings.MEDIA_ROOT)

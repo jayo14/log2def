@@ -516,7 +516,7 @@ def document_node_to_html(node: dict) -> str:
     return text + children
 
 
-def generate_docx_report(report: Report) -> str:
+def generate_docx_report(report: Report, enforce_quality: bool = True) -> str:
     """
     Builds a professional, properly formatted A4 Word document for the SIWES report.
     Adheres strictly to LASUSTECH formatting requirements:
@@ -529,7 +529,8 @@ def generate_docx_report(report: Report) -> str:
       * Table of Contents with real page numbers.
     """
     from .document_quality import require_report_quality, validate_docx_artifact
-    require_report_quality(report)
+    if enforce_quality:
+        require_report_quality(report)
     doc = Document()
     is_v2 = report.template_version == "lasustech_cs:2.0.0"
     if is_v2:
@@ -715,12 +716,13 @@ def generate_docx_report(report: Report) -> str:
 
     doc.save(str(docx_path))
 
-    try:
-        validate_docx_artifact(report, docx_path)
-    except Exception:
-        if docx_path.exists():
-            docx_path.unlink()
-        raise
+    if enforce_quality:
+        try:
+            validate_docx_artifact(report, docx_path)
+        except Exception:
+            if docx_path.exists():
+                docx_path.unlink()
+            raise
 
     rel_path = f"projects/{report.project.id}/exports/{docx_filename}"
     report.docx_file.name = rel_path
@@ -775,7 +777,7 @@ def convert_docx_to_pdf(docx_path: str) -> str:
     return pdf_path
 
 
-def export_report_documents(report: Report) -> dict:
+def export_report_documents(report: Report, enforce_quality: bool = True) -> dict:
     """
     Executes both DOCX generation and PDF conversion with full validation.
     Enforces strict 12-15 page range via the Page Budget Controller.
@@ -804,7 +806,7 @@ def export_report_documents(report: Report) -> dict:
         pass_count += 1
 
         # Generate DOCX
-        docx_path = generate_docx_report(report)
+        docx_path = generate_docx_report(report, enforce_quality=enforce_quality)
 
         # Convert to PDF and count actual pages
         pdf_path = convert_docx_to_pdf(docx_path)
@@ -827,32 +829,33 @@ def export_report_documents(report: Report) -> dict:
         break
 
     # Re-render final version
-    docx_path = generate_docx_report(report)
+    docx_path = generate_docx_report(report, enforce_quality=enforce_quality)
     pdf_path = convert_docx_to_pdf(docx_path)
     actual_pages = count_pdf_pages(pdf_path)
     page_result = validate_page_range(actual_pages, min_pages=min_pages, max_pages=max_pages)
 
     if page_result.over_limit:
         _save_page_metadata(report, actual_pages, "over_limit", pass_count)
-        # Clean up the oversized file
-        if os.path.exists(docx_path):
-            os.unlink(docx_path)
-        if os.path.exists(pdf_path):
-            os.unlink(pdf_path)
-        raise QualityGateError({
-            "passed": False,
-            "blockers": [{
-                "code": "page_limit_exceeded",
-                "message": f"Report is {actual_pages} pages. Maximum allowed is {max_pages} pages. Condense sections and retry.",
-                "section_key": None,
-            }],
-            "warnings": [],
-            "summary": {
-                "total_pages": actual_pages,
-                "blocker_count": 1,
-                "page_range_status": "over_limit",
-            },
-        })
+        if enforce_quality:
+            # Clean up the oversized file
+            if os.path.exists(docx_path):
+                os.unlink(docx_path)
+            if os.path.exists(pdf_path):
+                os.unlink(pdf_path)
+            raise QualityGateError({
+                "passed": False,
+                "blockers": [{
+                    "code": "page_limit_exceeded",
+                    "message": f"Report is {actual_pages} pages. Maximum allowed is {max_pages} pages. Condense sections and retry.",
+                    "section_key": None,
+                }],
+                "warnings": [],
+                "summary": {
+                    "total_pages": actual_pages,
+                    "blocker_count": 1,
+                    "page_range_status": "over_limit",
+                },
+            })
 
     if page_result.under_limit:
         _save_page_metadata(report, actual_pages, "under_limit", pass_count)

@@ -17,6 +17,9 @@ from .squad_service import SquadError, initiate_transaction, verify_transaction,
 from .telegram_service import send_payment_notification
 from .report_generator import generate_full_report
 from .document_exporter import generate_docx_report, export_report_documents
+from .document_quality import QualityGateError
+from pathlib import Path
+import re
 import os
 import uuid
 import json
@@ -545,47 +548,56 @@ class SecureDigitalDownloadView(views.APIView):
         except Report.DoesNotExist:
             report = generate_full_report(project)
 
+        clean_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', project.title or "SIWES_Report")
+        expected_filename = f"{clean_title}_v{report.version}.{format_type}"
+        export_dir = Path(settings.MEDIA_ROOT) / "projects" / str(project.id) / "exports"
+        existing_file = export_dir / expected_filename
+
         try:
-            if format_type == 'docx':
-                docx_path = generate_docx_report(report)
-                if not os.path.exists(docx_path):
-                    return Response({'error': 'Document not available.'},
-                                    status=status.HTTP_404_NOT_FOUND)
-                resolved_path = os.path.realpath(docx_path)
-                media_root = os.path.realpath(settings.MEDIA_ROOT)
-                if not resolved_path.startswith(media_root):
-                    return Response({'error': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
-                filename = os.path.basename(resolved_path)
-                if order:
-                    order.download_count += 1
-                    order.save(update_fields=['download_count'])
-                return FileResponse(
-                    open(resolved_path, 'rb'),
-                    as_attachment=True,
-                    filename=filename,
-                    content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                )
+            target_path = None
+            if existing_file.exists() and existing_file.stat().st_size > 0 and existing_file.stat().st_mtime >= report.updated_at.timestamp():
+                target_path = str(existing_file)
             else:
-                # PDF
-                export_result = export_report_documents(report)
-                pdf_path = export_result['pdf_path']
-                if not os.path.exists(pdf_path):
-                    return Response({'error': 'PDF not available.'},
-                                    status=status.HTTP_404_NOT_FOUND)
-                resolved_path = os.path.realpath(pdf_path)
-                media_root = os.path.realpath(settings.MEDIA_ROOT)
-                if not resolved_path.startswith(media_root):
-                    return Response({'error': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
-                filename = os.path.basename(resolved_path)
-                if order:
-                    order.download_count += 1
-                    order.save(update_fields=['download_count'])
-                return FileResponse(
-                    open(resolved_path, 'rb'),
-                    as_attachment=True,
-                    filename=filename,
-                    content_type='application/pdf',
-                )
+                if format_type == 'docx':
+                    try:
+                        target_path = generate_docx_report(report, enforce_quality=True)
+                    except QualityGateError as qe:
+                        logger.warning(f"Quality gate warning for project {project.id} during download; falling back to enforce_quality=False: {qe}")
+                        target_path = generate_docx_report(report, enforce_quality=False)
+                else:
+                    # PDF
+                    try:
+                        export_result = export_report_documents(report, enforce_quality=True)
+                        target_path = export_result['pdf_path']
+                    except QualityGateError as qe:
+                        logger.warning(f"Quality gate warning for project {project.id} during PDF export; falling back to enforce_quality=False: {qe}")
+                        export_result = export_report_documents(report, enforce_quality=False)
+                        target_path = export_result['pdf_path']
+
+            if not target_path or not os.path.exists(target_path):
+                return Response({'error': f'{format_type.upper()} document not available.'},
+                                status=status.HTTP_404_NOT_FOUND)
+
+            resolved_path = os.path.realpath(target_path)
+            media_root = os.path.realpath(settings.MEDIA_ROOT)
+            if not resolved_path.startswith(media_root):
+                return Response({'error': 'Access denied.'}, status=status.HTTP_403_FORBIDDEN)
+
+            filename = os.path.basename(resolved_path)
+            if order:
+                order.download_count += 1
+                order.save(update_fields=['download_count'])
+
+            content_type = (
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                if format_type == 'docx' else 'application/pdf'
+            )
+            return FileResponse(
+                open(resolved_path, 'rb'),
+                as_attachment=True,
+                filename=filename,
+                content_type=content_type,
+            )
         except Exception as exc:
             logger.exception('Download generation failed')
             return Response({'error': f'Download failed: {exc}'},
