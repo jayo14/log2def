@@ -18,7 +18,12 @@ from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 from django.conf import settings
 from django.utils import timezone
-from .models import Report, ReportSection
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .models import Report, ReportSection
+else:
+    Report = object
+    ReportSection = object
 from .document_quality import QualityGateError
 
 
@@ -28,12 +33,13 @@ class SimpleHTMLDocxParser(HTMLParser):
     and renders them directly into a python-docx Document with proper academic formatting.
     Defaults to justified body paragraphs per LASUSTECH formatting requirements.
     """
-    def __init__(self, doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY, logo_cfg=None, compact_cover=False):
+    def __init__(self, doc, default_align=WD_ALIGN_PARAGRAPH.JUSTIFY, logo_cfg=None, compact_cover=False, project_root=None):
         super().__init__()
         self.doc = doc
         self.default_align = default_align
         self.logo_cfg = logo_cfg or {}
         self.compact_cover = compact_cover
+        self.project_root = project_root
         self.current_p = None
         self.bold = False
         self.italic = False
@@ -111,28 +117,54 @@ class SimpleHTMLDocxParser(HTMLParser):
         elif tag == 'img' and attrs_dict.get('data-report-image') == 'true':
             src = attrs_dict.get('src', '')
             caption = attrs_dict.get('alt', '')
-            abs_path = Path(src)
-            if not abs_path.exists():
-                candidate = (Path(__file__).resolve().parent.parent.parent / src.lstrip('/')).resolve()
-                if candidate.exists():
-                    abs_path = candidate
+            abs_path = None
+            image_stream = None
+
+            if src.startswith(('http://', 'https://')):
+                try:
+                    import requests
+                    resp = requests.get(src, timeout=15)
+                    if resp.status_code == 200:
+                        image_stream = io.BytesIO(resp.content)
+                except Exception as exc:
+                    logger.warning("Could not download remote report image %s: %s", src, exc)
+
+            if image_stream is None:
+                p_cand = Path(src)
+                if p_cand.exists() and p_cand.is_file():
+                    abs_path = p_cand
                 else:
-                    backend_candidate = (Path(__file__).resolve().parent.parent / src.lstrip('/')).resolve()
-                    if backend_candidate.exists():
-                        abs_path = backend_candidate
-            if not abs_path.exists():
+                    clean_src = src.replace('/media/', '', 1).lstrip('/')
+                    if hasattr(settings, 'MEDIA_ROOT'):
+                        m_cand = (Path(settings.MEDIA_ROOT) / clean_src).resolve()
+                        if m_cand.exists() and m_cand.is_file():
+                            abs_path = m_cand
+                    if abs_path is None:
+                        from .templates import get_asset_roots
+                        for root in get_asset_roots():
+                            c = (root / clean_src).resolve()
+                            if c.exists() and c.is_file():
+                                abs_path = c
+                                break
+
+            if abs_path is None and image_stream is None:
                 logger.warning("Report image missing during export: %s", src)
                 return
+
             from PIL import Image as PILImage
-            with PILImage.open(abs_path) as pil_img:
+            target_to_open = image_stream if image_stream is not None else abs_path
+            with PILImage.open(target_to_open) as pil_img:
                 width, height = pil_img.size
+            if image_stream is not None:
+                image_stream.seek(0)
             scale = min(14.5 / max(width, 1), 8.0 / max(height, 1), 1.0)
             image_p = self.doc.add_paragraph()
             image_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             image_p.paragraph_format.space_after = Pt(0)
             image_p.paragraph_format.keep_with_next = True
             run = image_p.add_run()
-            run.add_picture(str(abs_path), width=Cm(width * scale))
+            pic_source = image_stream if image_stream is not None else str(abs_path)
+            run.add_picture(pic_source, width=Cm(width * scale))
             drawing = run._r.find(qn('w:drawing'))
             if drawing is not None:
                 doc_pr = drawing.find('.//' + qn('wp:docPr'))
@@ -155,21 +187,25 @@ class SimpleHTMLDocxParser(HTMLParser):
                 return
             # Resolve API-backed logo URLs to local file paths for DOCX embedding.
             abs_path = None
-            project_root = Path(__file__).resolve().parent.parent.parent
+            from .templates import get_asset_roots
             logo_cfg = self.logo_cfg or {}
             configured_path = logo_cfg.get('path', '')
+            roots = get_asset_roots(self.project_root) if hasattr(self, 'project_root') and self.project_root else get_asset_roots()
             if src.startswith('/api/institutions/') or src.startswith('data:image') or attrs_dict.get('data-src', '').startswith('/api/institutions/'):
-                if configured_path:
-                    candidate = (project_root / configured_path).resolve()
-                    if candidate.exists():
-                        abs_path = str(candidate)
-                if abs_path is None:
-                    inst_dir = project_root / 'assets' / 'institutions' / 'lasustech'
-                    for name in ('logo.png', 'logo.web.png', 'logo.svg'):
+                for root in roots:
+                    if configured_path:
+                        candidate = (root / configured_path).resolve()
+                        if candidate.exists() and candidate.suffix.lower() != '.svg':
+                            abs_path = str(candidate)
+                            break
+                    inst_dir = root / 'assets' / 'institutions' / 'lasustech'
+                    for name in ('logo.png', 'logo.web.png', 'logo.original.png'):
                         candidate = (inst_dir / name).resolve()
                         if candidate.exists() and candidate.suffix.lower() != '.svg':
                             abs_path = str(candidate)
                             break
+                    if abs_path:
+                        break
             if abs_path is None and src.startswith('data:image'):
                 try:
                     import base64
@@ -184,10 +220,12 @@ class SimpleHTMLDocxParser(HTMLParser):
                 except Exception:
                     pass
             if abs_path is None:
-                # Fallback: treat src as a direct filesystem path (relative to project root).
-                candidate = (project_root / src.lstrip('/')).resolve()
-                if candidate.exists() and candidate.suffix.lower() != '.svg':
-                    abs_path = str(candidate)
+                # Fallback: treat src as a direct filesystem path relative to candidate roots.
+                for root in roots:
+                    candidate = (root / src.lstrip('/')).resolve()
+                    if candidate.exists() and candidate.suffix.lower() != '.svg':
+                        abs_path = str(candidate)
+                        break
             if abs_path is None:
                 # Logo missing: do not render a placeholder; log an error and skip.
                 # CI/build can enforce presence via REQUIRE_REPORT_LOGO/CI checks.
@@ -729,6 +767,12 @@ def generate_docx_report(report: Report, enforce_quality: bool = True) -> str:
     report.last_exported_at = timezone.now()
     report.save(update_fields=['docx_file', 'last_exported_at'])
 
+    try:
+        from .storage import upload_object
+        upload_object(key=rel_path, body=str(docx_path), content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    except Exception as exc:
+        logger.warning("Failed to upload DOCX to S3: %s", exc)
+
     return str(docx_path)
 
 
@@ -748,17 +792,20 @@ def convert_docx_to_pdf(docx_path: str) -> str:
         raise FileNotFoundError(f"LibreOffice executable not found at '{libreoffice_bin}' or in system PATH.")
     libreoffice_bin = resolved_bin
 
-    cmd = [
-        libreoffice_bin,
-        '--headless',
-        '--convert-to', 'pdf',
-        '--outdir', out_dir,
-        docx_path
-    ]
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="lo_profile_") as profile_dir:
+        cmd = [
+            libreoffice_bin,
+            f"-env:UserInstallation=file://{profile_dir}",
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', out_dir,
+            docx_path
+        ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-    if result.returncode != 0:
-        raise RuntimeError(f"LibreOffice PDF conversion failed: {result.stderr or result.stdout}")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        if result.returncode != 0:
+            raise RuntimeError(f"LibreOffice PDF conversion failed: {result.stderr or result.stdout}")
 
     pdf_path = os.path.splitext(docx_path)[0] + '.pdf'
 
@@ -869,6 +916,12 @@ def export_report_documents(report: Report, enforce_quality: bool = True) -> dic
     report.project.status = 'exported'
     report.project.save(update_fields=['status'])
     report.save(update_fields=['pdf_file'])
+
+    try:
+        from .storage import upload_object
+        upload_object(key=rel_pdf_path, body=str(pdf_path), content_type="application/pdf")
+    except Exception as exc:
+        logger.warning("Failed to upload PDF to S3: %s", exc)
 
     return {
         "success": True,

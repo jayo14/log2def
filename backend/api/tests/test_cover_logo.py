@@ -45,19 +45,19 @@ def _mock_django_for_exporter():
     timezone = types.ModuleType("django.utils.timezone")
     timezone.now = lambda: None
     utils.timezone = timezone
-    sys.modules.setdefault("django", django)
-    sys.modules.setdefault("django.conf", conf)
-    sys.modules.setdefault("django.utils", utils)
-    sys.modules.setdefault("django.utils.timezone", timezone)
+    sys.modules["django"] = django
+    sys.modules["django.conf"] = conf
+    sys.modules["django.utils"] = utils
+    sys.modules["django.utils.timezone"] = timezone
     models_mod = types.ModuleType("api.models")
     for n in ["Report", "ReportSection", "Fact", "LogbookEntry", "ReportParagraph"]:
         setattr(models_mod, n, type(n, (), {}))
-    sys.modules.setdefault("api.models", models_mod)
+    sys.modules["api.models"] = models_mod
     q_mod = types.ModuleType("api.document_quality")
     q_mod.QualityGateError = Exception
     q_mod.require_report_quality = lambda *a, **k: None
     q_mod.validate_docx_artifact = lambda *a, **k: None
-    sys.modules.setdefault("api.document_quality", q_mod)
+    sys.modules["api.document_quality"] = q_mod
     if "api" not in sys.modules:
         pkg = types.ModuleType("api")
         pkg.__path__ = [str(API)]
